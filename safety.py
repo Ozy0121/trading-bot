@@ -1,0 +1,296 @@
+"""
+safety.py
+---------
+All safety guardrails in one auditable place.
+
+Guards:
+  1. Daily loss limit
+  2. Position size cap (with dynamic sizing for losing streaks)
+  3. Market hours check
+  4. PDT (Pattern Day Trader) rule
+  5. Trailing stop tracking
+  6. Emergency liquidation (kill_switch / liquidate_all)
+"""
+
+from __future__ import annotations
+
+import math
+import time
+from datetime import date
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
+
+import config
+from logger_setup import get_logger, log_trade_event
+
+log = get_logger()
+
+
+# ── Daily loss tracking ──────────────────────────────────────────────────────
+
+_session_start_equity: float | None = None
+
+
+def record_session_start_equity(equity: float) -> None:
+    global _session_start_equity
+    _session_start_equity = equity
+    log.info("[safety] Session start equity: $%.2f", equity)
+
+
+def daily_loss_exceeded(current_equity: float) -> bool:
+    if _session_start_equity is None:
+        log.warning("[safety] Session start equity not recorded.")
+        return False
+    loss = _session_start_equity - current_equity
+    if loss >= config.DAILY_LOSS_LIMIT:
+        log.critical("[safety] DAILY LOSS LIMIT HIT. Loss=$%.2f / Limit=$%.2f.",
+                     loss, config.DAILY_LOSS_LIMIT)
+        log_trade_event(log, "DAILY_LOSS_LIMIT_HIT",
+                        loss=f"{loss:.2f}", limit=f"{config.DAILY_LOSS_LIMIT:.2f}")
+        return True
+    return False
+
+
+# ── Trailing stop ────────────────────────────────────────────────────────────
+# Tracks the highest price seen since a position was opened.
+# Triggers when price drops TRAILING_STOP_PCT% from the peak.
+
+_peak_prices: dict[str, float] = {}   # symbol -> highest price since entry
+
+
+def record_peak_price(symbol: str, price: float) -> None:
+    """Call when a position is first opened to set the initial peak."""
+    _peak_prices[symbol.upper()] = price
+    log.debug("[safety] Trailing stop initialized: %s @ %.4f", symbol, price)
+
+
+def update_peak_price(symbol: str, price: float) -> None:
+    """Call each cycle to ratchet the peak higher as price rises."""
+    sym = symbol.upper()
+    if sym not in _peak_prices or price > _peak_prices[sym]:
+        _peak_prices[sym] = price
+
+
+def trailing_stop_triggered(symbol: str, price: float) -> bool:
+    """True if price has fallen >= TRAILING_STOP_PCT from the peak."""
+    sym  = symbol.upper()
+    peak = _peak_prices.get(sym)
+    if peak is None or peak <= 0:
+        return False
+    drawdown = (peak - price) / peak
+    if drawdown >= config.TRAILING_STOP_PCT:
+        log.info(
+            "[safety] TRAILING STOP: %s peak=%.4f current=%.4f drawdown=%.2f%%",
+            sym, peak, price, drawdown * 100,
+        )
+        return True
+    return False
+
+
+def clear_peak_price(symbol: str) -> None:
+    """Call when a position is closed."""
+    _peak_prices.pop(symbol.upper(), None)
+
+
+def get_peak_price(symbol: str) -> float | None:
+    return _peak_prices.get(symbol.upper())
+
+
+# ── PDT (Pattern Day Trader) protection ──────────────────────────────────────
+
+_positions_opened_today: set[str] = set()
+
+
+def record_buy_date(symbol: str) -> None:
+    _positions_opened_today.add(symbol.upper())
+
+
+def clear_position_date(symbol: str) -> None:
+    _positions_opened_today.discard(symbol.upper())
+
+
+def would_be_day_trade(symbol: str) -> bool:
+    return symbol.upper() in _positions_opened_today
+
+
+def check_pdt_allows_sell(trading_client: TradingClient, symbol: str) -> bool:
+    if not would_be_day_trade(symbol):
+        return True
+    try:
+        account = trading_client.get_account()
+        equity  = float(account.equity)
+        if equity >= 25_000:
+            return True
+        dt_count = int(getattr(account, 'daytrade_count', 0) or 0)
+        if dt_count >= 3:
+            log.warning("[safety] PDT BLOCKED sell on %s: %d/3 day trades used.", symbol, dt_count)
+            log_trade_event(log, "PDT_SELL_BLOCKED", symbol=symbol, daytrade_count=dt_count)
+            return False
+    except Exception as exc:
+        log.warning("[safety] PDT sell check failed: %s. Allowing.", exc)
+    return True
+
+
+def check_pdt_allows_buy(trading_client: TradingClient) -> bool:
+    try:
+        account = trading_client.get_account()
+        equity  = float(account.equity)
+        if equity >= 25_000:
+            return True
+        dt_count = int(getattr(account, 'daytrade_count', 0) or 0)
+        if dt_count >= 3:
+            log.warning("[safety] PDT BLOCKED buy: %d/3 day trades used.", dt_count)
+            log_trade_event(log, "PDT_BUY_BLOCKED", daytrade_count=dt_count)
+            return False
+    except Exception as exc:
+        log.warning("[safety] PDT buy check failed: %s. Allowing.", exc)
+    return True
+
+
+def get_pdt_info(trading_client: TradingClient) -> dict:
+    try:
+        account  = trading_client.get_account()
+        equity   = float(account.equity)
+        if equity >= 25_000:
+            return {"applies": False, "used": 0, "remaining": 999}
+        dt_count = int(getattr(account, 'daytrade_count', 0) or 0)
+        return {"applies": True, "used": dt_count, "remaining": max(0, 3 - dt_count)}
+    except Exception:
+        return {"applies": False, "used": 0, "remaining": 3}
+
+
+# ── Dynamic position sizing ──────────────────────────────────────────────────
+
+def get_dynamic_fraction(consecutive_losses: int) -> float:
+    """
+    Return the position size fraction adjusted for the current losing streak.
+    Base: MAX_POSITION_FRACTION (5%)
+    After LOSING_STREAK_THRESHOLD consecutive losses: halved to protect capital.
+    """
+    fraction = config.MAX_POSITION_FRACTION
+    if consecutive_losses >= config.LOSING_STREAK_THRESHOLD:
+        fraction *= config.LOSING_STREAK_SIZE_FACTOR
+        log.warning(
+            "[safety] Losing streak (%d losses). Cutting position size to %.1f%% of equity.",
+            consecutive_losses, fraction * 100,
+        )
+    return fraction
+
+
+def calculate_safe_qty(price: float, equity: float,
+                       fraction: float | None = None) -> int:
+    """
+    Return the maximum number of whole shares we can buy.
+    fraction: override for dynamic position sizing (defaults to config.MAX_POSITION_FRACTION)
+    """
+    if price <= 0:
+        return 0
+    if fraction is None:
+        fraction = config.MAX_POSITION_FRACTION
+
+    cap_by_dollar   = config.MAX_POSITION_VALUE / price
+    cap_by_fraction = (equity * fraction) / price
+    qty = math.floor(min(cap_by_dollar, cap_by_fraction))
+
+    log.debug("[safety] qty: price=%.2f equity=%.2f frac=%.3f -> cap_$=%.1f cap_pct=%.1f -> qty=%d",
+              price, equity, fraction, cap_by_dollar, cap_by_fraction, qty)
+
+    if qty < 1:
+        log.warning("[safety] qty=%d (< 1) at price=%.2f. Skipping.", qty, price)
+    return qty
+
+
+# ── Market hours ─────────────────────────────────────────────────────────────
+
+def assert_market_open(trading_client: TradingClient) -> bool:
+    clock = trading_client.get_clock()
+    if not clock.is_open:
+        log.warning("[safety] Market CLOSED. Next open: %s.",
+                    clock.next_open.strftime("%Y-%m-%dT%H:%M:%S%z"))
+        return False
+    return True
+
+
+# ── Kill switch (single symbol) ──────────────────────────────────────────────
+
+def kill_switch(trading_client: TradingClient) -> None:
+    """Emergency stop for config.SYMBOL only."""
+    log.critical("[KILL SWITCH] Liquidating %s", config.SYMBOL)
+    log_trade_event(log, "KILL_SWITCH_ACTIVATED", symbol=config.SYMBOL)
+
+    try:
+        orders = trading_client.get_orders(
+            filter=GetOrdersRequest(status=QueryOrderStatus.OPEN,
+                                    symbols=[config.SYMBOL])
+        )
+        for o in orders:
+            trading_client.cancel_order_by_id(o.id)
+    except Exception as exc:
+        log.error("[kill_switch] Cancel orders failed: %s", exc)
+
+    try:
+        positions = trading_client.get_all_positions()
+        held = next((p for p in positions if p.symbol == config.SYMBOL), None)
+        if held and float(held.qty) > 0:
+            qty = float(held.qty)
+            order = trading_client.submit_order(
+                MarketOrderRequest(symbol=config.SYMBOL, qty=qty,
+                                   side=OrderSide.SELL, time_in_force=TimeInForce.DAY)
+            )
+            log_trade_event(log, "KILL_SWITCH_SELL", symbol=config.SYMBOL,
+                            qty=qty, order_id=order.id)
+    except Exception as exc:
+        log.error("[kill_switch] Liquidation failed: %s", exc)
+
+
+# ── Graceful shutdown (ALL positions) ────────────────────────────────────────
+
+def liquidate_all(trading_client: TradingClient) -> None:
+    """
+    Cancel ALL open orders + market-sell ALL positions.
+    Called on Ctrl-C / SIGTERM / 'Sell All & Stop' button.
+    """
+    log.critical("=" * 60)
+    log.critical("[SHUTDOWN] Cancelling ALL orders + liquidating ALL positions")
+    log.critical("=" * 60)
+    log_trade_event(log, "GRACEFUL_SHUTDOWN_STARTED")
+
+    try:
+        orders = trading_client.get_orders(
+            filter=GetOrdersRequest(status=QueryOrderStatus.OPEN)
+        )
+        for o in orders:
+            try:
+                trading_client.cancel_order_by_id(o.id)
+                log_trade_event(log, "ORDER_CANCELLED_SHUTDOWN",
+                                order_id=o.id, symbol=o.symbol)
+            except Exception as e:
+                log.error("[shutdown] Cancel %s failed: %s", o.id, e)
+    except Exception as exc:
+        log.error("[shutdown] Fetch orders failed: %s", exc)
+
+    try:
+        positions = trading_client.get_all_positions()
+        longs = [p for p in positions if float(p.qty) > 0]
+        for pos in longs:
+            try:
+                qty   = float(pos.qty)
+                order = trading_client.submit_order(
+                    MarketOrderRequest(symbol=pos.symbol, qty=qty,
+                                       side=OrderSide.SELL,
+                                       time_in_force=TimeInForce.DAY)
+                )
+                log.info("[shutdown] Sell submitted: %s %.0f → %s", pos.symbol, qty, order.id)
+                log_trade_event(log, "SHUTDOWN_SELL", symbol=pos.symbol,
+                                qty=qty, order_id=order.id)
+            except Exception as e:
+                log.error("[shutdown] Sell %s failed: %s", pos.symbol, e)
+        if longs:
+            time.sleep(2)
+    except Exception as exc:
+        log.error("[shutdown] Fetch positions failed: %s", exc)
+
+    log.critical("[SHUTDOWN] Done. All positions submitted for liquidation.")
+    log_trade_event(log, "GRACEFUL_SHUTDOWN_COMPLETE")

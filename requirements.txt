@@ -1,0 +1,11 @@
+# Alpaca trading SDK (v3+ uses alpaca-py)
+alpaca-py>=0.13.0
+
+# Environment variable loading from .env
+python-dotenv>=1.0.0
+
+# Numerical operations for moving average calculations
+numpy>=1.24.0
+
+# Data manipulation for bar/OHLCV data
+pandas>=2.0.0
