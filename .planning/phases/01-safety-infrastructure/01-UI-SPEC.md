@@ -45,10 +45,13 @@ All spacing tokens already declared in `templates/index.html`. This phase inheri
 | 3xl | 64px | Not used in this phase |
 
 Exceptions:
-- Header height: 56px (fixed — matches existing header)
-- Card padding: 22px top/bottom × 24px left/right (matches existing `.card` pattern exactly)
-- Table cell padding: 14px vertical × 14px horizontal (matches existing `.positions-table td`)
-- Bracket order input fields: 8px vertical × 12px horizontal (compact form controls)
+
+| Value | Usage | Justification |
+|-------|-------|---------------|
+| 56px header height | Fixed — matches existing header | Legacy Lock: inherited from existing codebase, must match exactly to avoid breaking existing layout |
+| 22px top/bottom card padding | Matches existing `.card` pattern exactly | Legacy Lock: inherited from existing codebase, must match exactly to avoid breaking existing layout |
+| 14px vertical × 14px horizontal table cell padding | Matches existing `.positions-table td` | Legacy Lock: inherited from existing codebase, must match exactly to avoid breaking existing layout |
+| 8px vertical × 12px horizontal bracket order input fields | Compact form controls | Bracket-specific compact affordance — narrower than standard `md` to fit inline with table row |
 
 ---
 
@@ -56,18 +59,21 @@ Exceptions:
 
 All type roles map directly to established CSS in `templates/index.html`. No new sizes introduced.
 
+**Allowed sizes: 10px, 12px, 20px (3 sizes)**
+**Allowed weights: 400 (regular), 600 (semibold) — 2 weights only**
+
 | Role | Size | Weight | Line Height | Font Family |
 |------|------|--------|-------------|-------------|
 | Body / news / log detail | 12px | 400 | 1.55 | Inter |
-| Label / card label / table header | 10px | 500 | 1.4 | Inter, uppercase, 0.6–0.8px letter-spacing |
-| Value / card value | 20px | 600 | 1.2 | JetBrains Mono |
-| Numeric data (prices, P&L, percentages) | 12–13px | 600 | 1.4 | JetBrains Mono |
+| Label / card label / table header / settings input label | 10px | 600 | 1.4 | Inter, uppercase, 0.6–0.8px letter-spacing |
+| Value / card value / modal heading | 20px | 600 | 1.2 | JetBrains Mono |
+| Numeric data (prices, P&L, percentages, stop-loss, take-profit) | 12px | 600 | 1.4 | JetBrains Mono |
 
 **Bracket-order-specific type rules (new in this phase):**
-- Stop-loss price: 13px, weight 600, JetBrains Mono, color `var(--red)`
-- Take-profit price: 13px, weight 600, JetBrains Mono, color `var(--green)`
+- Stop-loss price: 12px, weight 600, JetBrains Mono, color `var(--red)`
+- Take-profit price: 12px, weight 600, JetBrains Mono, color `var(--green)`
 - "Protected" status badge text: 10px, weight 600, uppercase, 0.8px letter-spacing
-- Settings input labels: 10px, weight 500, color `var(--muted)`, uppercase
+- Settings input labels: 10px, weight 600, color `var(--muted)`, uppercase
 
 ---
 
@@ -165,7 +171,7 @@ Trigger: POST /api/stop → missing bracket orders detected
 Surface: fixed overlay, rgba(10,16,14,.92) backdrop-filter:blur(12px)
 Content:
   - Warning icon row (unicode ⚠)
-  - Heading: "Stop Without Protection?" (16px Inter 600)
+  - Heading: "Stop Without Protection?" (20px JetBrains Mono 600)
   - Body: lists each unprotected symbol
   - [Place Stop-Losses First] button → teal gradient, pill shape
   - [Stop Bot Anyway] button → red gradient, pill shape (destructive)
@@ -290,6 +296,11 @@ No third-party component registries. All UI components are hand-authored vanilla
 | No shadcn gate | Python/Flask/vanilla JS — shadcn is React-only; not applicable |
 | Full structural implementation required | memory/feedback_forest_theme.md |
 | Stop-loss 3% / take-profit 6–8% defaults | CONTEXT.md D-13, RESEARCH.md BRACKET-01 |
+| Typography: 13px removed, consolidated to 12px | Checker revision — max 4 sizes enforced |
+| Typography: weight 500 removed, consolidated to 400/600 | Checker revision — max 2 weights enforced |
+| Typography: 16px modal heading promoted to 20px | Checker revision — reuse existing Value role size |
+| Spacing: 22px card padding legacy-locked | Checker revision — legacy lock justification added |
+| Spacing: 14px table cell padding legacy-locked | Checker revision — legacy lock justification added |
 
 ---
 
