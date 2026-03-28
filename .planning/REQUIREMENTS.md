@@ -20,8 +20,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **BRACKET-01**: Every stock buy immediately places a bracket order on Alpaca with stop-loss (3% below entry) and take-profit (6-8% above entry) that execute on Alpaca's servers even when bot is offline
 - [x] **BRACKET-02**: On startup, bot checks all existing positions for active stop-loss orders on Alpaca — recreates missing ones
 - [x] **BRACKET-03**: On shutdown, bot confirms all positions have active server-side stop-losses — warns user and offers to place them if missing
-- [ ] **BRACKET-04**: Dashboard shows stop-loss and take-profit prices for each open position
-- [ ] **BRACKET-05**: Stop-loss and take-profit percentages are adjustable from the dashboard
+- [x] **BRACKET-04**: Dashboard shows stop-loss and take-profit prices for each open position
+- [x] **BRACKET-05**: Stop-loss and take-profit percentages are adjustable from the dashboard
 
 ### Strategy Engine
 
@@ -128,8 +128,8 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | BRACKET-01 | Phase 1 | Complete |
 | BRACKET-02 | Phase 1 | Complete |
 | BRACKET-03 | Phase 1 | Complete |
-| BRACKET-04 | Phase 1 | Pending |
-| BRACKET-05 | Phase 1 | Pending |
+| BRACKET-04 | Phase 1 | Complete |
+| BRACKET-05 | Phase 1 | Complete |
 | STRAT-01 | Phase 2 | Pending |
 | STRAT-02 | Phase 2 | Pending |
 | STRAT-03 | Phase 2 | Pending |
