@@ -2,7 +2,7 @@
 
 ## Overview
 
-Starting from a working single-strategy stock bot, this roadmap extends it into a multi-strategy swing trading system with options execution. The build order is forced by dependency: safety infrastructure must be solid before any options order can be submitted, the strategy registry must exist before scanning can be multi-dimensional, options chain analysis must be validated before execution risk is introduced, and the dashboard updates are purely additive once all backend data exists.
+Starting from a working single-strategy stock bot, this roadmap extends it into a multi-strategy swing trading system with options execution and AI-powered analysis. The build order prioritizes capital protection first (bracket orders for offline safety), then smarter entries (prediction engine), then options expansion, and finally AI-assisted analysis. The user cannot monitor the bot 24/7, so server-side protection is the #1 priority.
 
 ## Phases
 
@@ -12,36 +12,45 @@ Starting from a working single-strategy stock bot, this roadmap extends it into 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Safety Infrastructure** - Harden the bot's foundation to handle options before any options code is added
-- [ ] **Phase 2: Strategy Engine + Stock Scanning** - Replace single-strategy loop with multi-strategy registry and smarter scanner
+- [ ] **Phase 1: Safety Infrastructure + Bracket Orders** - State persistence, order fill handling, and server-side bracket orders that protect positions when the bot is offline
+- [ ] **Phase 2: Prediction Engine + Stock Scanning** - Multi-strategy scoring with news sentiment, volume analysis, and conviction-based trade filtering
 - [ ] **Phase 3: Options Trading** - Add options chain analysis and order execution
 - [ ] **Phase 4: Position Sizing & Allocation** - Enforce dual capital buckets and trade budget gate
-- [ ] **Phase 5: Dashboard Updates** - Expose options positions, strategy scores, and watchlist management in the UI
+- [ ] **Phase 5: Dashboard + Predictions + AI Analyst** - Predictions tab, conviction breakdowns, watchlist management, and AI chart analysis via Anthropic API
 
 ## Phase Details
 
-### Phase 1: Safety Infrastructure
-**Goal**: The bot survives restarts without losing state, recognizes options symbols in PDT tracking, handles order fills and rejections explicitly, and can emergency-liquidate both stocks and options
+### Phase 1: Safety Infrastructure + Bracket Orders
+**Goal**: The bot survives restarts without losing state, handles order fills explicitly, and — critically — places server-side bracket orders (stop-loss + take-profit) on Alpaca for every position so the user is protected even when the bot is offline
 **Depends on**: Nothing (first phase)
-**Requirements**: SAFE-01, SAFE-02, SAFE-03, SAFE-04, SAFE-05
+**Requirements**: SAFE-01, SAFE-02, SAFE-03, SAFE-04, SAFE-05, BRACKET-01, BRACKET-02, BRACKET-03, BRACKET-04, BRACKET-05
 **Success Criteria** (what must be TRUE):
   1. Bot restarts and restores peak prices, entry dates, and PDT history without data loss
   2. An options round-trip using an OCC-format symbol counts against the 3-trade PDT limit
   3. Order submission polls for fill status and handles partial fills and rejections with explicit log messages — not silent success
   4. `liquidate_all()` closes both stock positions and open options positions cleanly
   5. Bot refuses to start in live mode if options trading is not enabled on the Alpaca account
+  6. Every stock buy is immediately followed by a bracket order (stop-loss + take-profit) that lives on Alpaca's servers
+  7. On startup, bot verifies all existing positions have active stop-loss orders — missing ones are recreated
+  8. On shutdown, bot confirms all positions have active server-side stop-losses before allowing exit
+  9. Dashboard shows stop-loss and take-profit prices for each position
+  10. Stop-loss and take-profit percentages are adjustable from the dashboard
 **Plans**: TBD
 
-### Phase 2: Strategy Engine + Stock Scanning
-**Goal**: Scanner produces a unified ranked candidate list from three distinct strategies plus sector scanning and a curated watchlist, replacing the top-daily-movers approach
+### Phase 2: Prediction Engine + Stock Scanning
+**Goal**: Scanner produces a unified ranked candidate list using multi-strategy scoring (technical + volume + news sentiment + sector momentum), only takes trades above a 7/10 conviction threshold, and logs reasoning for every entry and skip decision
 **Depends on**: Phase 1
-**Requirements**: STRAT-01, STRAT-02, STRAT-03, STRAT-04, STRAT-05, STRAT-06, SCAN-01, SCAN-02, SCAN-03, SCAN-04, SCAN-05
+**Requirements**: STRAT-01, STRAT-02, STRAT-03, STRAT-04, STRAT-05, STRAT-06, SCAN-01, SCAN-02, SCAN-03, SCAN-04, SCAN-05, PRED-01, PRED-02, PRED-03, PRED-04, PRED-05
 **Success Criteria** (what must be TRUE):
-  1. Each candidate in the ranked list carries a 0-100 composite score and a strategy tag (momentum, reversion, or catalyst)
-  2. Scanner evaluates momentum breakout, mean reversion, and catalyst signals independently before combining scores
-  3. Sector ETF performance (XLK, XLE, XLF, etc.) surfaces leaders from top-performing sectors in the candidate list
-  4. A curated watchlist of 20-30 symbols is always included in scans and is editable via config
-  5. Full scan of 35-40 symbols completes in under 15 seconds
+  1. Each candidate carries a 0-10 conviction score with breakdown (technical, volume, sentiment, sector)
+  2. Scanner evaluates momentum breakout, mean reversion, and catalyst signals independently before combining
+  3. News sentiment analysis scores headlines as positive/negative/neutral and factors into conviction
+  4. Unusual volume spikes (2x+ normal) are detected and boost conviction scores
+  5. Sector ETF performance surfaces leaders from top-performing sectors
+  6. Only trades with conviction >= 7/10 are executed — lower scores are skipped with logged reasoning
+  7. Every trade entry and skip is logged with full reasoning breakdown
+  8. Curated watchlist of 20-30 symbols always included in scans, editable via config
+  9. Full scan of 35-40 symbols completes in under 15 seconds
 **Plans**: TBD
 
 ### Phase 3: Options Trading
@@ -68,15 +77,19 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Bot enforces a hard 3-trade ceiling per 5-business-day window across both stocks and options combined — a 4th trade is blocked
 **Plans**: TBD
 
-### Phase 5: Dashboard Updates
-**Goal**: Dashboard shows options positions with correct P&L math, surfaces which strategy triggered each trade, displays ranked scan candidates with scores, and lets the user manage the watchlist from the UI
+### Phase 5: Dashboard + Predictions + AI Analyst
+**Goal**: Dashboard shows options positions, conviction score breakdowns for all watchlist stocks, a Predictions tab with the bot's outlook and reasoning, watchlist management, and an AI Chart Analyst panel powered by the Anthropic API that gives plain-English analysis and trade recommendations
 **Depends on**: Phase 4
-**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04
+**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, AI-01, AI-02, AI-03, AI-04
 **Success Criteria** (what must be TRUE):
   1. Options positions display premium paid, current P&L using the 100x multiplier, and days to expiry countdown
   2. Every open position shows which strategy triggered it (momentum, reversion, or catalyst)
   3. A scan results view shows all ranked candidates with their composite scores and strategy types
   4. User can add or remove symbols from the curated watchlist through the dashboard without editing config files
+  5. Predictions tab shows conviction score breakdown (technical, volume, sentiment, sector) for each watchlist stock with reasoning
+  6. AI Chart Analyst panel uses Claude claude-sonnet-4-20250514 to analyze current price action, indicators, and news, producing a 2-3 sentence summary with bullish/bearish/neutral indicator and confidence score
+  7. AI analysis updates on symbol switch and every few minutes
+  8. "What should I do?" button gives specific buy/sell/hold/wait recommendation with reasoning
 **Plans**: TBD
 **UI hint**: yes
 
@@ -87,8 +100,8 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Safety Infrastructure | 0/? | Not started | - |
-| 2. Strategy Engine + Stock Scanning | 0/? | Not started | - |
+| 1. Safety Infrastructure + Bracket Orders | 0/? | Not started | - |
+| 2. Prediction Engine + Stock Scanning | 0/? | Not started | - |
 | 3. Options Trading | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | 0/? | Not started | - |
-| 5. Dashboard Updates | 0/? | Not started | - |
+| 5. Dashboard + Predictions + AI Analyst | 0/? | Not started | - |

@@ -15,14 +15,30 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **SAFE-04**: `liquidate_all()` handles both stock positions and options positions (using OptionOrderRequest with LIMIT)
 - [ ] **SAFE-05**: Bot validates options trading is enabled on the Alpaca account at startup, fails loudly if not
 
+### Bracket Orders (Server-Side Protection)
+
+- [ ] **BRACKET-01**: Every stock buy immediately places a bracket order on Alpaca with stop-loss (3% below entry) and take-profit (6-8% above entry) that execute on Alpaca's servers even when bot is offline
+- [ ] **BRACKET-02**: On startup, bot checks all existing positions for active stop-loss orders on Alpaca — recreates missing ones
+- [ ] **BRACKET-03**: On shutdown, bot confirms all positions have active server-side stop-losses — warns user and offers to place them if missing
+- [ ] **BRACKET-04**: Dashboard shows stop-loss and take-profit prices for each open position
+- [ ] **BRACKET-05**: Stop-loss and take-profit percentages are adjustable from the dashboard
+
 ### Strategy Engine
 
 - [ ] **STRAT-01**: Strategy registry with BaseStrategy ABC — each strategy implements `scan(symbol, df) -> Candidate`
 - [ ] **STRAT-02**: MomentumStrategy detects price breaking N-day high on >2x average volume
 - [ ] **STRAT-03**: MeanReversionStrategy detects RSI < 35 at support levels (lower Bollinger Band)
 - [ ] **STRAT-04**: CatalystStrategy wraps existing ARK/analyst scoring from `catalysts.py`
-- [ ] **STRAT-05**: Combined 0-100 scoring system ranks candidates across all strategies
+- [ ] **STRAT-05**: Combined 0-10 conviction scoring system ranks candidates across all strategies with breakdown (technical, volume, sentiment, sector)
 - [ ] **STRAT-06**: Scanner aggregates all strategy results into unified ranked list
+
+### Prediction Engine
+
+- [ ] **PRED-01**: News sentiment analysis on headlines from Alpaca news API and financial RSS feeds — scored positive/negative/neutral per stock
+- [ ] **PRED-02**: Unusual volume spike detection (2x+ normal volume) factored into conviction score
+- [ ] **PRED-03**: Earnings date awareness — factor approaching earnings into risk assessment
+- [ ] **PRED-04**: Only trades with conviction score >= 7/10 are executed — lower scores skipped with logged reasoning
+- [ ] **PRED-05**: Every trade entry and skip logged with full reasoning breakdown (which signals fired, which didn't, final score)
 
 ### Stock Scanning
 
@@ -54,6 +70,15 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **DASH-02**: Strategy tagging visible — which strategy triggered each position
 - [ ] **DASH-03**: Scan results view showing ranked candidates with scores and strategy types
 - [ ] **DASH-04**: Watchlist management UI — add/remove symbols from curated list
+- [ ] **DASH-05**: Predictions tab showing conviction score breakdown (technical, volume, sentiment, sector) for each watchlist stock with reasoning
+- [ ] **DASH-06**: Trade reasoning log visible — why the bot entered or skipped each trade
+
+### AI Chart Analyst
+
+- [ ] **AI-01**: AI assistant panel next to chart using Anthropic API (claude-sonnet-4-20250514) that analyzes price, RSI, MACD, SMA crossover, volume, and news for the selected stock
+- [ ] **AI-02**: Plain English 2-3 sentence summary with bullish/bearish/neutral indicator and confidence score (X/10)
+- [ ] **AI-03**: "What should I do?" button gives specific buy/sell/hold/wait recommendation with reasoning; "Explain more" expands detail
+- [ ] **AI-04**: Analysis updates on symbol switch and every few minutes automatically
 
 ## v2 Requirements
 
@@ -100,6 +125,11 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SAFE-03 | Phase 1 | Pending |
 | SAFE-04 | Phase 1 | Pending |
 | SAFE-05 | Phase 1 | Pending |
+| BRACKET-01 | Phase 1 | Pending |
+| BRACKET-02 | Phase 1 | Pending |
+| BRACKET-03 | Phase 1 | Pending |
+| BRACKET-04 | Phase 1 | Pending |
+| BRACKET-05 | Phase 1 | Pending |
 | STRAT-01 | Phase 2 | Pending |
 | STRAT-02 | Phase 2 | Pending |
 | STRAT-03 | Phase 2 | Pending |
@@ -111,6 +141,11 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SCAN-03 | Phase 2 | Pending |
 | SCAN-04 | Phase 2 | Pending |
 | SCAN-05 | Phase 2 | Pending |
+| PRED-01 | Phase 2 | Pending |
+| PRED-02 | Phase 2 | Pending |
+| PRED-03 | Phase 2 | Pending |
+| PRED-04 | Phase 2 | Pending |
+| PRED-05 | Phase 2 | Pending |
 | OPT-01 | Phase 3 | Pending |
 | OPT-02 | Phase 3 | Pending |
 | OPT-03 | Phase 3 | Pending |
@@ -125,12 +160,18 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | DASH-02 | Phase 5 | Pending |
 | DASH-03 | Phase 5 | Pending |
 | DASH-04 | Phase 5 | Pending |
+| DASH-05 | Phase 5 | Pending |
+| DASH-06 | Phase 5 | Pending |
+| AI-01 | Phase 5 | Pending |
+| AI-02 | Phase 5 | Pending |
+| AI-03 | Phase 5 | Pending |
+| AI-04 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 27 total
-- Mapped to phases: 27
+- v1 requirements: 43 total
+- Mapped to phases: 43
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after initial definition*
+*Last updated: 2026-03-27 after roadmap rework — added BRACKET, PRED, DASH-05/06, AI requirements*

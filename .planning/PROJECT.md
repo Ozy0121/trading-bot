@@ -23,7 +23,11 @@ Maximize the value of each of the 3 allowed trades per week by finding the highe
 
 ### Active
 
+- [ ] Server-side bracket orders (stop-loss + take-profit) on Alpaca for offline protection — #1 priority
 - [ ] Multi-strategy swing scanner (momentum breakouts, mean reversion, catalyst-driven)
+- [ ] Prediction engine with conviction scoring (technical + volume + sentiment + sector)
+- [ ] News sentiment analysis on watchlist stocks
+- [ ] Only execute trades above 7/10 conviction threshold with logged reasoning
 - [ ] Replace top daily movers with multi-day hold candidates
 - [ ] Options trading via Alpaca API (simple calls/puts)
 - [ ] Equal allocation between stock and options strategies
@@ -31,10 +35,10 @@ Maximize the value of each of the 3 allowed trades per week by finding the highe
 - [ ] Technical screener (breakouts, RSI divergence, volume spikes, MACD crossovers)
 - [ ] Sector/theme-based scanning (hot sectors, leaders within them)
 - [ ] Curated watchlist management (20-30 known stocks)
-- [ ] Combined scoring across all scanning methods
 - [ ] 1-3 day hold time targeting with appropriate exit signals
 - [ ] Options chain analysis and strike/expiry selection
-- [ ] Dashboard updates for options positions and P&L
+- [ ] AI Chart Analyst panel (Anthropic API) with plain-English analysis and recommendations
+- [ ] Dashboard: predictions tab, conviction breakdowns, options P&L, trade reasoning logs
 
 ### Out of Scope
 
@@ -65,9 +69,12 @@ Maximize the value of each of the 3 allowed trades per week by finding the highe
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
+| Server-side bracket orders as primary protection | User can't monitor 24/7; Alpaca stops execute when bot is offline | — Pending |
 | Equal stock/options allocation | Diversify strategy types with limited capital | — Pending |
 | Simple calls/puts only (no spreads) | $500 account too small for multi-leg strategies | — Pending |
 | Multi-method scanning (technical + sector + watchlist) | Maximize signal quality with limited trade count | — Pending |
+| 7/10 conviction threshold for trade execution | Limited trades (3/week) means only highest-conviction setups | — Pending |
+| Anthropic API (claude-sonnet-4-20250514) for AI analysis | Plain-English market analysis on dashboard | — Pending |
 | Keep Alpaca as sole broker | Already integrated, supports options via same SDK | — Pending |
 | Aggressive position sizing | Small account needs growth, not capital preservation | — Pending |
 | 1-3 day hold targeting | Balances PDT constraints with active management | — Pending |
@@ -90,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after initialization*
+*Last updated: 2026-03-27 after roadmap rework — added bracket orders, prediction engine, AI analyst*

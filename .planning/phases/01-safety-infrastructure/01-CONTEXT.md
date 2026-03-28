@@ -1,4 +1,4 @@
-# Phase 1: Safety Infrastructure - Context
+# Phase 1: Safety Infrastructure + Bracket Orders - Context
 
 **Gathered:** 2026-03-27
 **Status:** Ready for planning
@@ -6,7 +6,9 @@
 <domain>
 ## Phase Boundary
 
-Harden the bot's foundation to handle options before any options code is added. This phase delivers: state persistence across restarts, options-aware PDT tracking, order fill confirmation with intelligent partial fill handling, options-capable emergency liquidation, and startup validation of options trading capability.
+Harden the bot's foundation and add server-side position protection. This phase delivers: state persistence across restarts, options-aware PDT tracking, order fill confirmation with intelligent partial fill handling, options-capable emergency liquidation, startup validation, AND — critically — bracket orders on Alpaca's servers (stop-loss + take-profit) for every position so the user is protected when offline.
+
+The bracket orders are the highest priority item in this phase. The user cannot monitor the bot 24/7 and needs Alpaca's servers to enforce stop-losses and take-profits automatically.
 
 </domain>
 
@@ -35,12 +37,21 @@ Harden the bot's foundation to handle options before any options code is added. 
 ### PDT Options Awareness (SAFE-02)
 - **D-12:** Straightforward implementation — PDT tracker must recognize OCC-format options symbols (e.g., `AAPL240119C00150000`) and count them toward the 3-trade limit. No user decision needed — the OCC format is standardized.
 
+### Bracket Orders (BRACKET-01 through BRACKET-05)
+- **D-13:** Every stock buy MUST immediately place a bracket order on Alpaca with stop-loss (3% below entry) and take-profit (6-8% above entry). These orders live on Alpaca's servers and execute even if the bot/laptop is off. This is the #1 priority in the phase.
+- **D-14:** On startup, bot must check all existing positions for active stop-loss orders on Alpaca. If any position is missing a stop-loss, recreate it automatically.
+- **D-15:** On shutdown, bot must confirm all positions have active server-side stop-losses. If any are missing, WARN the user and offer to place them before exiting.
+- **D-16:** Dashboard must show stop-loss and take-profit prices for each open position.
+- **D-17:** Stop-loss and take-profit percentages must be adjustable from the dashboard (API endpoint + UI controls).
+- **D-18:** The existing local trailing stop system (`_peak_prices`, `trailing_stop_triggered()`) becomes redundant for stocks with bracket orders. Claude's Discretion on whether to keep it as a backup or remove it — bracket orders on Alpaca's servers are now the primary protection mechanism.
+
 ### Claude's Discretion
 Areas where Claude has flexibility:
 - Storage format and location for state persistence (D-01, D-02, D-03)
 - Order rejection handling strategy (D-07)
 - Options liquidation pricing and architecture (D-08, D-09)
 - Startup validation behavior and scope (D-10, D-11)
+- Whether to keep local trailing stops as backup alongside bracket orders (D-18)
 
 Claude should make pragmatic choices favoring simplicity, debuggability, and safety — appropriate for a small-account bot with limited complexity.
 
@@ -65,7 +76,7 @@ Claude should make pragmatic choices favoring simplicity, debuggability, and saf
 - `.planning/codebase/CONCERNS.md` — Documents all known issues this phase addresses: no state persistence (Tech Debt #2), no order-to-fill confirmation (Missing Critical Features #1), no partial fill handling (#3), trailing stop peak not persisted (Known Bug #3), PDT race conditions (Fragile Areas #2).
 
 ### Requirements
-- `.planning/REQUIREMENTS.md` — SAFE-01 through SAFE-05 definitions with acceptance criteria.
+- `.planning/REQUIREMENTS.md` — SAFE-01 through SAFE-05 and BRACKET-01 through BRACKET-05 definitions with acceptance criteria.
 
 </canonical_refs>
 
@@ -98,6 +109,8 @@ Claude should make pragmatic choices favoring simplicity, debuggability, and saf
 
 - Partial fill handling should be intelligent — analyze fill ratio, time elapsed, and context to decide whether to accept partial or retry. User explicitly wants the bot to "think about it" rather than follow a rigid rule.
 - The bot serves a $500 account — complexity should match the stakes. Simple, debuggable solutions preferred over enterprise-grade infrastructure.
+- Bracket orders are the user's #1 priority — they cannot be at their computer 24/7 and need server-side protection. Every dollar of profit is at risk when the laptop is closed without bracket orders.
+- The local trailing stop system becomes secondary once bracket orders exist. Alpaca's servers handle stop-losses even when the bot is offline — this is the whole point.
 
 </specifics>
 
