@@ -12,8 +12,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **SAFE-01**: Bot persists position state (peak prices, entry dates, PDT history) to local file, survives restarts
 - [x] **SAFE-02**: PDT tracker recognizes OCC-format options symbols and counts them toward the 3-trade limit
 - [ ] **SAFE-03**: Order submission polls for fill status with timeout, handles partial fills and rejections explicitly
-- [ ] **SAFE-04**: `liquidate_all()` handles both stock positions and options positions (using OptionOrderRequest with LIMIT)
-- [ ] **SAFE-05**: Bot validates options trading is enabled on the Alpaca account at startup, fails loudly if not
+- [x] **SAFE-04**: `liquidate_all()` handles both stock positions and options positions (using OptionOrderRequest with LIMIT)
+- [x] **SAFE-05**: Bot validates options trading is enabled on the Alpaca account at startup, fails loudly if not
 
 ### Bracket Orders (Server-Side Protection)
 
@@ -123,8 +123,8 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SAFE-01 | Phase 1 | Complete |
 | SAFE-02 | Phase 1 | Complete |
 | SAFE-03 | Phase 1 | Pending |
-| SAFE-04 | Phase 1 | Pending |
-| SAFE-05 | Phase 1 | Pending |
+| SAFE-04 | Phase 1 | Complete |
+| SAFE-05 | Phase 1 | Complete |
 | BRACKET-01 | Phase 1 | Pending |
 | BRACKET-02 | Phase 1 | Pending |
 | BRACKET-03 | Phase 1 | Pending |
