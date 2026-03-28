@@ -2,12 +2,15 @@
 test_bracket.py
 ---------------
 Tests for bracket order safety functions (BRACKET-01 through BRACKET-03 and SAFE-03).
+Also covers BRACKET-04 (positions API with SL/TP) and BRACKET-05 (config/exits endpoint).
 
 Covers:
   - poll_order_fill: fill, timeout, rejection, partial fill
   - get_active_stop_loss_symbols: with and without orders, correct API call
   - place_oco_exit: correct order parameters
   - check_shutdown_stop_losses: all protected, missing
+  - /api/positions: returns stop_loss_price, take_profit_price, bracket_status
+  - POST /api/config/exits: validates and updates exit percentages at runtime
 """
 
 from __future__ import annotations
@@ -277,3 +280,106 @@ def test_place_buy_handles_rejection(mock_trading_client):
                        symbol="SOFI", consecutive_losses=0)
 
     assert result is False
+
+
+# ── Dashboard API tests — BRACKET-04 and BRACKET-05 ──────────────────────────
+
+@pytest.fixture
+def app_client(mock_trading_client):
+    """Flask test client with a mocked trading client injected."""
+    import dashboard
+    dashboard.set_dependencies(
+        trading_client=mock_trading_client,
+        data_client=None,
+        kill_fn=None,
+        start_fn=None,
+    )
+    dashboard.app.config["TESTING"] = True
+    with dashboard.app.test_client() as client:
+        yield client
+
+
+def test_positions_api_includes_sl_tp(app_client, mock_trading_client):
+    """/api/positions response contains stop_loss_price, take_profit_price, bracket_status."""
+    from alpaca.trading.enums import OrderStatus
+
+    pos = MagicMock()
+    pos.symbol = "SOFI"
+    pos.qty = "10"
+    pos.avg_entry_price = "10.00"
+    pos.current_price = "10.50"
+    pos.unrealized_pl = "5.00"
+    pos.unrealized_plpc = "0.05"
+    pos.market_value = "105.00"
+    mock_trading_client.get_all_positions.return_value = [pos]
+
+    # SOFI has an active stop-loss leg
+    leg = MagicMock()
+    leg.stop_price = 9.70
+    leg.status = OrderStatus.HELD
+    parent = MagicMock()
+    parent.symbol = "SOFI"
+    parent.legs = [leg]
+    mock_trading_client.get_orders.return_value = [parent]
+
+    resp = app_client.get("/api/positions")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert isinstance(data, list)
+    assert len(data) == 1
+    row = data[0]
+    assert "stop_loss_price" in row
+    assert "take_profit_price" in row
+    assert "bracket_status" in row
+    assert row["bracket_status"] == "protected"
+    assert row["stop_loss_price"] is not None
+    assert row["take_profit_price"] is not None
+
+
+def test_positions_api_unprotected(app_client, mock_trading_client):
+    """/api/positions returns bracket_status='unprotected' when no stop-loss exists."""
+    pos = MagicMock()
+    pos.symbol = "AMD"
+    pos.qty = "5"
+    pos.avg_entry_price = "100.00"
+    pos.current_price = "102.00"
+    pos.unrealized_pl = "10.00"
+    pos.unrealized_plpc = "0.02"
+    pos.market_value = "510.00"
+    mock_trading_client.get_all_positions.return_value = [pos]
+    mock_trading_client.get_orders.return_value = []
+
+    resp = app_client.get("/api/positions")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data[0]["bracket_status"] == "unprotected"
+
+
+def test_config_exits_valid(app_client):
+    """POST /api/config/exits with valid values returns 200 and updates config."""
+    import config
+
+    resp = app_client.post(
+        "/api/config/exits",
+        json={"stop_loss_pct": 4, "take_profit_pct": 8},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert config.TRAILING_STOP_PCT == pytest.approx(0.04)
+    assert config.TAKE_PROFIT_PCT == pytest.approx(0.08)
+
+
+def test_config_exits_invalid_range(app_client):
+    """POST /api/config/exits with out-of-range stop-loss returns 400."""
+    resp = app_client.post(
+        "/api/config/exits",
+        json={"stop_loss_pct": 50},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert "errors" in data
+    assert len(data["errors"]) > 0
