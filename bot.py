@@ -20,8 +20,8 @@ import time
 from datetime import datetime, timezone
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, OrderStatus
 from alpaca.data.historical import StockHistoricalDataClient
 
 import config
@@ -35,14 +35,19 @@ from safety import (
     calculate_safe_qty,
     check_pdt_allows_buy,
     check_pdt_allows_sell,
+    check_shutdown_stop_losses,
     clear_peak_price,
     clear_position_date,
     daily_loss_exceeded,
+    get_active_stop_loss_symbols,
     get_dynamic_fraction,
     get_pdt_info,
     get_peak_price,
     kill_switch,
     liquidate_all,
+    load_state_from_file,
+    place_oco_exit,
+    poll_order_fill,
     record_buy_date,
     record_peak_price,
     record_session_start_equity,
@@ -68,6 +73,16 @@ def _handle_signal(signum, frame):
     _shutdown_requested = True
     shared_state.update(status="stopping")
     if _trading_client_global:
+        # ── BRACKET-03: Warn about unprotected positions before shutdown ──────
+        try:
+            result = check_shutdown_stop_losses(_trading_client_global)
+            if not result["all_protected"]:
+                for sym in result["unprotected"]:
+                    log.warning("[bot] WARNING: %s has NO server-side stop-loss!", sym)
+                log_trade_event(log, "SHUTDOWN_UNPROTECTED",
+                                symbols=",".join(result["unprotected"]))
+        except Exception:
+            pass
         try:
             liquidate_all(_trading_client_global)
         except Exception as exc:
@@ -132,7 +147,7 @@ def get_all_positions_data(trading_client: TradingClient) -> list:
 
 def place_buy(trading_client: TradingClient, equity: float, price: float,
               symbol: str, consecutive_losses: int = 0) -> bool:
-    """Submit a market buy. Returns True if order was placed."""
+    """Submit a bracket buy order with stop-loss and take-profit. Returns True if order placed."""
     fraction = get_dynamic_fraction(consecutive_losses)
     qty = calculate_safe_qty(price, equity, fraction=fraction)
     if qty < 1:
@@ -140,17 +155,61 @@ def place_buy(trading_client: TradingClient, equity: float, price: float,
                     price, equity)
         return False
 
-    log.info("[bot] BUY: %d shares of %s @ ~$%.2f (fraction=%.1f%%)",
-             qty, symbol, price, fraction * 100)
+    stop_price = round(price * (1 - config.TRAILING_STOP_PCT), 2)
+    profit_price = round(price * (1 + config.TAKE_PROFIT_PCT), 2)
+
+    log.info("[bot] BUY: %d shares of %s @ ~$%.2f (fraction=%.1f%%) SL=$%.2f TP=$%.2f",
+             qty, symbol, price, fraction * 100, stop_price, profit_price)
     log_trade_event(log, "BUY_ORDER_ATTEMPT", symbol=symbol, qty=qty,
                     approx_price=f"{price:.2f}")
 
     order = trading_client.submit_order(
-        MarketOrderRequest(symbol=symbol, qty=qty,
-                           side=OrderSide.BUY, time_in_force=TimeInForce.DAY)
+        MarketOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.BRACKET,
+            stop_loss=StopLossRequest(stop_price=stop_price),
+            take_profit=TakeProfitRequest(limit_price=profit_price),
+        )
     )
     log_trade_event(log, "BUY_ORDER_SUBMITTED", symbol=symbol, qty=qty,
                     order_id=order.id, status=order.status)
+
+    # ── Poll for fill confirmation (SAFE-03) ──────────────────────────────────
+    filled_order = poll_order_fill(trading_client, str(order.id))
+    if filled_order.status == OrderStatus.REJECTED:
+        log.warning("[bot] BUY REJECTED for %s: order %s", symbol, order.id)
+        log_trade_event(log, "ORDER_REJECTED", symbol=symbol, order_id=str(order.id))
+        return False
+    if filled_order.status == OrderStatus.PARTIALLY_FILLED:
+        actual_qty = int(float(filled_order.filled_qty))
+        log.info("[bot] PARTIAL FILL: %d/%d shares of %s", actual_qty, qty, symbol)
+        log_trade_event(log, "PARTIAL_FILL_ACCEPTED", symbol=symbol,
+                        filled=actual_qty, requested=qty)
+        # Accept partial — bracket legs are auto-placed by Alpaca for filled qty
+    elif filled_order.status == OrderStatus.FILLED:
+        actual_qty = int(float(filled_order.filled_qty))
+        log.info("[bot] FILL CONFIRMED: %d shares of %s @ $%s",
+                 actual_qty, symbol, filled_order.filled_avg_price)
+        log_trade_event(log, "FILL_CONFIRMED", symbol=symbol, qty=actual_qty,
+                        fill_price=str(filled_order.filled_avg_price))
+    else:
+        log.warning("[bot] BUY order %s in state %s after fill poll",
+                    order.id, filled_order.status)
+
+    log_trade_event(log, "BRACKET_ORDER_PLACED", symbol=symbol,
+                    stop_price=f"{stop_price:.2f}", profit_price=f"{profit_price:.2f}")
+
+    # Store bracket info in shared state for dashboard (BRACKET-04 prep)
+    shared_state.update(
+        bracket_info={symbol: {
+            "stop_loss_price": stop_price,
+            "take_profit_price": profit_price,
+            "status": "protected",
+        }}
+    )
 
     record_buy_date(symbol)
     record_peak_price(symbol, price)   # initialise trailing stop
@@ -158,7 +217,7 @@ def place_buy(trading_client: TradingClient, equity: float, price: float,
     shared_state.push_trade(
         time=datetime.now(timezone.utc).strftime("%H:%M:%S"),
         event="BUY",
-        detail=f"{symbol} {qty}sh @ ~${price:.2f} | frac={fraction*100:.0f}%",
+        detail=f"{symbol} {qty}sh @ ~${price:.2f} | frac={fraction*100:.0f}% | SL=${stop_price:.2f} TP=${profit_price:.2f}",
     )
     return True
 
@@ -211,6 +270,22 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
              config.POLL_INTERVAL, config.ACCOUNT_GOAL)
     shared_state.update(status="running", symbol=config.SYMBOL,
                         account_goal=config.ACCOUNT_GOAL)
+
+    # ── BRACKET-02: Check existing positions for missing stop-losses ──────────
+    load_state_from_file()
+    log.info("[bot] Checking existing positions for bracket protection...")
+    try:
+        protected = get_active_stop_loss_symbols(trading_client)
+        positions = trading_client.get_all_positions()
+        for pos in positions:
+            sym = pos.symbol.upper()
+            qty = float(pos.qty)
+            if qty > 0 and sym not in protected:
+                current_price = float(pos.current_price)
+                log.warning("[bot] Missing stop-loss for %s -- recreating bracket order", sym)
+                place_oco_exit(trading_client, sym, int(qty), current_price)
+    except Exception as exc:
+        log.error("[bot] Startup bracket check failed: %s", exc, exc_info=True)
 
     while not _shutdown_requested:
         cycle_start = datetime.now(timezone.utc)

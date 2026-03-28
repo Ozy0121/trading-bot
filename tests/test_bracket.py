@@ -208,3 +208,72 @@ def test_check_shutdown_stop_losses_missing(mock_trading_client):
     assert result["all_protected"] is False
     assert "AMD" in result["unprotected"]
     assert "SOFI" not in result["unprotected"]
+
+
+# ── place_buy bracket order tests ─────────────────────────────────────────────
+
+def test_place_buy_uses_bracket_order(mock_trading_client):
+    """place_buy submits a bracket order with correct stop-loss and take-profit."""
+    import config
+    import state as shared_state
+    from bot import place_buy
+
+    # Setup filled order for poll_order_fill
+    filled = MagicMock()
+    filled.id = "test-order-123"
+    filled.status = OrderStatus.FILLED
+    filled.filled_qty = "10"
+    filled.filled_avg_price = "10.00"
+    mock_trading_client.submit_order.return_value = filled
+    mock_trading_client.get_order_by_id.return_value = filled
+
+    result = place_buy(mock_trading_client, equity=500.0, price=10.0,
+                       symbol="SOFI", consecutive_losses=0)
+
+    assert result is True
+    assert mock_trading_client.submit_order.called
+    submitted = mock_trading_client.submit_order.call_args.args[0]
+    assert submitted.order_class == OrderClass.BRACKET
+    expected_stop = round(10.0 * (1 - config.TRAILING_STOP_PCT), 2)
+    expected_profit = round(10.0 * (1 + config.TAKE_PROFIT_PCT), 2)
+    assert submitted.stop_loss.stop_price == expected_stop
+    assert submitted.take_profit.limit_price == expected_profit
+
+
+def test_place_buy_polls_for_fill(mock_trading_client):
+    """place_buy calls get_order_by_id to confirm fill after submission."""
+    from bot import place_buy
+
+    filled = MagicMock()
+    filled.id = "test-order-123"
+    filled.status = OrderStatus.FILLED
+    filled.filled_qty = "10"
+    filled.filled_avg_price = "10.00"
+    mock_trading_client.submit_order.return_value = filled
+    mock_trading_client.get_order_by_id.return_value = filled
+
+    place_buy(mock_trading_client, equity=500.0, price=10.0,
+              symbol="SOFI", consecutive_losses=0)
+
+    assert mock_trading_client.get_order_by_id.call_count >= 1
+
+
+def test_place_buy_handles_rejection(mock_trading_client):
+    """place_buy returns False when order is REJECTED."""
+    from bot import place_buy
+
+    submitted = MagicMock()
+    submitted.id = "test-order-rej"
+    submitted.status = OrderStatus.NEW
+
+    rejected = MagicMock()
+    rejected.id = "test-order-rej"
+    rejected.status = OrderStatus.REJECTED
+
+    mock_trading_client.submit_order.return_value = submitted
+    mock_trading_client.get_order_by_id.return_value = rejected
+
+    result = place_buy(mock_trading_client, equity=500.0, price=10.0,
+                       symbol="SOFI", consecutive_losses=0)
+
+    assert result is False

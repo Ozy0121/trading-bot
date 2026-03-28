@@ -75,6 +75,9 @@ _state = {
     # ── Open positions list ───────────────────────────────────────────────────
     "positions": [],
 
+    # ── Bracket order info (per symbol) ──────────────────────────────────────
+    "bracket_info": {},  # {symbol: {stop_loss_price, take_profit_price, status}}
+
     # ── Bot status ────────────────────────────────────────────────────────────
     "status":               "idle",
     "paper_trading":        True,
