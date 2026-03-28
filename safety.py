@@ -23,7 +23,7 @@ import time
 from datetime import date
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, GetOrdersRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 
 import config
@@ -41,6 +41,35 @@ def is_options_symbol(symbol: str) -> bool:
     if not symbol:
         return False
     return bool(_OCC_PATTERN.match(symbol.upper().strip()))
+
+
+# ── Options trading validation ────────────────────────────────────────────────
+
+def validate_options_enabled(trading_client: TradingClient, live_mode: bool) -> None:
+    """Check that the Alpaca account has options trading enabled (per SAFE-05, D-10).
+
+    In paper mode, skip the check (paper accounts may not mirror live options approval).
+    In live mode, require options_approved_level >= 2 or exit.
+    """
+    if not live_mode:
+        log.info("[safety] Paper mode -- skipping options approval check.")
+        return
+    try:
+        account = trading_client.get_account()
+        level = getattr(account, "options_approved_level", None)
+        if level is None or int(level) < 2:
+            log.critical(
+                "[safety] OPTIONS TRADING NOT ENABLED. "
+                "Account options_approved_level=%s (need >= 2). "
+                "Enable options in your Alpaca account before running live.",
+                level,
+            )
+            raise SystemExit(1)
+        log.info("[safety] Options trading enabled (level=%d).", int(level))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        log.warning("[safety] Could not validate options level: %s. Proceeding with caution.", exc)
 
 
 # ── State persistence ─────────────────────────────────────────────────────────
@@ -343,15 +372,37 @@ def liquidate_all(trading_client: TradingClient) -> None:
         longs = [p for p in positions if float(p.qty) > 0]
         for pos in longs:
             try:
-                qty   = float(pos.qty)
-                order = trading_client.submit_order(
-                    MarketOrderRequest(symbol=pos.symbol, qty=qty,
-                                       side=OrderSide.SELL,
-                                       time_in_force=TimeInForce.DAY)
-                )
-                log.info("[shutdown] Sell submitted: %s %.0f → %s", pos.symbol, qty, order.id)
-                log_trade_event(log, "SHUTDOWN_SELL", symbol=pos.symbol,
-                                qty=qty, order_id=order.id)
+                sym = pos.symbol
+                qty = float(pos.qty)
+                if is_options_symbol(sym):
+                    # Options: use LimitOrderRequest at current price (per D-08: mid-price approx)
+                    limit_price = round(float(pos.current_price), 2)
+                    if limit_price <= 0:
+                        limit_price = 0.01  # floor to avoid zero-price limit
+                    order = trading_client.submit_order(
+                        LimitOrderRequest(
+                            symbol=sym,
+                            qty=qty,
+                            side=OrderSide.SELL,
+                            time_in_force=TimeInForce.DAY,
+                            limit_price=limit_price,
+                        )
+                    )
+                    log.info("[shutdown] Options LIMIT sell: %s %.0f @ $%.2f -> %s",
+                             sym, qty, limit_price, order.id)
+                    log_trade_event(log, "SHUTDOWN_OPTIONS_SELL", symbol=sym,
+                                    qty=qty, limit_price=f"{limit_price:.2f}",
+                                    order_id=str(order.id))
+                else:
+                    # Stocks: keep existing MarketOrderRequest
+                    order = trading_client.submit_order(
+                        MarketOrderRequest(symbol=sym, qty=qty,
+                                           side=OrderSide.SELL,
+                                           time_in_force=TimeInForce.DAY)
+                    )
+                    log.info("[shutdown] Sell submitted: %s %.0f -> %s", sym, qty, order.id)
+                    log_trade_event(log, "SHUTDOWN_SELL", symbol=sym,
+                                    qty=qty, order_id=str(order.id))
             except Exception as e:
                 log.error("[shutdown] Sell %s failed: %s", pos.symbol, e)
         if longs:
