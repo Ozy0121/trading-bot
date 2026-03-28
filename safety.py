@@ -14,7 +14,11 @@ Guards:
 
 from __future__ import annotations
 
+import json
 import math
+import os
+import re
+import threading
 import time
 from datetime import date
 
@@ -28,6 +32,63 @@ from logger_setup import get_logger, log_trade_event
 log = get_logger()
 
 
+# ── OCC options symbol detection ─────────────────────────────────────────────
+_OCC_PATTERN = re.compile(r'^[A-Z]{1,6}\d{6}[CP]\d{8}$')
+
+
+def is_options_symbol(symbol: str) -> bool:
+    """True if symbol matches OCC format e.g. AAPL240119C00150000."""
+    if not symbol:
+        return False
+    return bool(_OCC_PATTERN.match(symbol.upper().strip()))
+
+
+# ── State persistence ─────────────────────────────────────────────────────────
+_state_lock = threading.Lock()
+STATE_FILE = config.STATE_FILE_PATH
+
+
+def _save_state() -> None:
+    """Write current safety globals to disk. Call after every mutation."""
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    payload = {
+        "date": date.today().isoformat(),
+        "peak_prices": dict(_peak_prices),
+        "positions_opened_today": list(_positions_opened_today),
+        "session_start_equity": _session_start_equity,
+    }
+    try:
+        with _state_lock:
+            tmp = STATE_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(payload, f, indent=2)
+            os.replace(tmp, STATE_FILE)
+    except Exception as exc:
+        log.warning("[safety] State save failed: %s", exc)
+
+
+def load_state_from_file() -> None:
+    """Load persisted state on startup. Log and ignore if file is missing/corrupt (per D-04)."""
+    global _peak_prices, _positions_opened_today, _session_start_equity
+    if not os.path.exists(STATE_FILE):
+        log.info("[safety] No state file found -- starting fresh.")
+        return
+    try:
+        with open(STATE_FILE) as f:
+            data = json.load(f)
+        saved_date = data.get("date", "")
+        if saved_date != date.today().isoformat():
+            log.info("[safety] State file is from %s -- starting fresh (new day).", saved_date)
+            return
+        _peak_prices = data.get("peak_prices", {})
+        _positions_opened_today = set(data.get("positions_opened_today", []))
+        _session_start_equity = data.get("session_start_equity")
+        log.info("[safety] State restored: %d peak prices, %d PDT entries.",
+                 len(_peak_prices), len(_positions_opened_today))
+    except Exception as exc:
+        log.warning("[safety] State file corrupt -- starting fresh: %s", exc)
+
+
 # ── Daily loss tracking ──────────────────────────────────────────────────────
 
 _session_start_equity: float | None = None
@@ -37,6 +98,7 @@ def record_session_start_equity(equity: float) -> None:
     global _session_start_equity
     _session_start_equity = equity
     log.info("[safety] Session start equity: $%.2f", equity)
+    _save_state()
 
 
 def daily_loss_exceeded(current_equity: float) -> bool:
@@ -64,6 +126,7 @@ def record_peak_price(symbol: str, price: float) -> None:
     """Call when a position is first opened to set the initial peak."""
     _peak_prices[symbol.upper()] = price
     log.debug("[safety] Trailing stop initialized: %s @ %.4f", symbol, price)
+    _save_state()
 
 
 def update_peak_price(symbol: str, price: float) -> None:
@@ -71,6 +134,7 @@ def update_peak_price(symbol: str, price: float) -> None:
     sym = symbol.upper()
     if sym not in _peak_prices or price > _peak_prices[sym]:
         _peak_prices[sym] = price
+        _save_state()
 
 
 def trailing_stop_triggered(symbol: str, price: float) -> bool:
@@ -92,6 +156,7 @@ def trailing_stop_triggered(symbol: str, price: float) -> bool:
 def clear_peak_price(symbol: str) -> None:
     """Call when a position is closed."""
     _peak_prices.pop(symbol.upper(), None)
+    _save_state()
 
 
 def get_peak_price(symbol: str) -> float | None:
@@ -105,10 +170,12 @@ _positions_opened_today: set[str] = set()
 
 def record_buy_date(symbol: str) -> None:
     _positions_opened_today.add(symbol.upper())
+    _save_state()
 
 
 def clear_position_date(symbol: str) -> None:
     _positions_opened_today.discard(symbol.upper())
+    _save_state()
 
 
 def would_be_day_trade(symbol: str) -> bool:

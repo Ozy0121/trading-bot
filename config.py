@@ -101,6 +101,14 @@ LOSING_STREAK_SIZE_FACTOR = _float("LOSING_STREAK_SIZE_FACTOR", 0.5)
 # ── Dashboard ────────────────────────────────────────────────────────────────
 DASHBOARD_PORT = _int("DASHBOARD_PORT", 5000)
 
+# ── State persistence ────────────────────────────────────────────────────────
+STATE_FILE_PATH = os.getenv("STATE_FILE_PATH",
+    os.path.join(os.path.dirname(__file__), "data", "bot_state.json"))
+
+# ── Order fill polling ───────────────────────────────────────────────────────
+ORDER_FILL_TIMEOUT       = _float("ORDER_FILL_TIMEOUT",       10.0)   # seconds
+ORDER_FILL_POLL_INTERVAL = _float("ORDER_FILL_POLL_INTERVAL",  0.5)   # seconds
+
 if SHORT_WINDOW >= LONG_WINDOW:
     raise ValueError(
         f"[config] SHORT_WINDOW ({SHORT_WINDOW}) must be less than "
