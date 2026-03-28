@@ -43,7 +43,7 @@ import stream as live_stream
 import sentiment as sentiment_feed
 import dashboard
 import bot
-from safety import kill_switch
+from safety import kill_switch, validate_options_enabled
 from logger_setup import get_logger
 
 log = get_logger()
@@ -62,6 +62,9 @@ data_client = StockHistoricalDataClient(
     api_key=config.API_KEY,
     secret_key=config.SECRET_KEY,
 )
+
+# ── SAFE-05: Validate options trading is enabled ──────────────────────────────
+validate_options_enabled(trading_client, live_mode=not config.PAPER_TRADING)
 
 log.info("[server] Connected. Starting background services...")
 
