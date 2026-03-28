@@ -35,7 +35,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   8. On shutdown, bot confirms all positions have active server-side stop-losses before allowing exit
   9. Dashboard shows stop-loss and take-profit prices for each position
   10. Stop-loss and take-profit percentages are adjustable from the dashboard
-**Plans**: TBD
+**Plans:** 4 plans
+Plans:
+- [ ] 01-01-PLAN.md — State persistence + OCC detection + test scaffold
+- [ ] 01-02-PLAN.md — Bracket orders + fill polling + startup/shutdown checks
+- [ ] 01-03-PLAN.md — Options-aware liquidation + startup validation
+- [ ] 01-04-PLAN.md — Dashboard bracket UI + exit settings panel
 
 ### Phase 2: Prediction Engine + Stock Scanning
 **Goal**: Scanner produces a unified ranked candidate list using multi-strategy scoring (technical + volume + news sentiment + sector momentum), only takes trades above a 7/10 conviction threshold, and logs reasoning for every entry and skip decision
@@ -100,7 +105,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Safety Infrastructure + Bracket Orders | 0/? | Not started | - |
+| 1. Safety Infrastructure + Bracket Orders | 0/4 | Planning complete | - |
 | 2. Prediction Engine + Stock Scanning | 0/? | Not started | - |
 | 3. Options Trading | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | 0/? | Not started | - |
