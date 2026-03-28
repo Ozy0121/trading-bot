@@ -38,8 +38,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 2/4 plans executed
 Plans:
 - [x] 01-01-PLAN.md — State persistence + OCC detection + test scaffold
-- [ ] 01-02-PLAN.md — Bracket orders + fill polling + startup/shutdown checks
-- [x] 01-03-PLAN.md — Options-aware liquidation + startup validation
+- [x] 01-02-PLAN.md — Bracket orders + fill polling + startup/shutdown checks
+- [ ] 01-03-PLAN.md — Options-aware liquidation + startup validation
 - [ ] 01-04-PLAN.md — Dashboard bracket UI + exit settings panel
 
 ### Phase 2: Prediction Engine + Stock Scanning

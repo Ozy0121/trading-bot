@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-safety-infrastructure/01-03-PLAN.md
-last_updated: "2026-03-28T18:20:09.900Z"
+stopped_at: Completed 01-safety-infrastructure/01-02-PLAN.md
+last_updated: "2026-03-28T18:20:30.937Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 5
@@ -53,7 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01-safety-infrastructure P01 | 3 | 2 tasks | 5 files |
-| Phase 01-safety-infrastructure P03 | 4min | 1 tasks | 3 files |
+| Phase 01-safety-infrastructure P02 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -69,9 +69,9 @@ Recent decisions affecting current work:
 - [Phase 01-safety-infrastructure]: State file uses atomic write (tmp + os.replace) to prevent partial writes on crash
 - [Phase 01-safety-infrastructure]: load_state_from_file() silently resets to defaults on corrupt or stale-date files
 - [Phase 01-safety-infrastructure]: OCC pattern anchored with ^ and $ to prevent false positives on longer strings
-- [Phase 01-safety-infrastructure]: Options liquidation uses LimitOrderRequest at round(current_price, 2) as mid-price approximation (D-08)
-- [Phase 01-safety-infrastructure]: validate_options_enabled() raises SystemExit(1) in live mode when level < 2 or None -- hard stop, not a warning
-- [Phase 01-safety-infrastructure]: Paper mode unconditionally skips options validation to avoid paper account approval level mismatches (D-10)
+- [Phase 01-safety-infrastructure]: Bracket child legs only visible with QueryOrderStatus.ALL + nested=True (critical Alpaca gotcha — HELD status, not OPEN)
+- [Phase 01-safety-infrastructure]: Partial fills accepted without retry: Alpaca auto-places bracket legs for filled qty
+- [Phase 01-safety-infrastructure]: load_state_from_file() called at bot startup before bracket check to restore peak prices
 
 ### Pending Todos
 
@@ -85,6 +85,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28T18:20:09.891Z
-Stopped at: Completed 01-safety-infrastructure/01-03-PLAN.md
+Last session: 2026-03-28T18:20:30.928Z
+Stopped at: Completed 01-safety-infrastructure/01-02-PLAN.md
 Resume file: None

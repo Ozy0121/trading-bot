@@ -11,15 +11,15 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **SAFE-01**: Bot persists position state (peak prices, entry dates, PDT history) to local file, survives restarts
 - [x] **SAFE-02**: PDT tracker recognizes OCC-format options symbols and counts them toward the 3-trade limit
-- [ ] **SAFE-03**: Order submission polls for fill status with timeout, handles partial fills and rejections explicitly
-- [x] **SAFE-04**: `liquidate_all()` handles both stock positions and options positions (using OptionOrderRequest with LIMIT)
-- [x] **SAFE-05**: Bot validates options trading is enabled on the Alpaca account at startup, fails loudly if not
+- [x] **SAFE-03**: Order submission polls for fill status with timeout, handles partial fills and rejections explicitly
+- [ ] **SAFE-04**: `liquidate_all()` handles both stock positions and options positions (using OptionOrderRequest with LIMIT)
+- [ ] **SAFE-05**: Bot validates options trading is enabled on the Alpaca account at startup, fails loudly if not
 
 ### Bracket Orders (Server-Side Protection)
 
-- [ ] **BRACKET-01**: Every stock buy immediately places a bracket order on Alpaca with stop-loss (3% below entry) and take-profit (6-8% above entry) that execute on Alpaca's servers even when bot is offline
-- [ ] **BRACKET-02**: On startup, bot checks all existing positions for active stop-loss orders on Alpaca — recreates missing ones
-- [ ] **BRACKET-03**: On shutdown, bot confirms all positions have active server-side stop-losses — warns user and offers to place them if missing
+- [x] **BRACKET-01**: Every stock buy immediately places a bracket order on Alpaca with stop-loss (3% below entry) and take-profit (6-8% above entry) that execute on Alpaca's servers even when bot is offline
+- [x] **BRACKET-02**: On startup, bot checks all existing positions for active stop-loss orders on Alpaca — recreates missing ones
+- [x] **BRACKET-03**: On shutdown, bot confirms all positions have active server-side stop-losses — warns user and offers to place them if missing
 - [ ] **BRACKET-04**: Dashboard shows stop-loss and take-profit prices for each open position
 - [ ] **BRACKET-05**: Stop-loss and take-profit percentages are adjustable from the dashboard
 
@@ -122,12 +122,12 @@ Deferred to future milestone. Tracked but not in current roadmap.
 |-------------|-------|--------|
 | SAFE-01 | Phase 1 | Complete |
 | SAFE-02 | Phase 1 | Complete |
-| SAFE-03 | Phase 1 | Pending |
-| SAFE-04 | Phase 1 | Complete |
-| SAFE-05 | Phase 1 | Complete |
-| BRACKET-01 | Phase 1 | Pending |
-| BRACKET-02 | Phase 1 | Pending |
-| BRACKET-03 | Phase 1 | Pending |
+| SAFE-03 | Phase 1 | Complete |
+| SAFE-04 | Phase 1 | Pending |
+| SAFE-05 | Phase 1 | Pending |
+| BRACKET-01 | Phase 1 | Complete |
+| BRACKET-02 | Phase 1 | Complete |
+| BRACKET-03 | Phase 1 | Complete |
 | BRACKET-04 | Phase 1 | Pending |
 | BRACKET-05 | Phase 1 | Pending |
 | STRAT-01 | Phase 2 | Pending |

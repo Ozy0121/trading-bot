@@ -23,8 +23,14 @@ import time
 from datetime import date
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
+from alpaca.trading.requests import (
+    MarketOrderRequest,
+    GetOrdersRequest,
+    LimitOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
+)
+from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, OrderStatus, QueryOrderStatus
 
 import config
 from logger_setup import get_logger, log_trade_event
@@ -87,6 +93,107 @@ def load_state_from_file() -> None:
                  len(_peak_prices), len(_positions_opened_today))
     except Exception as exc:
         log.warning("[safety] State file corrupt -- starting fresh: %s", exc)
+
+
+# ── Fill polling ─────────────────────────────────────────────────────────────
+
+def poll_order_fill(
+    trading_client: TradingClient,
+    order_id: str,
+    timeout: float = None,
+    poll_interval: float = None,
+) -> "Order":
+    """Poll order status until terminal state or timeout (per D-05: 10s default)."""
+    if timeout is None:
+        timeout = config.ORDER_FILL_TIMEOUT
+    if poll_interval is None:
+        poll_interval = config.ORDER_FILL_POLL_INTERVAL
+
+    terminal = {
+        OrderStatus.FILLED,
+        OrderStatus.PARTIALLY_FILLED,
+        OrderStatus.REJECTED,
+        OrderStatus.CANCELED,
+        OrderStatus.EXPIRED,
+    }
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        order = trading_client.get_order_by_id(order_id)
+        if order.status in terminal:
+            return order
+        time.sleep(poll_interval)
+    order = trading_client.get_order_by_id(order_id)  # final check
+    log.warning("[safety] Fill poll timeout after %.1fs. Order %s status: %s",
+                timeout, order_id, order.status)
+    return order
+
+
+# ── Bracket order helpers ─────────────────────────────────────────────────────
+
+def get_active_stop_loss_symbols(trading_client: TradingClient) -> set[str]:
+    """Return set of symbols that already have an active stop-loss leg on Alpaca."""
+    protected: set[str] = set()
+    try:
+        orders = trading_client.get_orders(
+            filter=GetOrdersRequest(
+                status=QueryOrderStatus.ALL,
+                nested=True,
+            )
+        )
+        for order in orders:
+            if order.legs:
+                for leg in order.legs:
+                    if (leg.stop_price is not None
+                            and leg.status == OrderStatus.HELD):
+                        protected.add(order.symbol.upper())
+    except Exception as exc:
+        log.warning("[safety] Could not fetch orders for stop-loss check: %s", exc)
+    return protected
+
+
+def place_oco_exit(
+    trading_client: TradingClient,
+    symbol: str,
+    qty: int,
+    current_price: float,
+    stop_loss_pct: float = None,
+    take_profit_pct: float = None,
+) -> None:
+    """Place OCO exit order for an existing position missing bracket protection."""
+    if stop_loss_pct is None:
+        stop_loss_pct = config.TRAILING_STOP_PCT
+    if take_profit_pct is None:
+        take_profit_pct = config.TAKE_PROFIT_PCT
+    stop_price = round(current_price * (1 - stop_loss_pct), 2)
+    profit_price = round(current_price * (1 + take_profit_pct), 2)
+    trading_client.submit_order(
+        LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.SELL,
+            time_in_force=TimeInForce.GTC,
+            order_class=OrderClass.OCO,
+            stop_loss=StopLossRequest(stop_price=stop_price),
+            take_profit=TakeProfitRequest(limit_price=profit_price),
+        )
+    )
+    log.info("[safety] OCO exit placed for %s: SL=$%.2f TP=$%.2f",
+             symbol, stop_price, profit_price)
+    log_trade_event(log, "BRACKET_RECREATED", symbol=symbol,
+                    stop_price=f"{stop_price:.2f}", profit_price=f"{profit_price:.2f}")
+
+
+def check_shutdown_stop_losses(trading_client: TradingClient) -> dict:
+    """Check if all open positions have active stop-loss orders. For BRACKET-03 shutdown check."""
+    protected_symbols = get_active_stop_loss_symbols(trading_client)
+    try:
+        positions = trading_client.get_all_positions()
+        held_symbols = [p.symbol.upper() for p in positions if float(p.qty) > 0]
+    except Exception as exc:
+        log.warning("[safety] Could not fetch positions for shutdown check: %s", exc)
+        return {"all_protected": True, "unprotected": []}
+    unprotected = [s for s in held_symbols if s not in protected_symbols]
+    return {"all_protected": len(unprotected) == 0, "unprotected": unprotected}
 
 
 # ── Daily loss tracking ──────────────────────────────────────────────────────
