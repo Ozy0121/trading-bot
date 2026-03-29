@@ -43,7 +43,7 @@ Plans:
 - [x] 01-04-PLAN.md — Dashboard bracket UI + exit settings panel
 
 ### Phase 2: Prediction Engine + Stock Scanning
-**Goal**: Scanner produces a unified ranked candidate list using multi-strategy scoring (technical + volume + news sentiment + sector momentum), only takes trades above a 7/10 conviction threshold, and logs reasoning for every entry and skip decision
+**Goal**: Scanner produces a unified ranked candidate list using multi-strategy scoring (technical + volume + news sentiment + sector momentum), only takes trades above a configurable conviction threshold (~5.8/10), and logs reasoning for every entry and skip decision
 **Depends on**: Phase 1
 **Requirements**: STRAT-01, STRAT-02, STRAT-03, STRAT-04, STRAT-05, STRAT-06, SCAN-01, SCAN-02, SCAN-03, SCAN-04, SCAN-05, PRED-01, PRED-02, PRED-03, PRED-04, PRED-05
 **Success Criteria** (what must be TRUE):
@@ -52,15 +52,17 @@ Plans:
   3. News sentiment analysis scores headlines as positive/negative/neutral and factors into conviction
   4. Unusual volume spikes (2x+ normal) are detected and boost conviction scores
   5. Sector ETF performance surfaces leaders from top-performing sectors
-  6. Only trades with conviction >= 7/10 are executed — lower scores are skipped with logged reasoning
+  6. Only trades with conviction >= threshold are executed — lower scores are skipped with logged reasoning
   7. Every trade entry and skip is logged with full reasoning breakdown
-  8. Curated watchlist of 20-30 symbols always included in scans, editable via config
-  9. Full scan of 35-40 symbols completes in under 15 seconds
-**Plans:** 0/3 plans executed
+  8. Curated watchlist of 50-75 symbols covering all GICS sectors, editable via config
+  9. Full scan of 50-75 symbols completes in under 30 seconds
+**Plans:** 5 plans
 Plans:
-- [ ] 02-01-PLAN.md — Strategy foundation: config + state extensions, 3 strategy modules + registry
-- [ ] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
-- [ ] 02-03-PLAN.md — Scanner orchestrator rewrite + bot integration + tests
+- [x] 02-01-PLAN.md — Strategy foundation: config + state extensions, 3 strategy modules + registry
+- [x] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
+- [x] 02-03-PLAN.md — Scanner orchestrator rewrite + bot integration + tests
+- [ ] 02-04-PLAN.md — Scoring recalibration: threshold, sentiment overhaul, volume fairness, market regime filter
+- [ ] 02-05-PLAN.md — Watchlist expansion, multi-candidate best_buy, top movers circular logic fix
 
 ### Phase 3: Options Trading
 **Goal**: Bot can analyze options chains, select appropriate contracts with hard liquidity filters, construct valid OCC symbols, and submit LIMIT-only options orders with options-specific exit rules enforced
@@ -110,7 +112,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Safety Infrastructure + Bracket Orders | 4/4 | Complete   | 2026-03-28 |
-| 2. Prediction Engine + Stock Scanning | 0/3 | Planned    |  |
+| 2. Prediction Engine + Stock Scanning | 3/5 | In Progress |  |
 | 3. Options Trading | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | 0/? | Not started | - |
 | 5. Dashboard + Predictions + AI Analyst | 0/? | Not started | - |
