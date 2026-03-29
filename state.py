@@ -99,6 +99,11 @@ _state = {
 
     # ── Trade log ─────────────────────────────────────────────────────────────
     "trade_log": deque(maxlen=100),
+
+    # ── Scan results (Phase 2) ────────────────────────────────────────────────
+    "scan_results":           [],    # list of candidate dicts (df stripped)
+    "last_scan_time":         None,  # ISO timestamp of last scan completion
+    "scan_conviction_scores": {},    # {symbol: composite_score} quick lookup
 }
 
 

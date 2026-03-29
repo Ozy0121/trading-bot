@@ -114,3 +114,24 @@ if SHORT_WINDOW >= LONG_WINDOW:
         f"[config] SHORT_WINDOW ({SHORT_WINDOW}) must be less than "
         f"LONG_WINDOW ({LONG_WINDOW})."
     )
+
+# ── Multi-strategy conviction scoring (D-03, D-04) ───────────────────────────
+CONVICTION_THRESHOLD        = _float("CONVICTION_THRESHOLD",        7.0)
+CONVICTION_WEIGHT_TECHNICAL = _float("CONVICTION_WEIGHT_TECHNICAL", 0.40)
+CONVICTION_WEIGHT_VOLUME    = _float("CONVICTION_WEIGHT_VOLUME",    0.20)
+CONVICTION_WEIGHT_SENTIMENT = _float("CONVICTION_WEIGHT_SENTIMENT", 0.20)
+CONVICTION_WEIGHT_SECTOR    = _float("CONVICTION_WEIGHT_SECTOR",    0.20)
+
+_weight_sum = (CONVICTION_WEIGHT_TECHNICAL + CONVICTION_WEIGHT_VOLUME +
+               CONVICTION_WEIGHT_SENTIMENT + CONVICTION_WEIGHT_SECTOR)
+if abs(_weight_sum - 1.0) > 0.001:
+    raise ValueError(f"[config] Conviction weights must sum to 1.0, got {_weight_sum:.3f}")
+
+# ── Swing watchlist (D-15: 20-30 stocks, config-editable) ────────────────────
+_swing_raw = os.getenv(
+    "SWING_WATCHLIST",
+    "NVDA,AMD,TSLA,META,MSFT,PLTR,COIN,SOFI,HOOD,RIVN,"
+    "SNAP,MARA,NIO,F,AAPL,GOOGL,AMZN,NFLX,DIS,CRWD,"
+    "SHOP,UBER,LYFT,DKNG,RBLX"
+)
+SWING_WATCHLIST = [s.strip().upper() for s in _swing_raw.split(",") if s.strip()]
