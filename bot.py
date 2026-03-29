@@ -488,6 +488,7 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                     if candidate:
                         buy_sym   = candidate["symbol"]
                         buy_price = candidate["price"]
+                        conv      = candidate.get("conviction", {})
                         cat_info  = catalysts.get(buy_sym, {})
                         cat_str   = []
                         if cat_info.get("ark_buying"):      cat_str.append("ARK")
@@ -502,6 +503,15 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                                  candidate["rsi"],
                                  candidate["volume_ratio"],
                                  candidate["macd_hist"])
+
+                        log.info("[bot] Best candidate: %s (conviction: %.1f/10 — "
+                                 "tech:%.1f vol:%.1f sent:%.1f sec:%.1f)",
+                                 buy_sym, conv.get("composite", 0),
+                                 conv.get("technical", 0), conv.get("volume", 0),
+                                 conv.get("sentiment", 0), conv.get("sector", 0))
+
+                        log.info("[bot] Executing trade from strategy: %s",
+                                 ", ".join(conv.get("strategies_fired", ["unknown"])))
 
                         shared_state.update(symbol=buy_sym)
                         place_buy(trading_client, equity, buy_price,
