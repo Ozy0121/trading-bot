@@ -56,10 +56,10 @@ Plans:
   7. Every trade entry and skip is logged with full reasoning breakdown
   8. Curated watchlist of 20-30 symbols always included in scans, editable via config
   9. Full scan of 35-40 symbols completes in under 15 seconds
-**Plans:** 1/3 plans executed
+**Plans:** 0/3 plans executed
 Plans:
 - [ ] 02-01-PLAN.md — Strategy foundation: config + state extensions, 3 strategy modules + registry
-- [x] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
+- [ ] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
 - [ ] 02-03-PLAN.md — Scanner orchestrator rewrite + bot integration + tests
 
 ### Phase 3: Options Trading
@@ -110,7 +110,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Safety Infrastructure + Bracket Orders | 4/4 | Complete   | 2026-03-28 |
-| 2. Prediction Engine + Stock Scanning | 1/3 | In Progress|  |
+| 2. Prediction Engine + Stock Scanning | 0/3 | Planned    |  |
 | 3. Options Trading | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | 0/? | Not started | - |
 | 5. Dashboard + Predictions + AI Analyst | 0/? | Not started | - |

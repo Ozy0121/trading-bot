@@ -25,10 +25,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Strategy Engine
 
-- [ ] **STRAT-01**: Strategy registry with BaseStrategy ABC — each strategy implements `scan(symbol, df) -> Candidate`
-- [ ] **STRAT-02**: MomentumStrategy detects price breaking N-day high on >2x average volume
-- [ ] **STRAT-03**: MeanReversionStrategy detects RSI < 35 at support levels (lower Bollinger Band)
-- [ ] **STRAT-04**: CatalystStrategy wraps existing ARK/analyst scoring from `catalysts.py`
+- [x] **STRAT-01**: Strategy registry with BaseStrategy ABC — each strategy implements `scan(symbol, df) -> Candidate`
+- [x] **STRAT-02**: MomentumStrategy detects price breaking N-day high on >2x average volume
+- [x] **STRAT-03**: MeanReversionStrategy detects RSI < 35 at support levels (lower Bollinger Band)
+- [x] **STRAT-04**: CatalystStrategy wraps existing ARK/analyst scoring from `catalysts.py`
 - [ ] **STRAT-05**: Combined 0-10 conviction scoring system ranks candidates across all strategies with breakdown (technical, volume, sentiment, sector)
 - [ ] **STRAT-06**: Scanner aggregates all strategy results into unified ranked list
 
@@ -44,7 +44,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [ ] **SCAN-01**: Technical screener runs all strategies against watchlist using parallel bar fetching (ThreadPoolExecutor)
 - [ ] **SCAN-02**: Sector/theme scanning tracks ETF performance (XLK, XLE, XLF, etc.) and picks leaders from top sectors
-- [ ] **SCAN-03**: Curated watchlist of 20-30 stocks always included in scans, user-manageable via config
+- [x] **SCAN-03**: Curated watchlist of 20-30 stocks always included in scans, user-manageable via config
 - [ ] **SCAN-04**: Replace top-daily-movers with multi-day hold candidates scored for 1-3 day swing potential
 - [ ] **SCAN-05**: Scan completes in under 15 seconds for 35-40 symbols
 
@@ -130,15 +130,15 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | BRACKET-03 | Phase 1 | Complete |
 | BRACKET-04 | Phase 1 | Complete |
 | BRACKET-05 | Phase 1 | Complete |
-| STRAT-01 | Phase 2 | Pending |
-| STRAT-02 | Phase 2 | Pending |
-| STRAT-03 | Phase 2 | Pending |
-| STRAT-04 | Phase 2 | Pending |
+| STRAT-01 | Phase 2 | Complete |
+| STRAT-02 | Phase 2 | Complete |
+| STRAT-03 | Phase 2 | Complete |
+| STRAT-04 | Phase 2 | Complete |
 | STRAT-05 | Phase 2 | Pending |
 | STRAT-06 | Phase 2 | Pending |
 | SCAN-01 | Phase 2 | Pending |
 | SCAN-02 | Phase 2 | Pending |
-| SCAN-03 | Phase 2 | Pending |
+| SCAN-03 | Phase 2 | Complete |
 | SCAN-04 | Phase 2 | Pending |
 | SCAN-05 | Phase 2 | Pending |
 | PRED-01 | Phase 2 | Complete |
