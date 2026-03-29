@@ -34,9 +34,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Prediction Engine
 
-- [ ] **PRED-01**: News sentiment analysis on headlines from Alpaca news API and financial RSS feeds — scored positive/negative/neutral per stock
+- [x] **PRED-01**: News sentiment analysis on headlines from Alpaca news API and financial RSS feeds — scored positive/negative/neutral per stock
 - [ ] **PRED-02**: Unusual volume spike detection (2x+ normal volume) factored into conviction score
-- [ ] **PRED-03**: Earnings date awareness — factor approaching earnings into risk assessment
+- [x] **PRED-03**: Earnings date awareness — factor approaching earnings into risk assessment
 - [ ] **PRED-04**: Only trades with conviction score >= 7/10 are executed — lower scores skipped with logged reasoning
 - [ ] **PRED-05**: Every trade entry and skip logged with full reasoning breakdown (which signals fired, which didn't, final score)
 
@@ -141,9 +141,9 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | SCAN-03 | Phase 2 | Pending |
 | SCAN-04 | Phase 2 | Pending |
 | SCAN-05 | Phase 2 | Pending |
-| PRED-01 | Phase 2 | Pending |
+| PRED-01 | Phase 2 | Complete |
 | PRED-02 | Phase 2 | Pending |
-| PRED-03 | Phase 2 | Pending |
+| PRED-03 | Phase 2 | Complete |
 | PRED-04 | Phase 2 | Pending |
 | PRED-05 | Phase 2 | Pending |
 | OPT-01 | Phase 3 | Pending |
