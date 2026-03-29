@@ -3,73 +3,109 @@
 > **Audit trail only.** Do not use as input to planning, research, or execution agents.
 > Decisions are captured in CONTEXT.md — this log preserves the alternatives considered.
 
-**Date:** 2026-03-28
+**Date:** 2026-03-29
 **Phase:** 02-prediction-engine-stock-scanning
-**Areas discussed:** Strategy registry formality, Conviction score composition, News sentiment source, Earnings date source
-**Mode:** --auto (all decisions auto-selected)
+**Areas discussed:** Threshold & technical scores, Sentiment overhaul, Volume fairness, Market regime filter, Stock universe/watchlist
+**Mode:** Interactive (recalibration update — Phase 2 already built with 40 tests passing)
 
 ---
 
-## Strategy Registry Formality
+## Threshold & Technical Scores
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Lightweight functions | One module per strategy exporting scan() function, registry dict | ✓ |
-| ABC class hierarchy | BaseStrategy ABC with formal scan/score interface | |
-| Plugin system | Dynamic strategy loading with entry points | |
+| Lower threshold to 5.5-6.0 | Keep formulas, lower the bar. 5.5 passes 35%, 6.0 passes 15% | ✓ |
+| Rescale technical formulas | Make breakouts score higher, keep threshold at 7.0 | |
+| Both — rescale AND lower | Fix formulas AND lower threshold | |
 
-**User's choice:** [auto] Lightweight functions (recommended — matches existing functional codebase pattern)
-**Notes:** Codebase has no OOP patterns; all modules export plain functions. ABC would be inconsistent.
+**User's choice:** Lower threshold to 5.5-6.0
+**Notes:** User is not an experienced trader — technical scoring details delegated to Claude.
+
+### Exact threshold value
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| 5.5 — more trades | ~35% pass rate, trades more often | |
+| 6.0 — balanced | ~15% pass rate, meaningful filter | |
+| You decide | Claude picks based on data | ✓ |
+
+**User's choice:** You decide
+**Notes:** Claude's discretion within 5.5-6.0 range.
+
+### Candidate count
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Top 3 candidates | Return up to 3 ranked, matches 3 PDT slots | ✓ |
+| Keep single best | Current behavior, one per scan | |
+| Configurable count | Config var for count | |
+
+**User's choice:** Top 3 candidates
 
 ---
 
-## Conviction Score Composition
+## Sentiment Overhaul, Volume Fairness, Market Regime Filter
+
+These three areas were presented together after user indicated they are not an experienced trader and would prefer Claude handle the trading details.
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Weighted average | Configurable weights per dimension (tech 40%, vol 20%, sent 20%, sector 20%) | ✓ |
-| Binary gates | All dimensions must pass threshold, no weighting | |
-| ML ensemble | Train a model on historical signals | |
+| Sounds good, you decide the details | Claude makes all technical trading decisions for these areas | ✓ |
+| Tell me more first | Deeper explanation before deciding | |
+| I have specific thoughts | User has opinions | |
 
-**User's choice:** [auto] Weighted average with configurable weights (recommended — tunable, transparent)
-**Notes:** Weights in config env vars for easy tuning. Each sub-score 0-10 independently.
+**User's choice:** Sounds good, you decide the details
+**Notes:** User explicitly stated "I honestly am NOT an experienced trader, so I have no idea what this means." All three areas delegated to Claude's discretion with goals explained in plain language.
 
 ---
 
-## News Sentiment Source
+## Stock Universe / Watchlist
+
+User asked: "Why can't you just look at all the stocks available and pick from those?"
+
+Explained the practical constraint (~8,000 stocks, ~15s for 35-40, would take hours for all). Presented tiered filtering approach used by professional bots.
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Alpaca news + Yahoo RSS | Use existing API keys and RSS feed already in sentiment.py | ✓ |
-| External NLP API | Use a paid sentiment API (e.g., FinBERT, Alpha Vantage) | |
-| StockTwits only | Expand existing StockTwits integration | |
+| Expand watchlist to 50-75 | Bigger curated list, all sectors, no circular logic | ✓ |
+| Keep both, fix circular logic | Top movers for discovery, different strategies | |
+| You decide | Claude picks best approach | |
 
-**User's choice:** [auto] Alpaca news API + Yahoo RSS (recommended — no new dependencies, API keys already configured)
-**Notes:** Simple keyword scoring, not ML-based. 30-minute cache TTL.
+**User's choice:** Expand watchlist to 50-75
+**Notes:** User also asked how other trading bots handle stock selection. Explained pre-filter → detailed scan → signal generation pattern. Top movers circular logic delegated to Claude.
 
 ---
 
-## Earnings Date Source
+## Narrative/Thematic Analysis (Scope Expansion → Deferred)
+
+User shared a specific example: caught Micron (MU) before 2x move by connecting AI demand → RAM prices → Micron. Asked if the bot could do this.
+
+Explained this is narrative analysis (connecting macro trends to specific stocks), which is fundamentally different from technical analysis. Partially achievable with trending topic detection (article volume spikes), fully achievable only with AI reasoning (Phase 5).
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| yfinance | Already a dependency, Ticker.calendar has earnings dates | ✓ |
-| Alpaca corporate actions API | More reliable but may need additional API access | |
-| Financial Modeling Prep | Free tier available, dedicated earnings API | |
+| Note for future | Defer to Phase 5 / v2 | ✓ (both selected) |
+| Improve sentiment now | Add trending topic detection in Phase 2 | ✓ (both selected) |
+| You decide | Claude decides scope | |
 
-**User's choice:** [auto] yfinance (recommended — already installed, no new dependency)
-**Notes:** Earnings within 3 days reduces conviction (risk factor), not a hard block.
+**User's choice:** Both — note for future AND improve sentiment now
+**Notes:** Full narrative analysis deferred to Phase 5 (AI Analyst) and v2 (social media sentiment). Trending topic detection (article count weighting) added to Phase 2 sentiment overhaul scope.
 
 ---
 
 ## Claude's Discretion
 
-- Exact sub-score formulas (RSI→0-10 mapping, volume ratio→0-10 mapping)
-- Earnings proximity penalty magnitude
-- ThreadPoolExecutor worker count
-- Module organization (single file vs directory)
-- Error handling for failed symbol fetches
+- Exact conviction threshold value within 5.5-6.0
+- Sentiment scoring formula changes (more opinionated keyword scoring)
+- Trending topic detection implementation (article count baseline)
+- Volume fairness per-strategy handling
+- Market regime filter (SPY trend detection + dampening)
+- Watchlist expansion stock selection
+- Top movers circular logic fix
+- All technical trading parameter decisions
 
 ## Deferred Ideas
 
-None — auto mode stayed within phase scope.
+- Narrative/thematic analysis (AI connecting macro trends to stocks) — Phase 5 / v2
+- Social media sentiment (Reddit, Twitter/X) — v2 milestone
+- Full stock universe pre-filter via Polygon.io or Alpaca screener — v2
