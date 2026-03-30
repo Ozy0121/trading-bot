@@ -21,6 +21,7 @@ USE_TOP_MOVERS=false — uses the fixed SWING_WATCHLIST from config.
 from __future__ import annotations
 
 import requests
+import threading
 import yfinance as yf
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -47,8 +48,16 @@ _YF_INTERVAL = {
 _movers_cache: list[str] = []
 _movers_date:  date | None = None
 
+# Top-mover symbols set (D-20: populated by get_watchlist, used to skip momentum for these)
+_top_mover_symbols: set[str] = set()
+
 # Sector cache: symbol -> (cache_date, sector_string)
 _sector_cache: dict[str, tuple[date, str]] = {}
+_sector_cache_lock = threading.Lock()
+
+# Market regime cache: "spy" -> (cache_date, multiplier)
+_regime_cache: dict[str, tuple[date, float]] = {}
+_regime_lock = threading.Lock()
 
 # Sector ETFs for 5-day momentum ranking (SCAN-02, D-11, D-12)
 SECTOR_ETFS = ["XLK", "XLE", "XLF", "XLV", "XLI", "XLC", "XLY", "XLP", "XLU", "XLRE", "XLB"]
@@ -126,26 +135,76 @@ def _get_stock_sector_score(symbol: str, etf_scores: dict[str, float]) -> float:
     Look up the stock's sector via yfinance (cached per trading day), map it
     to the relevant sector ETF, and return that ETF's score. Defaults to 5.0
     if the sector is unknown or the lookup fails.
+    Thread-safe via _sector_cache_lock (D-21).
     """
     today = date.today()
 
-    # Check sector cache
-    cached = _sector_cache.get(symbol)
-    if cached is not None:
-        cache_date, sector = cached
-        if cache_date == today:
-            etf = SECTOR_ETF_MAP.get(sector, "")
-            return etf_scores.get(etf, 5.0)
+    with _sector_cache_lock:
+        cached = _sector_cache.get(symbol)
+        if cached is not None:
+            cache_date, sector = cached
+            if cache_date == today:
+                etf = SECTOR_ETF_MAP.get(sector, "")
+                return etf_scores.get(etf, 5.0)
 
-    # Fetch sector from yfinance
+    # Fetch sector from yfinance (outside the lock to avoid blocking other threads)
     try:
         sector = yf.Ticker(symbol).info.get("sector", "") or ""
     except Exception:
         sector = ""
 
-    _sector_cache[symbol] = (today, sector)
+    with _sector_cache_lock:
+        _sector_cache[symbol] = (today, sector)
+
     etf = SECTOR_ETF_MAP.get(sector, "")
     return etf_scores.get(etf, 5.0)
+
+
+# ── Market regime filter (D-19) ───────────────────────────────────────────────
+
+def _market_regime_multiplier() -> float:
+    """
+    Check SPY 20-day SMA trend. If SPY is below its 20-day SMA, apply
+    a bearish multiplier (default 0.7) to reduce conviction in buy signals.
+    Returns 1.0 (normal) or MARKET_REGIME_BEARISH_MULT (bearish).
+    Cached per calendar day to avoid repeated yfinance calls.
+    """
+    today = date.today()
+
+    with _regime_lock:
+        cached = _regime_cache.get("spy")
+        if cached is not None and cached[0] == today:
+            return cached[1]
+
+    try:
+        spy = yf.Ticker(config.MARKET_REGIME_ETF)
+        hist = spy.history(period="30d", interval="1d")
+        if hist is None or len(hist) < 20:
+            multiplier = 1.0
+        else:
+            closes = hist["Close"] if "Close" in hist.columns else hist["close"]
+            sma_20  = float(closes.tail(20).mean())
+            current = float(closes.iloc[-1])
+            if current < sma_20:
+                multiplier = config.MARKET_REGIME_BEARISH_MULT
+                log.info(
+                    "[scanner] Market regime BEARISH: SPY %.2f < SMA20 %.2f (mult=%.2f)",
+                    current, sma_20, multiplier,
+                )
+            else:
+                multiplier = 1.0
+                log.debug(
+                    "[scanner] Market regime NEUTRAL: SPY %.2f >= SMA20 %.2f",
+                    current, sma_20,
+                )
+    except Exception as exc:
+        log.warning("[scanner] Market regime check failed: %s -- using neutral", exc)
+        multiplier = 1.0
+
+    with _regime_lock:
+        _regime_cache["spy"] = (today, multiplier)
+
+    return multiplier
 
 
 # ── Volume scoring ────────────────────────────────────────────────────────────
@@ -239,8 +298,10 @@ def fetch_top_movers() -> list[str]:
 
 def get_watchlist() -> list[str]:
     """Return the scan watchlist: top movers (merged with SWING_WATCHLIST) or fixed list."""
+    global _top_mover_symbols
     if config.USE_TOP_MOVERS:
         movers = fetch_top_movers()
+        _top_mover_symbols = set(movers)
         # Merge top movers with SWING_WATCHLIST (dedup, movers first)
         seen = set(movers)
         combined = list(movers)
@@ -249,6 +310,7 @@ def get_watchlist() -> list[str]:
                 combined.append(sym)
                 seen.add(sym)
         return combined
+    _top_mover_symbols = set()
     return config.SWING_WATCHLIST
 
 
@@ -319,6 +381,10 @@ def _score_symbol_multi(
     strategy_results: list[dict] = []
     for strat_name, strat_fn in REGISTRY.items():
         try:
+            # D-20: Skip momentum for top movers (circular: today's gainers always break highs)
+            if strat_name == "momentum" and symbol in _top_mover_symbols:
+                log.debug("[scanner] Skipping momentum for top mover %s (circular signal)", symbol)
+                continue
             if strat_name == "catalyst":
                 result = strat_fn(symbol, df, catalysts=catalysts)
             else:
@@ -344,10 +410,20 @@ def _score_symbol_multi(
         best_strategy   = strategy_results[0]["_name"] if strategy_results else "none"
         raw_signal      = "HOLD"
 
-    # ── Volume sub-score ───────────────────────────────────────────────────
-    all_vol_ratios = [r.get("volume_ratio", volume_ratio) for r in strategy_results]
-    best_vol_ratio = max(all_vol_ratios) if all_vol_ratios else volume_ratio
-    volume_score   = _volume_ratio_to_score(best_vol_ratio)
+    # ── Volume sub-score (D-18: per-strategy fairness) ─────────────────────
+    # Strategies that don't rely on volume get a neutral 5.0 volume score
+    # instead of being penalized for normal volume.
+    VOLUME_NEUTRAL_STRATEGIES = {"mean_reversion", "catalyst"}
+    if fired_results:
+        fired_names = {r["_name"] for r in fired_results}
+        if fired_names.issubset(VOLUME_NEUTRAL_STRATEGIES):
+            volume_score = 5.0
+        else:
+            all_vol_ratios = [r.get("volume_ratio", volume_ratio) for r in fired_results]
+            best_vol_ratio = max(all_vol_ratios)
+            volume_score = _volume_ratio_to_score(best_vol_ratio)
+    else:
+        volume_score = _volume_ratio_to_score(volume_ratio)
 
     # ── Sentiment sub-score ────────────────────────────────────────────────
     sentiment_score = get_sentiment_score(symbol)
@@ -460,7 +536,7 @@ def scan(watchlist: list[str], catalysts: dict | None = None) -> list[dict]:
 
     results: list[dict] = []
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    with ThreadPoolExecutor(max_workers=15) as executor:
         future_to_sym = {
             executor.submit(_score_symbol_multi, sym, etf_scores, catalysts): sym
             for sym in watchlist
@@ -490,35 +566,40 @@ def scan(watchlist: list[str], catalysts: dict | None = None) -> list[dict]:
     return results
 
 
-def best_buy(results: list[dict]) -> dict | None:
+def best_buy(results: list[dict]) -> list[dict]:
     """
-    Return the highest-conviction BUY candidate that clears CONVICTION_THRESHOLD.
-    Logs skipped candidates at INFO level with full score breakdown. (PRED-04, PRED-05)
+    Return up to 3 highest-conviction BUY candidates above CONVICTION_THRESHOLD.
+    Returns empty list if no candidates qualify. (D-03 new, PRED-04)
+    Logs skipped candidates at INFO level with full breakdown. (PRED-05)
     """
     threshold = config.CONVICTION_THRESHOLD
+    candidates: list[dict] = []
 
     for r in results:
         conv = r.get("conviction", {})
         composite = conv.get("composite", 0.0)
 
-        if composite >= threshold:
+        if composite >= threshold and len(candidates) < 3:
             log.info(
-                "[scanner] Best candidate: %s (conviction: %.1f/10 — "
+                "[scanner] Candidate #%d: %s (conviction: %.1f/10 -- "
                 "tech:%.1f vol:%.1f sent:%.1f sec:%.1f)",
-                r["symbol"], composite,
+                len(candidates) + 1, r["symbol"], composite,
                 conv.get("technical", 0), conv.get("volume", 0),
                 conv.get("sentiment", 0), conv.get("sector", 0),
             )
-            return r
+            candidates.append(r)
+        else:
+            if composite < threshold:
+                log.info(
+                    "[scanner] Skipped %s (%.1f/10): technical=%.1f, volume=%.1f, "
+                    "sentiment=%.1f, sector=%.1f -- composite below %.1f threshold",
+                    r["symbol"], composite,
+                    conv.get("technical", 0), conv.get("volume", 0),
+                    conv.get("sentiment", 0), conv.get("sector", 0),
+                    threshold,
+                )
 
-        # Log skipped candidate with full breakdown
-        log.info(
-            "[scanner] Skipped %s (%.1f/10): technical=%.1f, volume=%.1f, "
-            "sentiment=%.1f, sector=%.1f — composite below %.1f threshold",
-            r["symbol"], composite,
-            conv.get("technical", 0), conv.get("volume", 0),
-            conv.get("sentiment", 0), conv.get("sector", 0),
-            threshold,
-        )
+    if not candidates:
+        log.info("[scanner] No candidates above %.1f threshold", threshold)
 
-    return None
+    return candidates

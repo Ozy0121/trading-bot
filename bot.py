@@ -484,8 +484,9 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                         detail="3/3 day trades used — no new positions today.",
                     )
                 else:
-                    candidate = best_buy(scan_results)
-                    if candidate:
+                    candidates = best_buy(scan_results)
+                    if candidates:
+                        candidate = candidates[0]  # Take the top candidate for this trade
                         buy_sym   = candidate["symbol"]
                         buy_price = candidate["price"]
                         conv      = candidate.get("conviction", {})
@@ -497,14 +498,16 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                             log.info("[bot] Catalysts for %s: %s", buy_sym, "+".join(cat_str))
 
                         log.info("[bot] HIGH CONVICTION BUY: %s @ $%.2f "
-                                 "(score=%.1f rsi=%.1f vol=%.1fx macd=%.4f)",
+                                 "(score=%.1f rsi=%.1f vol=%.1fx macd=%.4f) "
+                                 "[%d candidates available]",
                                  buy_sym, buy_price,
                                  candidate["score"],
                                  candidate["rsi"],
                                  candidate["volume_ratio"],
-                                 candidate["macd_hist"])
+                                 candidate["macd_hist"],
+                                 len(candidates))
 
-                        log.info("[bot] Best candidate: %s (conviction: %.1f/10 — "
+                        log.info("[bot] Best candidate: %s (conviction: %.1f/10 -- "
                                  "tech:%.1f vol:%.1f sent:%.1f sec:%.1f)",
                                  buy_sym, conv.get("composite", 0),
                                  conv.get("technical", 0), conv.get("volume", 0),

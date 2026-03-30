@@ -116,7 +116,7 @@ if SHORT_WINDOW >= LONG_WINDOW:
     )
 
 # ── Multi-strategy conviction scoring (D-03, D-04) ───────────────────────────
-CONVICTION_THRESHOLD        = _float("CONVICTION_THRESHOLD",        7.0)
+CONVICTION_THRESHOLD        = _float("CONVICTION_THRESHOLD",        5.8)
 CONVICTION_WEIGHT_TECHNICAL = _float("CONVICTION_WEIGHT_TECHNICAL", 0.40)
 CONVICTION_WEIGHT_VOLUME    = _float("CONVICTION_WEIGHT_VOLUME",    0.20)
 CONVICTION_WEIGHT_SENTIMENT = _float("CONVICTION_WEIGHT_SENTIMENT", 0.20)
@@ -127,11 +127,36 @@ _weight_sum = (CONVICTION_WEIGHT_TECHNICAL + CONVICTION_WEIGHT_VOLUME +
 if abs(_weight_sum - 1.0) > 0.001:
     raise ValueError(f"[config] Conviction weights must sum to 1.0, got {_weight_sum:.3f}")
 
-# ── Swing watchlist (D-15: 20-30 stocks, config-editable) ────────────────────
+# ── Market regime filter (D-19) ───────────────────────────────────────────────
+MARKET_REGIME_ETF          = os.getenv("MARKET_REGIME_ETF", "SPY").strip().upper()
+MARKET_REGIME_BEARISH_MULT = _float("MARKET_REGIME_BEARISH_MULT", 0.7)
+
+# ── Swing watchlist (D-15 updated: 50-75 stocks, all GICS sectors) ───────────
 _swing_raw = os.getenv(
     "SWING_WATCHLIST",
-    "NVDA,AMD,TSLA,META,MSFT,PLTR,COIN,SOFI,HOOD,RIVN,"
-    "SNAP,MARA,NIO,F,AAPL,GOOGL,AMZN,NFLX,DIS,CRWD,"
-    "SHOP,UBER,LYFT,DKNG,RBLX"
+    # Technology (12)
+    "NVDA,AMD,MSFT,AAPL,GOOGL,META,AVGO,CRM,ADBE,ORCL,PLTR,CRWD,"
+    # Consumer Discretionary (8)
+    "TSLA,AMZN,NFLX,SHOP,UBER,DKNG,RBLX,NKE,"
+    # Communication Services (4)
+    "DIS,SNAP,PINS,ROKU,"
+    # Financials (6)
+    "COIN,SOFI,HOOD,JPM,GS,V,"
+    # Healthcare (5)
+    "UNH,JNJ,PFE,MRNA,ABBV,"
+    # Energy (4)
+    "XOM,CVX,OXY,FSLR,"
+    # Industrials (5)
+    "CAT,DE,BA,LMT,GE,"
+    # Consumer Staples (3)
+    "COST,WMT,PG,"
+    # Materials (3)
+    "FCX,NEM,LIN,"
+    # Real Estate (3)
+    "AMT,PLD,O,"
+    # Utilities (2)
+    "NEE,DUK,"
+    # High-momentum mid-caps (5)
+    "MARA,RIVN,NIO,F,LYFT"
 )
 SWING_WATCHLIST = [s.strip().upper() for s in _swing_raw.split(",") if s.strip()]
