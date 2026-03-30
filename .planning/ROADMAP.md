@@ -56,13 +56,13 @@ Plans:
   7. Every trade entry and skip is logged with full reasoning breakdown
   8. Curated watchlist of 50-75 symbols covering all GICS sectors, editable via config
   9. Full scan of 50-75 symbols completes in under 30 seconds
-**Plans:** 5 plans
+**Plans:** 4/5 plans executed
 Plans:
 - [x] 02-01-PLAN.md — Strategy foundation: config + state extensions, 3 strategy modules + registry
 - [x] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
 - [x] 02-03-PLAN.md — Scanner orchestrator rewrite + bot integration + tests
 - [ ] 02-04-PLAN.md — Scoring recalibration: threshold, sentiment overhaul, volume fairness, market regime filter
-- [ ] 02-05-PLAN.md — Watchlist expansion, multi-candidate best_buy, top movers circular logic fix
+- [x] 02-05-PLAN.md — Watchlist expansion, multi-candidate best_buy, top movers circular logic fix
 
 ### Phase 3: Options Trading
 **Goal**: Bot can analyze options chains, select appropriate contracts with hard liquidity filters, construct valid OCC symbols, and submit LIMIT-only options orders with options-specific exit rules enforced
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Safety Infrastructure + Bracket Orders | 4/4 | Complete   | 2026-03-28 |
-| 2. Prediction Engine + Stock Scanning | 3/5 | In Progress |  |
+| 2. Prediction Engine + Stock Scanning | 4/5 | In Progress|  |
 | 3. Options Trading | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | 0/? | Not started | - |
 | 5. Dashboard + Predictions + AI Analyst | 0/? | Not started | - |
