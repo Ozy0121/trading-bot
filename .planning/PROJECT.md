@@ -20,21 +20,20 @@ Maximize the value of each of the 3 allowed trades per week by finding the highe
 - ✓ Losing streak position size reduction — existing
 - ✓ News and sentiment data feeds — existing
 - ✓ Kill switch and graceful shutdown — existing
+- ✓ Server-side bracket orders (stop-loss + take-profit) on Alpaca — Phase 1
+- ✓ Multi-strategy swing scanner (momentum, mean reversion, catalyst) — Phase 2
+- ✓ Prediction engine with conviction scoring (technical + volume + sentiment + sector) — Phase 2
+- ✓ News sentiment analysis on watchlist stocks — Phase 2
+- ✓ Only execute trades above 5.8/10 conviction threshold with logged reasoning — Phase 2 (recalibrated from 7/10)
+- ✓ Technical screener (breakouts, RSI, volume spikes) — Phase 2
+- ✓ Sector/theme-based scanning (sector ETF momentum) — Phase 2
+- ✓ Curated watchlist management (60 stocks across all GICS sectors) — Phase 2 (expanded from 20-30)
 
 ### Active
 
-- [ ] Server-side bracket orders (stop-loss + take-profit) on Alpaca for offline protection — #1 priority
-- [ ] Multi-strategy swing scanner (momentum breakouts, mean reversion, catalyst-driven)
-- [ ] Prediction engine with conviction scoring (technical + volume + sentiment + sector)
-- [ ] News sentiment analysis on watchlist stocks
-- [ ] Only execute trades above 7/10 conviction threshold with logged reasoning
-- [ ] Replace top daily movers with multi-day hold candidates
 - [ ] Options trading via Alpaca API (simple calls/puts)
 - [ ] Equal allocation between stock and options strategies
 - [ ] Aggressive position sizing tuned for $500 account
-- [ ] Technical screener (breakouts, RSI divergence, volume spikes, MACD crossovers)
-- [ ] Sector/theme-based scanning (hot sectors, leaders within them)
-- [ ] Curated watchlist management (20-30 known stocks)
 - [ ] 1-3 day hold time targeting with appropriate exit signals
 - [ ] Options chain analysis and strike/expiry selection
 - [ ] AI Chart Analyst panel (Anthropic API) with plain-English analysis and recommendations
@@ -55,7 +54,9 @@ Maximize the value of each of the 3 allowed trades per week by finding the highe
 - **Current state**: Working bot with SMA crossover strategy, top-movers scanner, and Flask dashboard. Single strategy, stocks only
 - **Alpaca options**: Supported via `alpaca-py` SDK — `OptionHistoricalDataClient`, `OptionDataStream`, options order requests
 - **Existing architecture**: Modular Python — `bot.py` (loop), `scanner.py` (screening), `safety.py` (risk), `indicators.py` (technical), `catalysts.py` (signals), `dashboard.py` (Flask), `state.py` (shared state)
-- **Known issues**: No state persistence across restarts, broad exception handling, tight coupling to shared state dict, no tests
+- **Known issues**: Broad exception handling, tight coupling to shared state dict
+- **Phase 1 complete**: State persistence, bracket orders, options-aware liquidation, dashboard bracket UI
+- **Phase 2 complete**: Multi-strategy scanner (momentum/mean-reversion/catalyst), conviction scoring, sentiment cache, 60-stock watchlist, multi-candidate selection, 88 tests
 
 ## Constraints
 
@@ -69,11 +70,11 @@ Maximize the value of each of the 3 allowed trades per week by finding the highe
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Server-side bracket orders as primary protection | User can't monitor 24/7; Alpaca stops execute when bot is offline | — Pending |
+| Server-side bracket orders as primary protection | User can't monitor 24/7; Alpaca stops execute when bot is offline | Phase 1 |
 | Equal stock/options allocation | Diversify strategy types with limited capital | — Pending |
 | Simple calls/puts only (no spreads) | $500 account too small for multi-leg strategies | — Pending |
-| Multi-method scanning (technical + sector + watchlist) | Maximize signal quality with limited trade count | — Pending |
-| 7/10 conviction threshold for trade execution | Limited trades (3/week) means only highest-conviction setups | — Pending |
+| Multi-method scanning (technical + sector + watchlist) | Maximize signal quality with limited trade count | Phase 2 |
+| 5.8/10 conviction threshold for trade execution | Recalibrated from 7/10 — 7.0 passed only 0.4% of realistic combos | Phase 2 |
 | Anthropic API (claude-sonnet-4-20250514) for AI analysis | Plain-English market analysis on dashboard | — Pending |
 | Keep Alpaca as sole broker | Already integrated, supports options via same SDK | — Pending |
 | Aggressive position sizing | Small account needs growth, not capital preservation | — Pending |
@@ -97,4 +98,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 after roadmap rework — added bracket orders, prediction engine, AI analyst*
+*Last updated: 2026-03-30 after Phase 2 completion — prediction engine, multi-strategy scanner, sentiment cache, 60-stock watchlist*
