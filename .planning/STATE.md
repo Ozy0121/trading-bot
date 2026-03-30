@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-03-30T01:17:06.639Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-03-30T01:19:43.596Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 ## Current Position
 
 Phase: 02 (prediction-engine-stock-scanning) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-03-30
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P04 | 15min | 3 tasks | 3 files |
 | Phase 02 P01 | 10min | 2 tasks | 7 files |
 | Phase 02 P05 | 15min | 2 tasks | 4 files |
+| Phase 02 P04 | 25min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,10 @@ Recent decisions affecting current work:
 - [Phase 02]: best_buy() returns list[dict] (D-03 new): bot takes candidates[0] now, list enables future multi-slot PDT-aware selection
 - [Phase 02]: Top movers skip momentum (D-20): symbols already breaking highs today produce circular momentum signals — skip the strategy, not the symbol
 - [Phase 02]: 60-stock watchlist with all 11 GICS sectors (D-15 updated): broad coverage needed for 3 PDT trade slots per week
+- [Phase 02]: Conviction threshold lowered to 5.8 (D-01 updated) to achieve 10-20% candidate pass rate
+- [Phase 02]: Weighted keyword tiers with tanh stretching for wider sentiment spread — strong keywords 2x weight (D-06)
+- [Phase 02]: Volume fairness: mean_reversion and catalyst strategies get neutral 5.0 volume score (D-18)
+- [Phase 02]: SPY 20-day SMA market regime filter applies 0.7x multiplier on bearish market (D-19)
 
 ### Pending Todos
 
@@ -101,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T01:17:06.630Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-03-30T01:19:43.587Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

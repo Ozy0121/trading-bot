@@ -13,7 +13,7 @@ Starting from a working single-strategy stock bot, this roadmap extends it into 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Safety Infrastructure + Bracket Orders** - State persistence, order fill handling, and server-side bracket orders that protect positions when the bot is offline (completed 2026-03-28)
-- [ ] **Phase 2: Prediction Engine + Stock Scanning** - Multi-strategy scoring with news sentiment, volume analysis, and conviction-based trade filtering
+- [x] **Phase 2: Prediction Engine + Stock Scanning** - Multi-strategy scoring with news sentiment, volume analysis, and conviction-based trade filtering (completed 2026-03-30)
 - [ ] **Phase 3: Options Trading** - Add options chain analysis and order execution
 - [ ] **Phase 4: Position Sizing & Allocation** - Enforce dual capital buckets and trade budget gate
 - [ ] **Phase 5: Dashboard + Predictions + AI Analyst** - Predictions tab, conviction breakdowns, watchlist management, and AI chart analysis via Anthropic API
@@ -56,12 +56,12 @@ Plans:
   7. Every trade entry and skip is logged with full reasoning breakdown
   8. Curated watchlist of 50-75 symbols covering all GICS sectors, editable via config
   9. Full scan of 50-75 symbols completes in under 30 seconds
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 Plans:
 - [x] 02-01-PLAN.md — Strategy foundation: config + state extensions, 3 strategy modules + registry
 - [x] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
 - [x] 02-03-PLAN.md — Scanner orchestrator rewrite + bot integration + tests
-- [ ] 02-04-PLAN.md — Scoring recalibration: threshold, sentiment overhaul, volume fairness, market regime filter
+- [x] 02-04-PLAN.md — Scoring recalibration: threshold, sentiment overhaul, volume fairness, market regime filter
 - [x] 02-05-PLAN.md — Watchlist expansion, multi-candidate best_buy, top movers circular logic fix
 
 ### Phase 3: Options Trading
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Safety Infrastructure + Bracket Orders | 4/4 | Complete   | 2026-03-28 |
-| 2. Prediction Engine + Stock Scanning | 4/5 | In Progress|  |
+| 2. Prediction Engine + Stock Scanning | 5/5 | Complete   | 2026-03-30 |
 | 3. Options Trading | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | 0/? | Not started | - |
 | 5. Dashboard + Predictions + AI Analyst | 0/? | Not started | - |
