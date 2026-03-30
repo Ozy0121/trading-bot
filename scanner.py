@@ -439,6 +439,10 @@ def _score_symbol_multi(
         + config.CONVICTION_WEIGHT_SECTOR    * sector_score
     )
 
+    # ── Market regime dampening (D-19) ─────────────────────────────────────
+    regime_mult = _market_regime_multiplier()
+    composite = composite * regime_mult
+
     # ── Earnings penalty (D-10) ────────────────────────────────────────────
     earnings_penalty = get_earnings_penalty(symbol)
     composite = max(0.0, composite - earnings_penalty)
@@ -446,13 +450,14 @@ def _score_symbol_multi(
 
     # ── Conviction breakdown dict (D-05) ───────────────────────────────────
     conviction = {
-        "technical":       round(technical_score, 2),
-        "volume":          round(volume_score, 2),
-        "sentiment":       round(sentiment_score, 2),
-        "sector":          round(sector_score, 2),
-        "composite":       composite,
+        "technical":        round(technical_score, 2),
+        "volume":           round(volume_score, 2),
+        "sentiment":        round(sentiment_score, 2),
+        "sector":           round(sector_score, 2),
+        "composite":        composite,
         "strategies_fired": strategies_fired,
         "earnings_penalty": round(earnings_penalty, 2),
+        "regime_multiplier": regime_mult,
     }
 
     # Effective signal: BUY only if a strategy fired AND composite >= threshold

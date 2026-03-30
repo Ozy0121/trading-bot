@@ -50,23 +50,32 @@ SENTIMENT_TTL = 1800   # 30 minutes in seconds
 
 REQUEST_TIMEOUT = 8    # seconds per HTTP request
 
-# ── Keyword lists (D-07) ──────────────────────────────────────────────────────
+# ── Keyword lists (D-06, D-07 updated) ───────────────────────────────────────
 
-_BULLISH_KEYWORDS = [
-    "upgrade", "upgrades", "upgraded",
-    "outperform", "overweight",
-    "price target raised", "strong buy", "buy rating",
-    "bullish", "rally", "beat", "beats",
-    "record", "surges", "soars", "jumps", "initiates",
-]
+# Weighted keyword tiers: stronger signals get higher weight
+_BULLISH_KEYWORDS_STRONG = [
+    "strong buy", "price target raised", "upgraded", "outperform",
+    "surges", "soars", "record high", "blowout", "crushes estimates",
+    "massive beat", "buy rating",
+]  # weight: 2.0
 
-_BEARISH_KEYWORDS = [
-    "downgrade", "downgrades", "downgraded",
-    "underperform", "underweight",
-    "price target cut", "sell rating",
-    "bearish", "falls", "drops", "plunges",
-    "misses", "miss", "warning", "concern", "decline",
-]
+_BULLISH_KEYWORDS_MODERATE = [
+    "upgrade", "upgrades", "overweight", "bullish", "rally",
+    "beat", "beats", "jumps", "initiates", "positive", "growth",
+    "raises guidance", "above expectations", "accelerating",
+]  # weight: 1.0
+
+_BEARISH_KEYWORDS_STRONG = [
+    "sell rating", "price target cut", "downgraded", "underperform",
+    "plunges", "crashes", "massive miss", "bankruptcy", "fraud",
+    "sec investigation", "warning",
+]  # weight: 2.0
+
+_BEARISH_KEYWORDS_MODERATE = [
+    "downgrade", "downgrades", "underweight", "bearish",
+    "falls", "drops", "misses", "miss", "concern", "decline",
+    "cuts guidance", "below expectations", "slowing",
+]  # weight: 1.0
 
 # ── Sentiment cache (D-06) ────────────────────────────────────────────────────
 
@@ -152,6 +161,7 @@ def _fetch_sentiment(symbol: str) -> float:
     """
     Fetch headlines via Alpaca (primary) then Yahoo RSS (fallback).
     Score them and return a 0.0-10.0 float. Returns 5.0 if both fail.
+    Applies D-07 trending topic amplification for stocks with >= 8 articles.
     """
     headlines = _fetch_alpaca_news(symbol)
 
@@ -160,11 +170,26 @@ def _fetch_sentiment(symbol: str) -> float:
         headlines = _fetch_yahoo_rss(symbol)
 
     if not headlines:
-        log.info("[sentiment_cache] No headlines for %s — returning neutral 5.0", symbol)
+        log.info("[sentiment_cache] No headlines for %s -- returning neutral 5.0", symbol)
         return 5.0
 
     log.info("[sentiment_cache] Scoring %d headlines for %s", len(headlines), symbol)
-    return _score_headlines(headlines)
+    base_score = _score_headlines(headlines)
+
+    # D-07: Trending topic detection -- high article count amplifies signal
+    article_count = len(headlines)
+    if article_count >= 8:
+        # Stock is trending: push score further from neutral (5.0)
+        deviation = base_score - 5.0
+        amplified = 5.0 + deviation * 1.3  # 30% amplification
+        amplified = round(max(0.0, min(10.0, amplified)), 2)
+        log.info(
+            "[sentiment_cache] %s trending (%d articles) -- amplified %.2f -> %.2f",
+            symbol, article_count, base_score, amplified,
+        )
+        base_score = amplified
+
+    return base_score
 
 
 def _fetch_alpaca_news(symbol: str) -> list[str] | None:
@@ -217,26 +242,43 @@ def _fetch_yahoo_rss(symbol: str) -> list[str] | None:
 
 def _score_headlines(headlines: list[str]) -> float:
     """
-    Score headlines using keyword counting.
+    Score headlines using weighted keyword matching (D-06 updated).
 
+    Strong keywords count 2x. Produces wider spread: bullish -> >7, bearish -> <3.
     Formula:
-      raw = (bull_count - bear_count) / total_headlines   → range [-1, +1]
-      score = (raw + 1) / 2 * 10                          → range [0, 10]
+      bull/bear weights normalized by max possible (total * 2.0)
+      tanh(raw * 2.5) applies sigmoid-like stretching to push toward extremes
+      score = (stretched + 1) / 2 * 10   → range [0, 10]
     """
-    bull_count = 0
-    bear_count = 0
+    import math
+
+    bull_weight = 0.0
+    bear_weight = 0.0
 
     for headline in headlines:
         lower = headline.lower()
-        if any(kw in lower for kw in _BULLISH_KEYWORDS):
-            bull_count += 1
-        if any(kw in lower for kw in _BEARISH_KEYWORDS):
-            bear_count += 1
+        # Strong keywords (weight 2.0)
+        if any(kw in lower for kw in _BULLISH_KEYWORDS_STRONG):
+            bull_weight += 2.0
+        elif any(kw in lower for kw in _BULLISH_KEYWORDS_MODERATE):
+            bull_weight += 1.0
+        if any(kw in lower for kw in _BEARISH_KEYWORDS_STRONG):
+            bear_weight += 2.0
+        elif any(kw in lower for kw in _BEARISH_KEYWORDS_MODERATE):
+            bear_weight += 1.0
 
     total = len(headlines)
-    raw = (bull_count - bear_count) / total   # [-1, +1]
-    score = (raw + 1) / 2 * 10               # [0, 10]
-    return round(score, 2)
+    if total == 0:
+        return 5.0
+
+    # Normalize by headline count, but allow exceeding [-1,+1] for strong signals
+    max_possible = total * 2.0  # if every headline matched a strong keyword
+    raw = (bull_weight - bear_weight) / max_possible  # [-1, +1]
+
+    # tanh(raw * 2.5) maps: raw=0.5 -> ~0.76, raw=1.0 -> ~0.96
+    stretched = math.tanh(raw * 2.5)
+    score = (stretched + 1) / 2 * 10  # [0, 10]
+    return round(max(0.0, min(10.0, score)), 2)
 
 
 def _fetch_earnings_date(symbol: str) -> date | None:
