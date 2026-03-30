@@ -564,3 +564,196 @@ def test_sector_scoring_fallback():
     assert set(scores.keys()) == set(SECTOR_ETFS)
     for etf, score in scores.items():
         assert score == 5.0, f"{etf} should fallback to 5.0, got {score}"
+
+
+# ── Recalibration tests (02-04) ───────────────────────────────────────────────
+
+def test_volume_fairness_mean_reversion():
+    """
+    D-18: When only mean_reversion fires (vol ratio 1.0), volume sub-score
+    should be neutral 5.0, not the penalized formula result (~2.0).
+    """
+    df = make_sample_df()
+
+    # mean_reversion always returns volume_ratio 1.0 (below 2x threshold)
+    mock_meanrev_result = {
+        "strategy": "mean_reversion",
+        "fired":    True,
+        "technical_score": 7.0,
+        "volume_ratio":    1.0,
+        "details":  {},
+    }
+
+    # Use ONLY mean_reversion in registry so no other strategies fire
+    with (
+        patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+        patch("scanner.get_sentiment_score", return_value=5.0),
+        patch("scanner.get_earnings_penalty", return_value=0.0),
+        patch("scanner._get_stock_sector_score", return_value=5.0),
+        patch.object(scanner_mod, "_market_regime_multiplier", return_value=1.0),
+        patch.dict("scanner.REGISTRY", {
+            "mean_reversion": lambda sym, df_: dict(mock_meanrev_result),
+        }, clear=True),
+    ):
+        result = scanner_mod._score_symbol_multi("TSLA", {})
+
+    assert result is not None
+    # Volume sub-score must be neutral 5.0, not the formula result for ratio 1.0 (~2.0)
+    vol_score = result["conviction"]["volume"]
+    assert vol_score == 5.0, (
+        f"Expected neutral volume score 5.0 for mean_reversion, got {vol_score}"
+    )
+
+
+def test_volume_fairness_momentum():
+    """
+    D-18: When momentum fires with high volume ratio, volume sub-score should
+    use the actual formula (> 5.0 for ratio > 2x), not the neutral default.
+    """
+    df = make_sample_df()
+
+    mock_momentum = {
+        "strategy": "momentum",
+        "fired":    True,
+        "technical_score": 7.0,
+        "volume_ratio":    3.0,   # above 2x -> score > 5.0
+        "details":  {},
+    }
+
+    with (
+        patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+        patch("scanner.get_sentiment_score", return_value=5.0),
+        patch("scanner.get_earnings_penalty", return_value=0.0),
+        patch("scanner._get_stock_sector_score", return_value=5.0),
+        patch.object(scanner_mod, "_market_regime_multiplier", return_value=1.0),
+        patch.dict("scanner.REGISTRY", {
+            "momentum": lambda sym, df_: dict(mock_momentum),
+        }, clear=True),
+    ):
+        result = scanner_mod._score_symbol_multi("AAPL", {})
+
+    assert result is not None
+    vol_score = result["conviction"]["volume"]
+    # _volume_ratio_to_score(3.0) = 5.0 + (1.0/3.0)*5.0 = 6.67
+    assert vol_score > 5.0, (
+        f"Expected volume score > 5.0 for momentum with ratio 3.0, got {vol_score}"
+    )
+
+
+def test_market_regime_bearish():
+    """
+    D-19: When _market_regime_multiplier returns 0.7, composite should be
+    ~70% of the neutral-regime composite. conviction['regime_multiplier'] == 0.7.
+    """
+    df = make_sample_df()
+
+    mock_strategy = {
+        "strategy": "momentum",
+        "fired":    True,
+        "technical_score": 8.0,
+        "volume_ratio":    2.5,
+        "details":  {},
+    }
+
+    with (
+        patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+        patch("scanner.get_sentiment_score", return_value=6.0),
+        patch("scanner.get_earnings_penalty", return_value=0.0),
+        patch("scanner._get_stock_sector_score", return_value=5.0),
+        patch.object(scanner_mod, "_market_regime_multiplier", return_value=1.0),
+        patch.dict("scanner.REGISTRY", {
+            "momentum": lambda sym, df_: dict(mock_strategy),
+        }, clear=True),
+    ):
+        result_neutral = scanner_mod._score_symbol_multi("AAPL", {})
+
+    with (
+        patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+        patch("scanner.get_sentiment_score", return_value=6.0),
+        patch("scanner.get_earnings_penalty", return_value=0.0),
+        patch("scanner._get_stock_sector_score", return_value=5.0),
+        patch.object(scanner_mod, "_market_regime_multiplier", return_value=0.7),
+        patch.dict("scanner.REGISTRY", {
+            "momentum": lambda sym, df_: dict(mock_strategy),
+        }, clear=True),
+    ):
+        result_bearish = scanner_mod._score_symbol_multi("AAPL", {})
+
+    assert result_neutral is not None
+    assert result_bearish is not None
+
+    # Bearish composite should be ~70% of neutral
+    neutral_comp = result_neutral["conviction"]["composite"]
+    bearish_comp = result_bearish["conviction"]["composite"]
+    assert bearish_comp < neutral_comp, (
+        f"Bearish composite {bearish_comp} should be < neutral {neutral_comp}"
+    )
+    assert result_bearish["conviction"]["regime_multiplier"] == 0.7
+
+
+def test_market_regime_neutral():
+    """
+    D-19: When _market_regime_multiplier returns 1.0, composite is unchanged
+    and conviction['regime_multiplier'] == 1.0.
+    """
+    df = make_sample_df()
+
+    mock_strategy = {
+        "strategy": "momentum",
+        "fired":    True,
+        "technical_score": 7.0,
+        "volume_ratio":    2.5,
+        "details":  {},
+    }
+
+    with (
+        patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+        patch("scanner.get_sentiment_score", return_value=6.0),
+        patch("scanner.get_earnings_penalty", return_value=0.0),
+        patch("scanner._get_stock_sector_score", return_value=5.0),
+        patch.object(scanner_mod, "_market_regime_multiplier", return_value=1.0),
+        patch.dict("scanner.REGISTRY", {
+            "momentum": lambda sym, df_: dict(mock_strategy),
+        }, clear=True),
+    ):
+        result = scanner_mod._score_symbol_multi("AAPL", {})
+
+    assert result is not None
+    assert result["conviction"]["regime_multiplier"] == 1.0
+
+
+def test_sector_cache_thread_safe():
+    """D-21: _sector_cache_lock exists as a threading.Lock on the scanner module."""
+    import threading as _threading
+    assert hasattr(scanner_mod, "_sector_cache_lock"), (
+        "scanner module is missing _sector_cache_lock"
+    )
+    assert isinstance(scanner_mod._sector_cache_lock, type(_threading.Lock())), (
+        f"_sector_cache_lock should be a threading.Lock, got {type(scanner_mod._sector_cache_lock)}"
+    )
+
+
+def test_conviction_threshold_58():
+    """
+    D-01 updated: best_buy() returns empty list for composites at 5.5 and 5.7
+    (both below 5.8 threshold).
+    """
+    results = [
+        _make_result("AAPL", 5.7),
+        _make_result("TSLA", 5.5),
+    ]
+    with patch.object(scanner_mod.config, "CONVICTION_THRESHOLD", 5.8):
+        result = best_buy(results)
+    assert result == [], f"Expected empty list for composites below 5.8, got {result}"
+
+
+def test_conviction_at_threshold_58():
+    """D-01 updated: best_buy() returns candidate when composite == 5.8."""
+    results = [
+        _make_result("AAPL", 5.8),
+        _make_result("TSLA", 5.5),
+    ]
+    with patch.object(scanner_mod.config, "CONVICTION_THRESHOLD", 5.8):
+        result = best_buy(results)
+    assert len(result) >= 1
+    assert result[0]["symbol"] == "AAPL"

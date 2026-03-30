@@ -80,29 +80,29 @@ def test_sentiment_cache_hit(mock_alpaca_news, mock_yahoo_rss):
 
 
 def test_sentiment_all_bullish(mock_alpaca_news, mock_yahoo_rss):
-    """All bullish headlines produce a score above 7.0."""
+    """All bullish headlines produce a score above 7.0 (D-06 weighted scoring)."""
     mock_alpaca_news.return_value = [
-        "stock surges on upgrade to strong buy",
-        "beats earnings expectations with record revenue",
+        "stock surges on strong buy rating",
+        "crushes estimates with record high revenue",
         "analyst raises price target, bullish outlook",
     ]
     mock_yahoo_rss.return_value = None
 
     score = sentiment_cache.get_sentiment_score("NVDA")
-    assert score > 7.0
+    assert score > 7.0, f"Expected > 7.0 for bullish headlines, got {score}"
 
 
 def test_sentiment_all_bearish(mock_alpaca_news, mock_yahoo_rss):
-    """All bearish headlines produce a score below 3.0."""
+    """All bearish headlines produce a score below 3.0 (D-06 weighted scoring)."""
     mock_alpaca_news.return_value = [
-        "stock plunges on downgrade to underperform",
-        "misses earnings estimates, warning issued",
-        "analyst cuts price target, bearish",
+        "stock plunges after SEC investigation",
+        "massive miss on earnings, sell rating issued",
+        "analyst price target cut, bearish outlook",
     ]
     mock_yahoo_rss.return_value = None
 
     score = sentiment_cache.get_sentiment_score("TSLA")
-    assert score < 3.0
+    assert score < 3.0, f"Expected < 3.0 for bearish headlines, got {score}"
 
 
 def test_sentiment_no_headlines(mock_alpaca_news, mock_yahoo_rss):
@@ -181,3 +181,73 @@ def test_earnings_penalty_no_data():
         penalty = sentiment_cache.get_earnings_penalty("PLTR")
 
     assert penalty == 0.0
+
+
+# ── Recalibration tests (D-06, D-07) ─────────────────────────────────────────
+
+def test_sentiment_wider_spread(mock_alpaca_news, mock_yahoo_rss):
+    """
+    D-06: 3 strong bullish headlines -> score > 7.5.
+    3 strong bearish headlines -> score < 2.5.
+    Validates wider spread goal of weighted scoring.
+    """
+    mock_yahoo_rss.return_value = None
+
+    # 3 strong bullish + 2 neutral
+    mock_alpaca_news.return_value = [
+        "stock surges on strong buy rating",
+        "crushes estimates with record high",
+        "massive beat on quarterly earnings",
+        "company opens new office",   # neutral
+        "quarterly report released",  # neutral
+    ]
+    bullish_score = sentiment_cache.get_sentiment_score("AAPL")
+    assert bullish_score > 7.5, (
+        f"Expected > 7.5 for 3 strong bullish headlines, got {bullish_score}"
+    )
+
+    sentiment_cache._cache.clear()
+
+    # 3 strong bearish + 2 neutral
+    mock_alpaca_news.return_value = [
+        "stock plunges after SEC investigation",
+        "massive miss on earnings",
+        "price target cut, sell rating issued",
+        "company holds annual meeting",  # neutral
+        "quarterly report released",     # neutral
+    ]
+    bearish_score = sentiment_cache.get_sentiment_score("TSLA")
+    assert bearish_score < 2.5, (
+        f"Expected < 2.5 for 3 strong bearish headlines, got {bearish_score}"
+    )
+
+
+def test_trending_topic_amplification(mock_alpaca_news, mock_yahoo_rss):
+    """
+    D-07: When >= 8 articles are returned, trending amplification (1.3x deviation)
+    should push the score further from neutral compared to _score_headlines alone.
+    """
+    mock_yahoo_rss.return_value = None
+
+    # 8 moderately bullish headlines -> triggers trending amplification
+    moderately_bullish = [
+        "stock upgrades to overweight",
+        "analyst raises price target",
+        "beats quarterly expectations",
+        "strong growth reported",
+        "positive outlook for sector",
+        "rally continues after earnings beat",
+        "bullish momentum expected",
+        "above expectations guidance issued",
+    ]
+    mock_alpaca_news.return_value = moderately_bullish
+
+    # Score from _score_headlines directly (no amplification)
+    base_score = sentiment_cache._score_headlines(moderately_bullish)
+
+    # Score via get_sentiment_score (with amplification if >= 8 articles)
+    amplified_score = sentiment_cache.get_sentiment_score("NVDA")
+
+    assert amplified_score > base_score, (
+        f"Trending amplification should increase score: base={base_score}, amplified={amplified_score}"
+    )
