@@ -15,9 +15,11 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 import scanner as scanner_mod
+import config
 from scanner import (
     _volume_ratio_to_score,
     _fetch_sector_scores,
+    _score_symbol_multi,
     get_watchlist,
     best_buy,
     SECTOR_ETFS,
@@ -120,37 +122,159 @@ def test_volume_score_between():
 # ── Conviction threshold tests ────────────────────────────────────────────────
 
 def test_conviction_threshold():
-    """best_buy() returns None when all composites < 7.0."""
+    """best_buy() returns empty list when all composites < threshold."""
     results = [
-        _make_result("AAPL", 6.9),
-        _make_result("TSLA", 5.0),
-        _make_result("NVDA", 4.0),
+        _make_result("AAPL", 4.9),
+        _make_result("TSLA", 4.0),
+        _make_result("NVDA", 3.0),
     ]
-    candidate = best_buy(results)
-    assert candidate is None
+    result = best_buy(results)
+    assert result == []
 
 
 def test_conviction_above_threshold():
-    """best_buy() returns candidate when composite >= 7.0."""
+    """best_buy() returns list with candidate when composite >= threshold."""
     results = [
         _make_result("AAPL", 7.5),
-        _make_result("TSLA", 6.5),
+        _make_result("TSLA", 4.5),
     ]
-    candidate = best_buy(results)
-    assert candidate is not None
-    assert candidate["symbol"] == "AAPL"
+    result = best_buy(results)
+    assert len(result) >= 1
+    assert result[0]["symbol"] == "AAPL"
 
 
 def test_conviction_returns_first_above_threshold():
-    """best_buy() returns first (highest) candidate above threshold, not lower ones."""
+    """best_buy() returns top candidate above threshold first."""
     results = [
-        _make_result("NVDA", 8.5),  # above threshold — should be returned
+        _make_result("NVDA", 8.5),  # above threshold -- should be returned first
         _make_result("AMD",  7.2),  # also above threshold
-        _make_result("TSLA", 5.0),  # below threshold
+        _make_result("TSLA", 4.0),  # below threshold
     ]
-    candidate = best_buy(results)
-    assert candidate is not None
-    assert candidate["symbol"] == "NVDA"
+    result = best_buy(results)
+    assert len(result) >= 1
+    assert result[0]["symbol"] == "NVDA"
+
+
+def test_best_buy_returns_top_3():
+    """best_buy() returns exactly 3 candidates when >= 3 are above threshold."""
+    results = [
+        _make_result("A", 8.0),
+        _make_result("B", 7.5),
+        _make_result("C", 7.0),
+        _make_result("D", 6.5),
+        _make_result("E", 5.0),
+    ]
+    with patch.object(scanner_mod.config, "CONVICTION_THRESHOLD", 5.8):
+        result = best_buy(results)
+    assert len(result) == 3, f"Expected 3 candidates, got {len(result)}"
+    assert result[0]["conviction"]["composite"] == 8.0
+    assert result[2]["conviction"]["composite"] == 7.0
+
+
+def test_best_buy_returns_fewer_than_3():
+    """best_buy() returns fewer than 3 candidates when only 2 are above threshold."""
+    results = [
+        _make_result("A", 8.0),
+        _make_result("B", 7.5),
+    ]
+    with patch.object(scanner_mod.config, "CONVICTION_THRESHOLD", 5.8):
+        result = best_buy(results)
+    assert len(result) == 2
+
+
+def test_best_buy_empty_results():
+    """best_buy() returns empty list when given empty input."""
+    result = best_buy([])
+    assert result == []
+
+
+def test_top_movers_skip_momentum():
+    """_score_symbol_multi() skips momentum strategy for symbols in _top_mover_symbols."""
+    df = make_sample_df()
+    momentum_called = []
+
+    def mock_momentum(sym, df_):
+        momentum_called.append(sym)
+        return {"strategy": "momentum", "fired": True, "technical_score": 7.0, "volume_ratio": 2.5, "details": {}}
+
+    def mock_meanrev(sym, df_):
+        return {"strategy": "meanrev", "fired": False, "technical_score": 3.0, "volume_ratio": 1.5, "details": {}}
+
+    scanner_mod._top_mover_symbols = {"TSLA"}
+    try:
+        with (
+            patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+            patch("scanner.get_sentiment_score", return_value=5.0),
+            patch("scanner.get_earnings_penalty", return_value=0.0),
+            patch("scanner._get_stock_sector_score", return_value=5.0),
+            patch.dict("scanner.REGISTRY", {
+                "momentum": mock_momentum,
+                "meanrev":  mock_meanrev,
+            }),
+        ):
+            result = scanner_mod._score_symbol_multi("TSLA", {})
+    finally:
+        scanner_mod._top_mover_symbols = set()
+
+    assert result is not None
+    assert "TSLA" not in momentum_called, "Momentum should be skipped for top mover TSLA"
+
+
+def test_non_mover_runs_momentum():
+    """_score_symbol_multi() runs momentum strategy for non-top-mover symbols."""
+    df = make_sample_df()
+    momentum_called = []
+
+    def mock_momentum(sym, df_):
+        momentum_called.append(sym)
+        return {"strategy": "momentum", "fired": True, "technical_score": 7.0, "volume_ratio": 2.5, "details": {}}
+
+    scanner_mod._top_mover_symbols = {"TSLA"}
+    try:
+        with (
+            patch.object(scanner_mod, "fetch_bars_yf", return_value=df),
+            patch("scanner.get_sentiment_score", return_value=5.0),
+            patch("scanner.get_earnings_penalty", return_value=0.0),
+            patch("scanner._get_stock_sector_score", return_value=5.0),
+            patch.dict("scanner.REGISTRY", {
+                "momentum": mock_momentum,
+            }),
+        ):
+            result = scanner_mod._score_symbol_multi("AAPL", {})
+    finally:
+        scanner_mod._top_mover_symbols = set()
+
+    assert result is not None
+    assert "AAPL" in momentum_called, "Momentum should run for non-top-mover AAPL"
+
+
+def test_expanded_watchlist_size():
+    """config.SWING_WATCHLIST contains at least 50 stocks."""
+    assert len(config.SWING_WATCHLIST) >= 50, (
+        f"Expected >= 50 stocks, got {len(config.SWING_WATCHLIST)}"
+    )
+
+
+def test_watchlist_sector_coverage():
+    """SWING_WATCHLIST includes at least one stock from each major GICS sector."""
+    watchlist = set(config.SWING_WATCHLIST)
+    sector_representatives = {
+        "Technology":           "NVDA",
+        "Consumer Disc":        "TSLA",
+        "Communication Svcs":   "DIS",
+        "Financials":           "JPM",
+        "Healthcare":           "UNH",
+        "Energy":               "XOM",
+        "Industrials":          "CAT",
+        "Consumer Staples":     "COST",
+        "Materials":            "FCX",
+        "Real Estate":          "AMT",
+        "Utilities":            "NEE",
+    }
+    for sector, stock in sector_representatives.items():
+        assert stock in watchlist, (
+            f"Missing {sector} representative {stock} from SWING_WATCHLIST"
+        )
 
 
 # ── Skip logging tests ────────────────────────────────────────────────────────
@@ -164,9 +288,9 @@ def test_skip_logging(caplog):
     ]
 
     with caplog.at_level(logging.INFO, logger="trading_bot"):
-        candidate = best_buy(results)
+        result = best_buy(results)
 
-    assert candidate is None
+    assert result == []
     # Check that "Skipped" appears in log output
     all_messages = " ".join(caplog.messages)
     assert "Skipped" in all_messages, f"Expected 'Skipped' in logs, got: {caplog.messages}"
