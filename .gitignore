@@ -20,3 +20,9 @@ env/
 # IDE
 .vscode/
 .idea/
+
+# Worktrees
+.worktrees/
+
+# Data
+data/
