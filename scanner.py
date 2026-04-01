@@ -123,6 +123,11 @@ def _fetch_sector_scores() -> dict[str, float]:
             else:
                 scores[etf] = round(10.0 - (rank / (n - 1)) * 10.0, 2)
 
+        # Absolute gate: negative 5-day sectors cap at 5.0 regardless of relative rank
+        for etf in sorted_etfs:
+            if changes[etf] < 0:
+                scores[etf] = min(scores[etf], 5.0)
+
         return scores
 
     except Exception as exc:
