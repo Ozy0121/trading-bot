@@ -45,6 +45,12 @@ _trading_client = None
 _data_client    = None
 _kill_fn        = None
 _start_fn       = None
+_coordinator    = None
+
+
+def set_coordinator(coordinator):
+    global _coordinator
+    _coordinator = coordinator
 
 
 def set_dependencies(trading_client, data_client, kill_fn, start_fn):
@@ -649,6 +655,14 @@ def api_stop():
 
     threading.Thread(target=_do, daemon=True, name="api-stop").start()
     return jsonify({"ok": True, "message": "Stopping bot and liquidating positions."})
+
+
+@app.route("/api/agents/status")
+def api_agents_status():
+    if _coordinator is None:
+        return jsonify({"agents": [], "pipeline": {}})
+    return Response(_snap_json(_coordinator.get_agents_status()),
+                    mimetype="application/json")
 
 
 def run(port: int = 5000):

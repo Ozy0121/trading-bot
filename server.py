@@ -85,6 +85,17 @@ dashboard.set_dependencies(
     start_fn=bot.run_bot_from_server,
 )
 
+from agents.event_bus import EventBus
+from agents.coordinator import AgentCoordinator
+
+agent_bus = EventBus()
+coordinator = AgentCoordinator(
+    trading_client=trading_client,
+    data_client=data_client,
+    event_bus=agent_bus,
+)
+dashboard.set_coordinator(coordinator)
+
 print()
 print("=" * 55)
 print(f"  Mode    : {mode_label}")

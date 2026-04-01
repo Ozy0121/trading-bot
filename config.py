@@ -160,3 +160,8 @@ _swing_raw = os.getenv(
     "MARA,RIVN,NIO,F,LYFT"
 )
 SWING_WATCHLIST = [s.strip().upper() for s in _swing_raw.split(",") if s.strip()]
+
+# ── Anthropic API (for Strategist and Auditor agents) ───────────────────────
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+STRATEGIST_MODEL  = os.getenv("STRATEGIST_MODEL", "claude-sonnet-4-6")
+AUDITOR_MODEL     = os.getenv("AUDITOR_MODEL", "claude-opus-4-6")
