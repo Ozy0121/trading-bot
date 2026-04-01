@@ -97,6 +97,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260328-jal | Redesign dashboard UI with premium fintech glassmorphism dark earthy theme | 2026-03-28 | b1c55ee | [260328-jal-redesign-dashboard-ui-with-premium-finte](./quick/260328-jal-redesign-dashboard-ui-with-premium-finte/) |
+| 260401-bpu | Recalibrate conviction scoring — fix compressed ranges in momentum, mean_reversion, sentiment, sector, volume | 2026-04-01 | 6aedc04 | [260401-bpu-recalibrate-conviction-scoring-fix-compr](./quick/260401-bpu-recalibrate-conviction-scoring-fix-compr/) |
 
 ### Blockers/Concerns
 
@@ -106,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T01:19:43.587Z
+Last session: 2026-04-01T18:18:11Z
 Stopped at: Completed 02-04-PLAN.md
 Resume file: None
