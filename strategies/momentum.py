@@ -63,9 +63,10 @@ def scan(symbol: str, df: pd.DataFrame) -> dict:
     fired      = broke_high and vol_ok
 
     # Technical score: proximity to N-day high (0–10), +2 breakout bonus
-    proximity_score = max(0.0, (last_close - n_day_high) / n_day_high * 100) if n_day_high > 0 else 0.0
-    # Clamp proximity contribution to 0-8
-    tech_score = min(8.0, proximity_score)
+    # proximity_pct: percent above the N-day high (e.g. 2.0 for a 2% breakout)
+    # Formula: proximity_pct * 3.5 so 1% -> 3.5, 2% -> 7.0, 3%+ -> 8.0 (capped)
+    proximity_pct = max(0.0, (last_close - n_day_high) / n_day_high * 100) if n_day_high > 0 else 0.0
+    tech_score = min(8.0, proximity_pct * 3.5)
     if fired:
         tech_score = min(10.0, tech_score + 2.0)
 

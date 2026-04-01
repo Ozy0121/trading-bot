@@ -123,6 +123,11 @@ def _fetch_sector_scores() -> dict[str, float]:
             else:
                 scores[etf] = round(10.0 - (rank / (n - 1)) * 10.0, 2)
 
+        # Absolute gate: negative 5-day sectors cap at 5.0 regardless of relative rank
+        for etf in sorted_etfs:
+            if changes[etf] < 0:
+                scores[etf] = min(scores[etf], 5.0)
+
         return scores
 
     except Exception as exc:
@@ -213,13 +218,13 @@ def _volume_ratio_to_score(vol_ratio: float) -> float:
     """
     Map volume ratio to a 0-10 score (PRED-02).
 
-    Below 2x:  score = min(5.0, (vol_ratio / 2.0) * 4)   — linear up to 4.0
+    Below 2x:  score = min(5.0, (vol_ratio / 2.0) * 5)   — linear up to 5.0
     At/above 2x: score = 5 + min(5.0, (vol_ratio - 2.0) / 3.0 * 5.0)
 
-    2x -> exactly 5.0. 5x -> 10.0. 1x -> 2.0. 0x -> 0.0.
+    2x -> exactly 5.0. 5x -> 10.0. 1x -> 2.5. 0x -> 0.0.
     """
     if vol_ratio < 2.0:
-        result = min(5.0, (vol_ratio / 2.0) * 4.0)
+        result = min(5.0, (vol_ratio / 2.0) * 5.0)
     else:
         result = 5.0 + min(5.0, (vol_ratio - 2.0) / 3.0 * 5.0)
 

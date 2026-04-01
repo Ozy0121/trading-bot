@@ -275,8 +275,8 @@ def _score_headlines(headlines: list[str]) -> float:
     max_possible = total * 2.0  # if every headline matched a strong keyword
     raw = (bull_weight - bear_weight) / max_possible  # [-1, +1]
 
-    # tanh(raw * 2.5) maps: raw=0.5 -> ~0.76, raw=1.0 -> ~0.96
-    stretched = math.tanh(raw * 2.5)
+    # tanh(raw * 4.0) maps: raw=0.5 -> ~0.96, raw=1.0 -> ~1.00 — wider spread than 2.5
+    stretched = math.tanh(raw * 4.0)
     score = (stretched + 1) / 2 * 10  # [0, 10]
     return round(max(0.0, min(10.0, score)), 2)
 

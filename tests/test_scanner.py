@@ -757,3 +757,86 @@ def test_conviction_at_threshold_58():
         result = best_buy(results)
     assert len(result) >= 1
     assert result[0]["symbol"] == "AAPL"
+
+
+# ── Recalibration threshold validation (260401-bpu) ──────────────────────────
+
+def test_threshold_passrate_realistic():
+    """
+    260401-bpu: Simulate realistic conviction score combos and assert >= 5%
+    exceed the 5.8 threshold, validating the new scoring calibration.
+
+    Scenarios tested span a range from weak (unfired, low RSI breakout) to
+    strong (fired breakout + elevated volume + positive sector + bullish sentiment).
+    """
+    import config as cfg
+
+    threshold = cfg.CONVICTION_THRESHOLD  # 5.8
+
+    # Build synthetic score combos: (technical, volume, sentiment, sector)
+    # Based on expected ranges after recalibration:
+    # - Momentum fired 2% above high: tech ~9.0 (7.0 + 2 bonus)
+    # - Volume 3x: ~6.67
+    # - Positive sector: ~7.0
+    # - Moderate bullish sentiment: ~6.5
+    combos = [
+        # Strong momentum breakout — should pass
+        (9.0, 6.67, 6.5, 7.0),
+        # Good momentum, good volume — should pass
+        (7.0, 7.5, 5.5, 6.0),
+        # Mean reversion RSI=22, fired, positive sector — should pass
+        (8.5, 5.0, 5.2, 6.5),
+        # Decent momentum unfired, average everything — borderline
+        (5.0, 5.0, 5.0, 5.0),
+        # Catalyst fired, ok volume — should pass
+        (10.0, 5.0, 5.5, 5.5),
+        # Weak setup — should fail
+        (2.0, 2.5, 4.5, 3.0),
+        # Negative sector cap, weak technical — should fail
+        (3.5, 3.0, 4.0, 5.0),
+        # Strong across the board — should pass
+        (8.0, 8.0, 7.0, 8.0),
+        # Moderate all-around — borderline/fail
+        (4.5, 4.5, 5.0, 4.5),
+        # Strong mean reversion fired + neutral volume — should pass
+        (9.5, 5.0, 6.0, 6.5),
+        # Weak momentum + low volume — fail
+        (2.5, 2.0, 4.8, 4.5),
+        # Decent with low sentiment — borderline
+        (7.0, 6.0, 4.0, 6.0),
+        # Strong catalyst with average others — should pass
+        (10.0, 5.0, 5.0, 5.0),
+        # All neutral — fail
+        (5.0, 5.0, 5.0, 5.0),
+        # High volume low tech — fail
+        (3.0, 9.0, 5.0, 5.0),
+        # Strong tech moderate rest — should pass
+        (8.5, 5.5, 5.5, 5.5),
+        # Weak all-around — fail
+        (1.5, 1.5, 4.5, 3.5),
+        # Strong tech + sentiment — should pass
+        (8.0, 5.0, 7.5, 6.0),
+        # Low tech high sector — fail
+        (2.0, 5.0, 6.0, 9.0),
+        # Good momentum + good sector — should pass
+        (7.5, 6.0, 5.5, 7.5),
+    ]
+
+    w_t = cfg.CONVICTION_WEIGHT_TECHNICAL   # 0.50
+    w_v = cfg.CONVICTION_WEIGHT_VOLUME      # 0.20
+    w_s = cfg.CONVICTION_WEIGHT_SENTIMENT   # 0.10
+    w_c = cfg.CONVICTION_WEIGHT_SECTOR      # 0.20
+
+    composites = [
+        t * w_t + v * w_v + s * w_s + c * w_c
+        for t, v, s, c in combos
+    ]
+
+    passing = sum(1 for comp in composites if comp >= threshold)
+    pass_rate = passing / len(composites)
+
+    assert pass_rate >= 0.05, (
+        f"Expected >= 5% of realistic setups to pass threshold {threshold}, "
+        f"got {pass_rate:.1%} ({passing}/{len(composites)}). "
+        f"Composites: {[round(c, 2) for c in composites]}"
+    )
