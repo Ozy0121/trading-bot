@@ -62,7 +62,10 @@ def scan(symbol: str, df: pd.DataFrame) -> dict:
     fired        = rsi_oversold and at_bb_lower
 
     # Technical score: RSI-derived 0-10, +2 support bonus
-    rsi_score  = max(0.0, (RSI_THRESHOLD - rsi_val) / RSI_THRESHOLD * 10)
+    # Exponential curve: RSI=30 -> ~3.0, RSI=25 -> ~5.5, RSI=20 -> ~7.5, RSI=15 -> ~8.0
+    # Clamp gap to >= 0 before raising to fractional power to avoid complex numbers
+    rsi_gap    = max(0.0, RSI_THRESHOLD - rsi_val)
+    rsi_score  = (rsi_gap / RSI_THRESHOLD) ** 0.6 * 10
     tech_score = min(8.0, rsi_score)
     if fired:
         tech_score = min(10.0, tech_score + 2.0)
