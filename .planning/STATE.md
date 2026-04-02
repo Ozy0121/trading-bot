@@ -1,8 +1,8 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: executing
+milestone: v2.0
+milestone_name: Intelligence Suite
+status: defining-requirements
 stopped_at: Completed 02-04-PLAN.md
 last_updated: "2026-03-30T01:26:13.780Z"
 last_activity: 2026-03-30
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-02 - Completed quick task 260402-e9l: Fix stop-without-liquidate and wire up agent coordinator
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-02 — Milestone v2.0 started
 
 Progress: [░░░░░░░░░░] 0%
 

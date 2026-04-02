@@ -8,6 +8,18 @@ An automated swing-trading bot for a small ($500) Alpaca brokerage account const
 
 Maximize the value of each of the 3 allowed trades per week by finding the highest-conviction swing trade setups across stocks and options, with aggressive position sizing appropriate for a small growth-focused account.
 
+## Current Milestone: v2.0 Intelligence Suite
+
+**Goal:** Transform the trading bot from a basic scanner into a full intelligence platform with comprehensive market analysis, expanded stock coverage, multi-source news, overnight planning, and professional reporting.
+
+**Target features:**
+- Score recalibration with letter grades and hover breakdowns
+- End-of-day overnight scanner with "Tomorrow's Game Plan" approve/reject UI
+- Expanded stock scanner (S&P 500 + NASDAQ 100 + top volume + unusual volume)
+- Multi-source news aggregation (Finnhub, RSS feeds, SEC EDGAR, FRED)
+- Intelligence dashboard tab (market overview, VIX, sector heatmap, AI brief)
+- Professional PDF report download
+
 ## Requirements
 
 ### Validated
@@ -98,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after Phase 2 completion — prediction engine, multi-strategy scanner, sentiment cache, 60-stock watchlist*
+*Last updated: 2026-04-02 — Milestone v2.0 Intelligence Suite started*
