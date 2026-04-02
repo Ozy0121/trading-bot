@@ -642,19 +642,17 @@ def api_stop():
             log.warning("[dashboard] Shutdown with unprotected positions: %s",
                         result["unprotected"])
 
-    # Perform shutdown
+    # Perform shutdown — leave positions and bracket orders in place
     log.critical("[dashboard] Bot stop requested via /api/stop.")
     shared_state.update(status="stopping")
 
     def _do():
-        from safety import liquidate_all
         import bot as _bot
         _bot.request_shutdown()
-        liquidate_all(_trading_client)
         shared_state.update(status="stopped")
 
     threading.Thread(target=_do, daemon=True, name="api-stop").start()
-    return jsonify({"ok": True, "message": "Stopping bot and liquidating positions."})
+    return jsonify({"ok": True, "message": "Stopping bot. Positions and bracket orders left in place."})
 
 
 @app.route("/api/agents/status")

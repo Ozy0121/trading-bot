@@ -95,6 +95,7 @@ coordinator = AgentCoordinator(
     event_bus=agent_bus,
 )
 dashboard.set_coordinator(coordinator)
+bot.set_coordinator(coordinator)
 
 print()
 print("=" * 55)

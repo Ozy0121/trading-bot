@@ -205,7 +205,8 @@ def _fetch_alpaca_news(symbol: str) -> list[str] | None:
         start = datetime.now(timezone.utc) - timedelta(days=3)
         req = NewsRequest(symbols=symbol, limit=10, start=start)
         news_set = client.get_news(req)
-        headlines = [item.headline for item in news_set.data if item.headline]
+        news_items = news_set.data.get("news", []) if isinstance(news_set.data, dict) else news_set.data
+        headlines = [item.headline for item in news_items if hasattr(item, 'headline') and item.headline]
         log.debug("[sentiment_cache] Alpaca returned %d headlines for %s", len(headlines), symbol)
         return headlines if headlines else None
     except Exception as exc:

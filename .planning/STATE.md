@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 Phase: 3
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-04-01 - Completed quick task 260401-bpu: Recalibrate conviction scoring
+Last activity: 2026-04-02 - Completed quick task 260402-e9l: Fix stop-without-liquidate and wire up agent coordinator
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -98,6 +98,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260328-jal | Redesign dashboard UI with premium fintech glassmorphism dark earthy theme | 2026-03-28 | b1c55ee | [260328-jal-redesign-dashboard-ui-with-premium-finte](./quick/260328-jal-redesign-dashboard-ui-with-premium-finte/) |
 | 260401-bpu | Recalibrate conviction scoring — fix compressed ranges in momentum, mean_reversion, sentiment, sector, volume | 2026-04-01 | 6aedc04 | [260401-bpu-recalibrate-conviction-scoring-fix-compr](./quick/260401-bpu-recalibrate-conviction-scoring-fix-compr/) |
+| 260402-e9l | Fix stop-without-liquidate and wire up agent coordinator | 2026-04-02 | pending | [260402-e9l-fix-stop-without-liquidate-and-wire-up-a](./quick/260402-e9l-fix-stop-without-liquidate-and-wire-up-a/) |
 
 ### Blockers/Concerns
 

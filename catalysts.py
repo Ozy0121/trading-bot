@@ -18,6 +18,7 @@ All fetches are cached aggressively to avoid hammering free APIs.
 from __future__ import annotations
 
 import re
+import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
@@ -33,6 +34,7 @@ REQUEST_TIMEOUT = 8
 # ── Cache ────────────────────────────────────────────────────────────────────
 _ark_cache: dict[str, bool] = {}   # symbol -> True if ARK bought recently
 _ark_cache_date: date | None = None
+_ark_lock = threading.Lock()
 
 _upgrade_cache: dict[str, bool] = {}   # symbol -> True if upgrade found
 _upgrade_cache_ts: float = 0           # unix time of last fetch
@@ -64,36 +66,41 @@ def fetch_ark_buys() -> dict[str, bool]:
     if _ark_cache_date == today and _ark_cache:
         return _ark_cache
 
-    log.info("[catalysts] Fetching ARK Invest daily trades...")
+    with _ark_lock:
+        # Re-check after acquiring lock (another thread may have filled it)
+        if _ark_cache_date == today and _ark_cache:
+            return _ark_cache
 
-    ark_buys: dict[str, bool] = {}
+        log.info("[catalysts] Fetching ARK Invest daily trades...")
 
-    for etf in _ARK_ETFS:
-        url = f"https://arkfunds.io/api/v2/etf/trades?symbol={etf}"
-        try:
-            resp = requests.get(url, timeout=REQUEST_TIMEOUT,
-                                headers={"User-Agent": "Mozilla/5.0"})
-            resp.raise_for_status()
-            data = resp.json()
-            trades = data.get("trades", [])
-            for trade in trades:
-                direction = str(trade.get("direction", "")).lower()
-                ticker    = str(trade.get("ticker", "")).upper()
-                if direction == "buy" and ticker:
-                    ark_buys[ticker] = True
-                    log.debug("[catalysts] ARK %s buying: %s", etf, ticker)
-        except Exception as exc:
-            log.warning("[catalysts] ARK fetch failed for %s: %s", etf, exc)
+        ark_buys: dict[str, bool] = {}
 
-    if ark_buys:
-        log.info("[catalysts] ARK buying %d stocks: %s",
-                 len(ark_buys), ", ".join(sorted(ark_buys.keys())))
-    else:
-        log.warning("[catalysts] No ARK trades found — API may be down.")
+        for etf in _ARK_ETFS:
+            url = f"https://arkfunds.io/api/v2/etf/trades?symbol={etf}"
+            try:
+                resp = requests.get(url, timeout=REQUEST_TIMEOUT,
+                                    headers={"User-Agent": "Mozilla/5.0"})
+                resp.raise_for_status()
+                data = resp.json()
+                trades = data.get("trades", [])
+                for trade in trades:
+                    direction = str(trade.get("direction", "")).lower()
+                    ticker    = str(trade.get("ticker", "")).upper()
+                    if direction == "buy" and ticker:
+                        ark_buys[ticker] = True
+                        log.debug("[catalysts] ARK %s buying: %s", etf, ticker)
+            except Exception as exc:
+                log.warning("[catalysts] ARK fetch failed for %s: %s", etf, exc)
 
-    _ark_cache = ark_buys
-    _ark_cache_date = today
-    return _ark_cache
+        if ark_buys:
+            log.info("[catalysts] ARK buying %d stocks: %s",
+                     len(ark_buys), ", ".join(sorted(ark_buys.keys())))
+        else:
+            log.warning("[catalysts] No ARK trades found — API may be down.")
+
+        _ark_cache = ark_buys
+        _ark_cache_date = today
+        return _ark_cache
 
 
 # ── Analyst upgrade scanner ───────────────────────────────────────────────────

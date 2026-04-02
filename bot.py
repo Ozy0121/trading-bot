@@ -11,7 +11,7 @@ Strategy summary:
   - 6% take-profit target
   - Dynamic position sizing: 5% of equity, halved on 3-loss streak
   - PDT protection: tracks day trades, never exceeds 3/5-day window
-  - Graceful shutdown: liquidates all positions on Ctrl-C
+  - Graceful shutdown: stops polling loop on Ctrl-C (positions and bracket orders left in place)
 """
 
 import signal
@@ -59,6 +59,12 @@ log = get_logger()
 
 _shutdown_requested = False
 _trading_client_global: TradingClient | None = None
+_coordinator = None
+
+
+def set_coordinator(coordinator) -> None:
+    global _coordinator
+    _coordinator = coordinator
 
 
 def request_shutdown() -> None:
@@ -69,7 +75,7 @@ def request_shutdown() -> None:
 
 def _handle_signal(signum, frame):
     global _shutdown_requested
-    log.warning("[bot] Signal %s — liquidating all positions before exit...", signum)
+    log.warning("[bot] Signal %s — stopping bot (positions and bracket orders left in place)...", signum)
     _shutdown_requested = True
     shared_state.update(status="stopping")
     if _trading_client_global:
@@ -83,10 +89,6 @@ def _handle_signal(signum, frame):
                                 symbols=",".join(result["unprotected"]))
         except Exception:
             pass
-        try:
-            liquidate_all(_trading_client_global)
-        except Exception as exc:
-            log.error("[bot] Shutdown liquidation error: %s", exc)
     shared_state.update(status="stopped")
     sys.exit(0)
 
@@ -287,6 +289,12 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
     except Exception as exc:
         log.error("[bot] Startup bracket check failed: %s", exc, exc_info=True)
 
+    if _coordinator:
+        try:
+            _coordinator.startup_sequence()
+        except Exception as exc:
+            log.error("[bot] Coordinator startup failed: %s", exc, exc_info=True)
+
     while not _shutdown_requested:
         cycle_start = datetime.now(timezone.utc)
         log.info("[bot] ── Cycle: %s ──", cycle_start.strftime("%Y-%m-%dT%H:%M:%SZ"))
@@ -342,6 +350,14 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                 {k: v for k, v in r.items() if k != "df"}
                 for r in scan_results
             ])
+
+            # ── 7a. Agent coordinator cycle ─────────────────────────────────
+            if _coordinator:
+                try:
+                    cycle_result = _coordinator.run_cycle()
+                    log.info("[bot] Agent cycle result: %s", cycle_result.get("action", "UNKNOWN"))
+                except Exception as exc:
+                    log.error("[bot] Coordinator cycle error: %s", exc, exc_info=True)
 
             # ── 8. Find current open positions ───────────────────────────────
             all_positions = get_all_positions_data(trading_client)
@@ -532,6 +548,12 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
 
         log.info("[bot] Sleeping %ds...", config.POLL_INTERVAL)
         _interruptible_sleep(config.POLL_INTERVAL)
+
+    if _coordinator:
+        try:
+            _coordinator.shutdown_sequence()
+        except Exception as exc:
+            log.error("[bot] Coordinator shutdown failed: %s", exc, exc_info=True)
 
     shared_state.update(status="stopped")
     log.info("[bot] Main loop exited.")
