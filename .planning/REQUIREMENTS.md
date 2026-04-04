@@ -80,24 +80,76 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **AI-03**: "What should I do?" button gives specific buy/sell/hold/wait recommendation with reasoning; "Explain more" expands detail
 - [ ] **AI-04**: Analysis updates on symbol switch and every few minutes automatically
 
-## v2 Requirements
+## v2.0 Requirements — Intelligence Suite
 
-Deferred to future milestone. Tracked but not in current roadmap.
+Requirements for milestone v2.0. Each maps to roadmap phases.
 
-### Advanced Options
+### Score Recalibration
+
+- [ ] **SCORE-01**: Conviction scores display as letter grades (A/B/C/D/F) alongside numeric value, with grade cutoffs config-driven and relative to conviction threshold
+- [ ] **SCORE-02**: Hovering a score shows tooltip breakdown of sub-scores (technical, volume, sentiment, sector) with per-component numeric values and strategy label
+
+### Expanded Scanner
+
+- [ ] **UNIV-01**: Scanner fetches S&P 500 + NASDAQ 100 constituents (cached daily) and deduplicates into a unified expanded watchlist
+- [ ] **UNIV-02**: Top daily volume and unusual volume (>2x 20-day avg) stocks are added to the expanded watchlist
+- [ ] **UNIV-03**: Hard pre-filters applied before deep scoring: price $5 to MAX_POSITION_VALUE, daily volume >500K, market cap >$100M, NYSE/NASDAQ only, no ETFs/preferred shares
+- [ ] **UNIV-04**: Two-tier scan: bulk `yf.download()` pre-filter culls to ~50 survivors, then full conviction scoring on survivors only
+- [ ] **UNIV-05**: Expanded universe scan runs only during overnight window — live 60s bot loop keeps existing watchlist
+
+### Multi-Source News
+
+- [ ] **NEWS-01**: News aggregator fetches from Finnhub company news API with rate-aware batching (60 calls/min limit, news only for scoring finalists)
+- [ ] **NEWS-02**: RSS feeds parsed via `feedparser` from Google News, MarketWatch, and Reuters — handles both RSS 2.0 and Atom formats
+- [ ] **NEWS-03**: SEC EDGAR 8-K RSS feed fetched with proper User-Agent header and 10 req/s rate limit, used as timing signal only (not scored)
+- [ ] **NEWS-04**: FRED economic calendar provides macro event dates (FOMC, CPI, NFP) — static calendar with optional live API, graceful fallback if API key missing
+- [ ] **NEWS-05**: All news items normalized to common format with headline, source attribution, URL, published date, and category
+- [ ] **NEWS-06**: News deduplication by title similarity across sources, per-source TTL caching (stock news 15min, macro 30min, SEC 1hr, FRED 1day)
+
+### Overnight Scanner
+
+- [ ] **OVNT-01**: Post-market daemon thread runs after market close (time from Alpaca calendar, DST-safe), scans expanded watchlist on daily bars
+- [ ] **OVNT-02**: Generates ranked "Tomorrow's Game Plan" with top 10 candidates showing symbol, score, strategy, key indicators, and top headlines
+- [ ] **OVNT-03**: Dashboard UI panel shows pending game plan with per-symbol approve/reject buttons
+- [ ] **OVNT-04**: Approved candidates get priority in morning scan — bot checks pre-queue before running live scan at open
+- [ ] **OVNT-05**: Overnight plan decisions persist to JSON file, survive bot restarts, expire after 18 hours
+
+### Intelligence Tab
+
+- [ ] **INTEL-01**: Dedicated dashboard tab showing SPY/QQQ/DIA/IWM price, daily change %, and 5-day mini-charts
+- [ ] **INTEL-02**: VIX gauge showing current level with classification (low/moderate/high/extreme) and 5-day history
+- [ ] **INTEL-03**: Sector performance heatmap using existing scanner sector ETF data (promoted to public function), showing 5-day % change with color gradient
+- [ ] **INTEL-04**: Market breadth indicators (advance/decline ratio, % above 200 SMA) cached daily
+- [ ] **INTEL-05**: AI market brief (2-4 sentences) via Claude Sonnet analyzing market trend, dominant sector, VIX risk level, and notable macro events — cached 15 minutes
+- [ ] **INTEL-06**: All intelligence data fetched on-demand via dedicated API routes, not pushed via SSE stream
+
+### PDF Report
+
+- [ ] **PDF-01**: Downloadable PDF via `/api/report/pdf` with account summary (equity, cash, buying power, daily P&L)
+- [ ] **PDF-02**: Report includes open positions with entry price, current price, P&L, and stop/take-profit levels
+- [ ] **PDF-03**: Report includes last 50 trades with date, symbol, side, entry, exit, P&L, win/loss
+- [ ] **PDF-04**: Report includes performance metrics: win rate, avg gain/loss, consecutive losses, PDT usage
+- [ ] **PDF-05**: Report includes 5-day price line charts for held symbols via matplotlib, embedded in reportlab PDF using BytesIO (never disk)
+- [ ] **PDF-06**: PDF generated in-memory using `reportlab` (pure Python, no system deps) — generation completes in under 3 seconds
+
+## Future Requirements
+
+Deferred to future milestones. Tracked but not in current roadmap.
+
+### Advanced Options (from v1.0)
 
 - **OPT-V2-01**: Delta-based strike selection using Black-Scholes approximation (scipy)
 - **OPT-V2-02**: IV rank filtering — prefer IV rank < 50th percentile
 - **OPT-V2-03**: Earnings date avoidance — exclude 5 days before earnings
 - **OPT-V2-04**: Options rolling — manually extend positions via dashboard
 
-### Advanced Strategies
+### Advanced Strategies (from v1.0)
 
 - **STRAT-V2-01**: Hold-time-aware exit signals — tighten stops after 2+ days
 - **STRAT-V2-02**: Strategy performance analytics — win rate, avg return per strategy type
 - **STRAT-V2-03**: Backtesting engine for strategy validation
 
-### Infrastructure
+### Infrastructure (from v1.0)
 
 - **INFRA-V2-01**: SQLite database for trade history and state persistence
 - **INFRA-V2-02**: Specific exception handling (APIError, InsufficientFundsError) replacing broad catches
@@ -115,8 +167,18 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | Automated options rolling | Too complex for v1 |
 | Crypto trading | Focusing on equities and options |
 | Different broker integration | Alpaca supports everything needed |
+| Real-time SEC EDGAR filing parsing | NLP complexity too high, 8-K used as timing signal only |
+| FRED live API as hard dependency | Static calendar sufficient, API key optional |
+| Full candlestick charts in PDF | Complex rendering, line charts sufficient |
+| Sector heatmap drill-down | Disproportionate frontend complexity for personal bot |
+| Push notifications (email/SMS/Slack) | Dashboard badge sufficient for personal bot |
+| Historical backtesting in PDF | Completely different scope |
+| Unusual options activity scanning | Requires paid data feed |
+| Per-symbol RSS subscriptions in DB | No database in stack, config-based sources |
 
 ## Traceability
+
+### v1.0 Requirements (Phases 1-5)
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -167,11 +229,46 @@ Deferred to future milestone. Tracked but not in current roadmap.
 | AI-03 | Phase 5 | Pending |
 | AI-04 | Phase 5 | Pending |
 
+### v2.0 Requirements (Phases TBD — assigned by roadmapper)
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| SCORE-01 | TBD | Pending |
+| SCORE-02 | TBD | Pending |
+| UNIV-01 | TBD | Pending |
+| UNIV-02 | TBD | Pending |
+| UNIV-03 | TBD | Pending |
+| UNIV-04 | TBD | Pending |
+| UNIV-05 | TBD | Pending |
+| NEWS-01 | TBD | Pending |
+| NEWS-02 | TBD | Pending |
+| NEWS-03 | TBD | Pending |
+| NEWS-04 | TBD | Pending |
+| NEWS-05 | TBD | Pending |
+| NEWS-06 | TBD | Pending |
+| OVNT-01 | TBD | Pending |
+| OVNT-02 | TBD | Pending |
+| OVNT-03 | TBD | Pending |
+| OVNT-04 | TBD | Pending |
+| OVNT-05 | TBD | Pending |
+| INTEL-01 | TBD | Pending |
+| INTEL-02 | TBD | Pending |
+| INTEL-03 | TBD | Pending |
+| INTEL-04 | TBD | Pending |
+| INTEL-05 | TBD | Pending |
+| INTEL-06 | TBD | Pending |
+| PDF-01 | TBD | Pending |
+| PDF-02 | TBD | Pending |
+| PDF-03 | TBD | Pending |
+| PDF-04 | TBD | Pending |
+| PDF-05 | TBD | Pending |
+| PDF-06 | TBD | Pending |
+
 **Coverage:**
-- v1 requirements: 43 total
-- Mapped to phases: 43
+- v1 requirements: 43 total (mapped to Phases 1-5)
+- v2.0 requirements: 28 total (phase assignment pending)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-03-27 after roadmap rework — added BRACKET, PRED, DASH-05/06, AI requirements*
+*Last updated: 2026-04-04 — Added v2.0 Intelligence Suite requirements (28 REQ-IDs across 6 categories)*
