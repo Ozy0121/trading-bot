@@ -191,7 +191,7 @@ CSS class names: `.grade-a`, `.grade-b`, `.grade-c`, `.grade-d`, `.grade-f`.
 
 **CSS classes:** `.tt-row`, `.tt-label`, `.tt-bar-track`, `.tt-bar-fill`, `.tt-val`
 
-**Layout:** `display: flex; align-items: center; gap: 6px; margin-bottom: 6px`
+**Layout:** `display: flex; align-items: center; gap: 8px; margin-bottom: 8px`
 
 | Part | CSS |
 |------|-----|
