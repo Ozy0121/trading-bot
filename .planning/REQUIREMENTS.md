@@ -229,46 +229,46 @@ Deferred to future milestones. Tracked but not in current roadmap.
 | AI-03 | Phase 5 | Pending |
 | AI-04 | Phase 5 | Pending |
 
-### v2.0 Requirements (Phases TBD — assigned by roadmapper)
+### v2.0 Requirements (Phases 6-11)
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCORE-01 | TBD | Pending |
-| SCORE-02 | TBD | Pending |
-| UNIV-01 | TBD | Pending |
-| UNIV-02 | TBD | Pending |
-| UNIV-03 | TBD | Pending |
-| UNIV-04 | TBD | Pending |
-| UNIV-05 | TBD | Pending |
-| NEWS-01 | TBD | Pending |
-| NEWS-02 | TBD | Pending |
-| NEWS-03 | TBD | Pending |
-| NEWS-04 | TBD | Pending |
-| NEWS-05 | TBD | Pending |
-| NEWS-06 | TBD | Pending |
-| OVNT-01 | TBD | Pending |
-| OVNT-02 | TBD | Pending |
-| OVNT-03 | TBD | Pending |
-| OVNT-04 | TBD | Pending |
-| OVNT-05 | TBD | Pending |
-| INTEL-01 | TBD | Pending |
-| INTEL-02 | TBD | Pending |
-| INTEL-03 | TBD | Pending |
-| INTEL-04 | TBD | Pending |
-| INTEL-05 | TBD | Pending |
-| INTEL-06 | TBD | Pending |
-| PDF-01 | TBD | Pending |
-| PDF-02 | TBD | Pending |
-| PDF-03 | TBD | Pending |
-| PDF-04 | TBD | Pending |
-| PDF-05 | TBD | Pending |
-| PDF-06 | TBD | Pending |
+| SCORE-01 | Phase 6 | Pending |
+| SCORE-02 | Phase 6 | Pending |
+| UNIV-01 | Phase 7 | Pending |
+| UNIV-02 | Phase 7 | Pending |
+| UNIV-03 | Phase 7 | Pending |
+| UNIV-04 | Phase 7 | Pending |
+| UNIV-05 | Phase 7 | Pending |
+| NEWS-01 | Phase 8 | Pending |
+| NEWS-02 | Phase 8 | Pending |
+| NEWS-03 | Phase 8 | Pending |
+| NEWS-04 | Phase 8 | Pending |
+| NEWS-05 | Phase 8 | Pending |
+| NEWS-06 | Phase 8 | Pending |
+| OVNT-01 | Phase 9 | Pending |
+| OVNT-02 | Phase 9 | Pending |
+| OVNT-03 | Phase 9 | Pending |
+| OVNT-04 | Phase 9 | Pending |
+| OVNT-05 | Phase 9 | Pending |
+| INTEL-01 | Phase 10 | Pending |
+| INTEL-02 | Phase 10 | Pending |
+| INTEL-03 | Phase 10 | Pending |
+| INTEL-04 | Phase 10 | Pending |
+| INTEL-05 | Phase 10 | Pending |
+| INTEL-06 | Phase 10 | Pending |
+| PDF-01 | Phase 11 | Pending |
+| PDF-02 | Phase 11 | Pending |
+| PDF-03 | Phase 11 | Pending |
+| PDF-04 | Phase 11 | Pending |
+| PDF-05 | Phase 11 | Pending |
+| PDF-06 | Phase 11 | Pending |
 
 **Coverage:**
 - v1 requirements: 43 total (mapped to Phases 1-5)
-- v2.0 requirements: 28 total (phase assignment pending)
-- Unmapped: 0 ✓
+- v2.0 requirements: 30 total (mapped to Phases 6-11)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-27*
-*Last updated: 2026-04-04 — Added v2.0 Intelligence Suite requirements (28 REQ-IDs across 6 categories)*
+*Last updated: 2026-04-04 -- v2.0 requirements mapped to Phases 6-11 by roadmapper*

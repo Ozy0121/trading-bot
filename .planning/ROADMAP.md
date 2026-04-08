@@ -137,8 +137,8 @@ Plans:
   2. Hovering over any score reveals a tooltip breakdown showing each sub-score (technical, volume, sentiment, sector) with numeric values and the strategy label that produced the signal
 **Plans:** 2 plans
 Plans:
-- [ ] 06-01-PLAN.md — Expose conviction_threshold in state + test scaffold for grade logic
-- [ ] 06-02-PLAN.md — Grade pill CSS/JS, tooltip with sub-score bars, stale dot cleanup
+- [x] 06-01-PLAN.md — Expose conviction_threshold in state + test scaffold for grade logic
+- [x] 06-02-PLAN.md — Grade pill CSS/JS, tooltip with sub-score bars, stale dot cleanup
 **UI hint**: yes
 
 ### Phase 7: Expanded Scanner
