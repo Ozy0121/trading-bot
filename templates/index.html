@@ -697,11 +697,55 @@
       display: none;
     }
 
-    /* ── Conviction dots ── */
-    .conv-icons { display: inline-flex; gap: 3px; vertical-align: middle; margin-left: 6px; }
-    .conv-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-    .conv-ok   { background: var(--green); box-shadow: 0 0 5px rgba(62, 207, 106, 0.35); }
-    .conv-fail { background: var(--muted2); }
+    /* ── Grade pill badges ── */
+    .grade-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 8px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .grade-a { background: rgba(200, 200, 176, 0.12); color: #c8c8b0; border: 1px solid rgba(200, 200, 176, 0.22); }
+    .grade-b { background: rgba(180, 210, 140, 0.10); color: #a8c878; border: 1px solid rgba(180, 210, 140, 0.20); }
+    .grade-c { background: rgba(210, 190, 100, 0.10); color: #c8b440; border: 1px solid rgba(210, 190, 100, 0.20); }
+    .grade-d { background: rgba(237, 160, 80, 0.10); color: #e09840; border: 1px solid rgba(237, 160, 80, 0.20); }
+    .grade-f { background: rgba(237, 127, 100, 0.10); color: #ed7f64; border: 1px solid rgba(237, 127, 100, 0.20); }
+
+    /* ── Score cell wrapper ── */
+    .score-cell { position: relative; text-align: right; min-width: 80px; }
+
+    /* ── Conviction tooltip ── */
+    .score-tooltip {
+      position: absolute; bottom: calc(100% + 8px); right: 0; width: 200px;
+      background: var(--surface3); border: 1px solid var(--border);
+      padding: 8px 16px; visibility: hidden; opacity: 0;
+      transition: opacity 0.15s linear; z-index: 200; pointer-events: none;
+    }
+    .score-cell:hover .score-tooltip { visibility: visible; opacity: 1; }
+
+    /* ── Tooltip internals ── */
+    .tt-header {
+      font-size: 11px; font-weight: 700; font-family: 'Space Grotesk', sans-serif;
+      color: var(--text); line-height: 1.3;
+    }
+    .tt-divider { border-bottom: 1px solid var(--border); margin: 8px 0; }
+    .tt-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .tt-row:last-of-type { margin-bottom: 0; }
+    .tt-label {
+      font-size: 10px; font-weight: 700; font-family: 'Space Grotesk', sans-serif;
+      color: var(--text2); width: 60px; flex-shrink: 0;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .tt-bar-track { flex: 1; height: 4px; background: var(--bg); border-radius: 0; overflow: hidden; }
+    .tt-bar-fill { height: 100%; background: var(--sage); border-radius: 0; transition: width 0.3s ease; }
+    .tt-val {
+      font-size: 10px; font-weight: 700; font-family: 'Space Grotesk', sans-serif;
+      color: var(--text); width: 24px; text-align: right; font-variant-numeric: tabular-nums;
+    }
+    .tt-footer {
+      font-size: 10px; font-weight: 400; font-family: 'Manrope', sans-serif;
+      color: var(--muted); line-height: 1.3;
+    }
 
     /* ── Footer ── */
     footer { text-align: center; font-size: 10px; color: var(--muted2); padding: 12px 0 28px; font-weight: 400; letter-spacing: 0.03em; }
@@ -2192,6 +2236,45 @@ function refresh(d) {
     macdChart.update('none');
   }
 
+  // ── Grade helpers ──
+  function scoreToGrade(score, threshold) {
+    if (score >= threshold + 2.2) return { letter: 'A', cls: 'grade-a' };
+    if (score >= threshold)       return { letter: 'B', cls: 'grade-b' };
+    if (score >= threshold - 1.8) return { letter: 'C', cls: 'grade-c' };
+    if (score >= threshold - 3.3) return { letter: 'D', cls: 'grade-d' };
+    return { letter: 'F', cls: 'grade-f' };
+  }
+
+  function gradeCell(r, threshold) {
+    const score = r.score || 0;
+    const conv = r.conviction || {};
+    const grade = scoreToGrade(score, threshold);
+    const strategies = (conv.strategies_fired || [])
+      .map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' + ') || 'None fired';
+    const bars = [
+      ['Technical', conv.technical || 0],
+      ['Volume', conv.volume || 0],
+      ['Sentiment', conv.sentiment || 0],
+      ['Sector', conv.sector || 0],
+    ].map(([lbl, val]) => `
+      <div class="tt-row">
+        <span class="tt-label">${lbl}</span>
+        <div class="tt-bar-track"><div class="tt-bar-fill" style="width:${Math.round((val / 10) * 100)}%"></div></div>
+        <span class="tt-val">${val.toFixed(1)}</span>
+      </div>`).join('');
+
+    return `<td class="score-cell">
+      <span class="grade-pill ${grade.cls}">${grade.letter} ${score.toFixed(1)}</span>
+      <div class="score-tooltip">
+        <div class="tt-header">Conviction: ${grade.letter} (${score.toFixed(1)}/10)</div>
+        <div class="tt-divider"></div>
+        ${bars}
+        <div class="tt-divider"></div>
+        <div class="tt-footer">Strategy: ${strategies}</div>
+      </div>
+    </td>`;
+  }
+
   // ── Watchlist ──
   const wl = d.watchlist || [];
   if (wl.length > 0) {
@@ -2206,24 +2289,21 @@ function refresh(d) {
       scanBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)';
     }
 
+    const _threshold = d.conviction_threshold || 5.8;
     const tbody = $('watchlist-body');
     tbody.innerHTML = wl.map(r => {
       const chgCls = (r.change_pct||0) >= 0 ? 'c-green' : 'c-red';
       const isActive = r.symbol === _chartSymbol ? ' active-chart' : '';
       const volRatio = r.volume_ratio || 0;
       const volCls = volRatio >= 2 ? 'c-green' : volRatio >= 1 ? '' : 'c-muted';
-      // Conviction dots: sma_buy, rsi_ok, volume_spike, macd_pos
-      const cv = r.conviction || {};
-      const cvKeys = ['sma_buy','rsi_ok','volume_spike','macd_pos'];
-      const cvDots = cvKeys.map(k => `<span class="conv-dot ${cv[k] ? 'conv-ok' : 'conv-fail'}" title="${k}"></span>`).join('');
       return `<tr class="watchlist-row${isActive}" onclick="switchChartSymbol('${r.symbol}', this)">
-        <td class="wl-symbol">${r.symbol}<span class="conv-icons">${cvDots}</span></td>
+        <td class="wl-symbol">${r.symbol}</td>
         <td>$${(r.price||0).toFixed(2)}</td>
         <td class="${chgCls}">${(r.change_pct||0)>=0?'+':''}${(r.change_pct||0).toFixed(2)}%</td>
         <td style="text-align:center"><span class="signal-pill signal-${r.signal}">${r.signal}</span></td>
         <td class="${r.rsi>=70?'c-red':r.rsi<=30?'c-green':''}">${(r.rsi||0).toFixed(1)}</td>
         <td class="${volCls}">${volRatio.toFixed(1)}x</td>
-        <td>${(r.score||0).toFixed(1)}</td>
+        ${gradeCell(r, _threshold)}
       </tr>`;
     }).join('');
   }
