@@ -43,8 +43,8 @@ Declared values (must be multiples of 4):
 
 Exceptions:
 - Score column minimum width: 80px (prevents badge reflow into adjacent column — see Pitfall 2 in RESEARCH.md)
-- Tooltip vertical offset from badge: 6px (positions tooltip clear of the badge border)
-- Tooltip inner padding: 12px 14px (matches panel density, slightly tighter than panel's 22px 24px)
+- Tooltip vertical offset from badge: 8px (positions tooltip clear of the badge border)
+- Tooltip inner padding: 8px 16px (matches panel density)
 
 ---
 
@@ -55,7 +55,7 @@ Existing scale (all verified from `templates/index.html` lines 60-68, 109-119, 3
 | Role | Size | Weight | Line Height | Font | Usage |
 |------|------|--------|-------------|------|-------|
 | Body | 13px | 400 | 1.6 | Manrope | Watchlist table rows, log items, news body |
-| Label | 11px | 600 | 1.4 | Space Grotesk | Panel headers, sent-lbl, chart-title labels |
+| Label | 11px | 700 | 1.4 | Space Grotesk | Panel headers, sent-lbl, chart-title labels |
 | Small label | 10px | 400–700 | 1.4 | Space Grotesk | Dates, secondary metadata, badge variants |
 | Display mono | 13px | 700 | 1.0 | Space Grotesk | PDT counter, numeric readouts, grade pill score |
 
@@ -66,9 +66,11 @@ Existing scale (all verified from `templates/index.html` lines 60-68, 109-119, 3
 | Grade pill letter | 11px | 700 | 1.0 | Space Grotesk |
 | Grade pill score | 11px | 700 | 1.0 | Space Grotesk |
 | Tooltip header | 11px | 700 | 1.3 | Space Grotesk |
-| Tooltip sub-score label | 10px | 600 | 1.3 | Space Grotesk |
+| Tooltip sub-score label | 10px | 700 | 1.3 | Space Grotesk |
 | Tooltip sub-score value | 10px | 700 | 1.3 | Space Grotesk (tabular-nums) |
 | Tooltip footer strategy | 10px | 400 | 1.3 | Manrope |
+
+**Weight contract:** exactly 2 weights used — 400 (body text, tooltip footer) and 700 (all labels, pills, numeric readouts). No weight 600 used anywhere in this phase.
 
 Letter-spacing on grade pill: 0.06em (matches `.signal-pill` pattern from line 325).
 Text-transform on grade pill: uppercase (consistent with badge and signal pill conventions).
@@ -87,6 +89,8 @@ Existing CSS custom properties (verified `templates/index.html` lines 13-53):
 | Destructive | `#ed7f64` (`--error` clay red) | SELL signals, loss display, stopped badge |
 
 Accent reserved for: BUY signal pill, positive P&L values, grade A badge text/border, logo dot, live price.
+
+**Focal point:** The grade pill in the watchlist score column is the primary visual anchor of this phase — it is the highest-contrast, most information-dense element per row and the first element the eye is drawn to on each watchlist row.
 
 **Grade badge color palette (Claude's Discretion — computed to match dark earthy theme):**
 
@@ -158,12 +162,12 @@ CSS class names: `.grade-a`, `.grade-b`, `.grade-c`, `.grade-d`, `.grade-f`.
 ```css
 .score-tooltip {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   right: 0;
   width: 200px;
   background: var(--surface-highest);
   border: 1px solid var(--outline-variant);
-  padding: 12px 14px;
+  padding: 8px 16px;
   visibility: hidden;
   opacity: 0;
   transition: opacity 0.15s linear;
@@ -191,7 +195,7 @@ CSS class names: `.grade-a`, `.grade-b`, `.grade-c`, `.grade-d`, `.grade-f`.
 
 | Part | CSS |
 |------|-----|
-| `.tt-label` | `font-size: 10px; font-weight: 600; font-family: 'Space Grotesk'; color: var(--on-surface-variant); width: 60px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em` |
+| `.tt-label` | `font-size: 10px; font-weight: 700; font-family: 'Space Grotesk'; color: var(--on-surface-variant); width: 60px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em` |
 | `.tt-bar-track` | `flex: 1; height: 4px; background: var(--surface-lowest); border-radius: 0; overflow: hidden` |
 | `.tt-bar-fill` | `height: 100%; background: var(--primary); border-radius: 0; transition: width 0.3s ease` |
 | `.tt-val` | `font-size: 10px; font-weight: 700; font-family: 'Space Grotesk'; color: var(--on-surface); width: 24px; text-align: right; font-variant-numeric: tabular-nums` |
