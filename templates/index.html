@@ -3,698 +3,693 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Trading Bot</title>
+  <title>SOVEREIGN</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet"/>
   <style>
     :root {
-      /* ── Core backgrounds ── */
-      --bg:        #07100d;
-      --bg2:       #0c1810;
-      --surface:   rgba(14, 24, 18, 0.75);
-      --surface2:  rgba(18, 30, 22, 0.65);
-      --surface3:  rgba(24, 40, 28, 0.55);
+      --bg: #0e0e0e;
+      --surface-lowest: #000000;
+      --surface-low: #131313;
+      --surface: #191919;
+      --surface-high: #1f1f1f;
+      --surface-highest: #262626;
 
-      /* ── Borders ── */
-      --border:    rgba(42, 65, 48, 0.45);
-      --border2:   rgba(58, 86, 64, 0.4);
-      --border-glow: rgba(107, 165, 140, 0.18);
+      --primary: #c8c8b0;
+      --primary-dim: #babaa3;
+      --primary-container: #474836;
+      --on-primary: #404130;
 
-      /* ── Text ── */
-      --text:      #dde8d8;
-      --text2:     #8fa883;
-      --muted:     #526048;
-      --muted2:    #344030;
+      --tertiary: #f5f5dc;
+      --secondary: #9f9d9d;
+      --on-surface: #e5e5e5;
+      --on-surface-variant: #ababab;
 
-      /* ── Functional colors ── */
-      --green:     #3ecf6a;
-      --green2:    #267a40;
-      --green3:    #1a5c30;
-      --green-bg:  rgba(62, 207, 106, 0.07);
-      --red:       #e06b57;
-      --red2:      #a84840;
-      --red-bg:    rgba(224, 107, 87, 0.07);
-      --yellow:    #c9963a;
-      --yellow-bg: rgba(201, 150, 58, 0.07);
+      --outline: #757575;
+      --outline-variant: #484848;
+      --ghost-border: rgba(72, 72, 72, 0.2);
 
-      /* ── Accent palette (earthy) ── */
-      --sage:      #6ba58c;    /* teal-sage — primary interactive */
-      --sage2:     #4d8a6f;
-      --amber:     #c98a4b;    /* warm amber — warnings, earn accent */
-      --moss:      #8fa867;    /* olive-moss — paper mode, secondary */
-      --clay:      #a86848;    /* terracotta-clay — danger gradient */
+      --error: #ed7f64;
+      --error-container: #7e2b17;
 
-      /* ── Glass system ── */
-      --glass:     rgba(255, 255, 255, 0.025);
-      --glass2:    rgba(255, 255, 255, 0.045);
-      --glass3:    rgba(255, 255, 255, 0.065);
-      --glass-blur: 20px;
-      --glass-blur-md: 28px;
-      --glass-blur-lg: 36px;
+      /* JS compat aliases */
+      --green: #c8c8b0;
+      --red: #ed7f64;
+      --yellow: #9f9d9d;
+      --sage: #c8c8b0;
+      --muted: #757575;
+      --muted2: #484848;
+      --text: #e5e5e5;
+      --text2: #ababab;
+      --moss: #babaa3;
+      --amber: #9f9d9d;
+      --clay: #ed7f64;
 
-      /* ── Glows ── */
-      --glow-green: rgba(62, 207, 106, 0.10);
-      --glow-sage:  rgba(107, 165, 140, 0.10);
-      --glow-amber: rgba(201, 138, 75, 0.10);
-      --glow-red:   rgba(224, 107, 87, 0.10);
-
-      /* ── Shadows ── */
-      --shadow:    0 8px 32px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.25);
-      --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28), 0 1px 4px rgba(0, 0, 0, 0.18);
-      --shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.50), 0 6px 16px rgba(0, 0, 0, 0.30);
-      --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-
-      /* ── Radius ── */
-      --radius-sm: 8px;
-      --radius:    14px;
-      --radius-lg: 18px;
-      --radius-xl: 22px;
-      --radius-pill: 999px;
-
-      /* ── Timing ── */
-      --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-      --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+      --transition: all 0.15s linear;
+      --transition-fast: all 0.1s linear;
     }
 
-  <style>
-    /* ════════════════════════════════════════════════════
-       BASE RESET & BODY
-    ════════════════════════════════════════════════════ */
+    /* ================================================================
+       BASE RESET
+    ================================================================ */
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       background: var(--bg);
-      background-image:
-        radial-gradient(ellipse 80% 60% at 10% 40%, rgba(38, 122, 64, 0.07) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 50% at 90% 15%, rgba(107, 165, 140, 0.05) 0%, transparent 55%),
-        radial-gradient(ellipse 50% 40% at 50% 95%, rgba(62, 207, 106, 0.04) 0%, transparent 50%),
-        radial-gradient(ellipse 40% 30% at 75% 60%, rgba(201, 138, 75, 0.03) 0%, transparent 45%);
-      color: var(--text);
-      font-family: 'Inter', system-ui, sans-serif;
+      color: var(--on-surface);
+      font-family: 'Manrope', system-ui, sans-serif;
       font-size: 13px;
       font-weight: 400;
       line-height: 1.6;
-      letter-spacing: 0.01em;
       min-height: 100vh;
     }
 
-    /* ── Scrollbar ── */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(82, 96, 72, 0.4); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(82, 96, 72, 0.65); }
-    * { scrollbar-width: thin; scrollbar-color: rgba(82, 96, 72, 0.4) transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 0; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--outline); }
+    * { scrollbar-width: thin; scrollbar-color: var(--outline-variant) transparent; }
 
-    /* ════════════════════════════════════════════════════
-       GLASS SYSTEM
-    ════════════════════════════════════════════════════ */
-    .glass {
-      background: var(--glass2);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow), var(--shadow-inset);
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      font-size: 20px;
+      vertical-align: middle;
     }
 
-    /* ════════════════════════════════════════════════════
-       HEADER
-    ════════════════════════════════════════════════════ */
+    /* ================================================================
+       TOP NAV BAR (fixed, 64px)
+    ================================================================ */
     header {
-      position: sticky; top: 0; z-index: 100;
-      background: rgba(7, 14, 11, 0.82);
-      backdrop-filter: blur(var(--glass-blur-lg));
-      -webkit-backdrop-filter: blur(var(--glass-blur-lg));
-      border-bottom: 1px solid var(--border);
-      box-shadow: 0 1px 0 rgba(255,255,255,0.03), 0 4px 28px rgba(0,0,0,0.35);
-      padding: 0 28px;
-      height: 58px;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: var(--surface-lowest);
+      border-bottom: 1px solid var(--ghost-border);
+      padding: 0 24px;
+      height: 64px;
       display: flex; align-items: center; justify-content: space-between;
       gap: 20px;
     }
-    .hdr-left  { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-    .hdr-center{ display: flex; align-items: center; gap: 20px; flex: 1; justify-content: center; }
+    .hdr-left { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+    .hdr-center { display: flex; align-items: center; gap: 16px; flex: 1; justify-content: center; }
     .hdr-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+
     .logo { display: flex; align-items: center; gap: 10px; }
     .logo-dot {
-      width: 9px; height: 9px; border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 10px var(--green), 0 0 24px rgba(62, 207, 106, 0.22);
-      animation: pulse 2.8s ease-in-out infinite;
+      width: 8px; height: 8px; border-radius: 0;
+      background: var(--primary);
       flex-shrink: 0;
+      animation: pulse 2.8s ease-in-out infinite;
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
-      50%       { opacity: 0.38; transform: scale(0.82); }
+      50%      { opacity: 0.38; transform: scale(0.82); }
     }
     .logo h1 {
-      font-size: 14px; font-weight: 700; white-space: nowrap;
-      letter-spacing: -0.01em; color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px; font-weight: 700; white-space: nowrap;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--tertiary);
     }
-    .logo-sub { font-size: 10px; color: var(--muted); margin-left: 2px; font-weight: 400; }
+    .logo-sub {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; color: var(--outline); margin-left: 4px;
+      font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+    }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        BADGES
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     .badge {
-      padding: 4px 12px; border-radius: var(--radius-pill);
+      padding: 4px 12px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 10px; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.9px; white-space: nowrap;
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
     }
     .badge-running {
-      background: rgba(62, 207, 106, 0.10); color: var(--green);
-      border: 1px solid rgba(62, 207, 106, 0.20);
-      box-shadow: 0 0 14px rgba(62, 207, 106, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+      background: rgba(200, 200, 176, 0.10); color: var(--primary);
+      border: 1px solid rgba(200, 200, 176, 0.20);
     }
     .badge-starting,
     .badge-stopping {
-      background: rgba(201, 150, 58, 0.10); color: var(--yellow);
-      border: 1px solid rgba(201, 150, 58, 0.20);
+      background: rgba(159, 157, 157, 0.10); color: var(--secondary);
+      border: 1px solid rgba(159, 157, 157, 0.20);
     }
     .badge-stopped,
     .badge-loss_limit_hit {
-      background: rgba(224, 107, 87, 0.10); color: var(--red);
-      border: 1px solid rgba(224, 107, 87, 0.20);
+      background: rgba(237, 127, 100, 0.10); color: var(--error);
+      border: 1px solid rgba(237, 127, 100, 0.20);
     }
     .badge-idle {
-      background: var(--glass2); color: var(--muted);
-      border: 1px solid var(--border);
+      background: var(--surface); color: var(--outline);
+      border: 1px solid var(--ghost-border);
     }
     .badge-paper {
-      background: rgba(143, 168, 103, 0.10); color: var(--moss);
-      border: 1px solid rgba(143, 168, 103, 0.22);
+      background: rgba(186, 186, 163, 0.08); color: var(--primary-dim);
+      border: 1px solid rgba(186, 186, 163, 0.18);
     }
     .badge-live {
-      background: rgba(224, 107, 87, 0.10); color: var(--red);
-      border: 1px solid rgba(224, 107, 87, 0.22);
+      background: rgba(237, 127, 100, 0.10); color: var(--error);
+      border: 1px solid rgba(237, 127, 100, 0.22);
     }
 
-    /* ── PDT counter ── */
+    /* PDT counter */
     .pdt-counter {
       display: flex; align-items: center; gap: 8px;
-      padding: 7px 16px; border-radius: var(--radius);
-      border: 1px solid var(--border);
-      background: var(--glass2);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-      box-shadow: var(--shadow-inset);
+      padding: 7px 16px; border-radius: 0;
+      border: 1px solid var(--ghost-border);
+      background: var(--surface-low);
     }
-    .pdt-label { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; }
-    .pdt-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; }
-    .pdt-ok     { color: var(--green); }
-    .pdt-warn   { color: var(--yellow); }
-    .pdt-danger { color: var(--red); }
+    .pdt-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; color: var(--outline); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.7px;
+    }
+    .pdt-value {
+      font-family: 'Space Grotesk', monospace;
+      font-size: 13px; font-weight: 700;
+    }
+    .pdt-ok     { color: var(--primary); }
+    .pdt-warn   { color: var(--secondary); }
+    .pdt-danger { color: var(--error); }
     #pdt-warning-banner {
-      background: rgba(224, 107, 87, 0.08);
-      border: 1px solid rgba(224, 107, 87, 0.22);
-      border-radius: var(--radius); padding: 8px 18px;
-      font-size: 11px; font-weight: 600; color: var(--red);
-      display: none;
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      background: rgba(237, 127, 100, 0.06);
+      border: 1px solid rgba(237, 127, 100, 0.18);
+      border-radius: 0; padding: 8px 18px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 600; color: var(--error);
+      display: none; letter-spacing: 0.04em; text-transform: uppercase;
     }
 
-    /* ── Live price (header hidden elements kept for JS) ── */
+    /* Live price (header hidden elements kept for JS) */
     .hdr-price-block { text-align: center; }
-    #hdr-symbol   { font-size: 11px; color: var(--muted); font-weight: 500; margin-bottom: 1px; }
+    #hdr-symbol   { font-size: 11px; color: var(--outline); font-weight: 500; margin-bottom: 1px; }
     #live-price   {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 18px; font-weight: 700; color: var(--sage);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 18px; font-weight: 700; color: var(--primary);
       transition: color 0.3s ease;
     }
-    #live-price.flash-up   { color: var(--green) !important; }
-    #live-price.flash-down { color: var(--red)   !important; }
-    #live-change  { font-size: 10px; color: var(--muted); font-weight: 400; }
-    .hdr-meta { font-size: 10px; color: var(--muted2); margin-top: 2px; text-align: right; font-weight: 400; }
+    #live-price.flash-up   { color: var(--primary) !important; }
+    #live-price.flash-down { color: var(--error) !important; }
+    #live-change  { font-size: 10px; color: var(--outline); font-weight: 400; }
+    .hdr-meta { font-size: 10px; color: var(--outline-variant); margin-top: 2px; text-align: right; font-weight: 400; }
 
-    /* ════════════════════════════════════════════════════
-       TAB BAR — accent line style (not background swap)
-    ════════════════════════════════════════════════════ */
-    .tab-bar {
-      display: flex; align-items: flex-end; gap: 2px;
-      padding: 0 28px;
-      border-bottom: 1px solid var(--border);
-      background: rgba(7, 14, 11, 0.55);
-      backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      overflow-x: auto;
+    /* ================================================================
+       LEFT SIDEBAR (fixed, 80px)
+    ================================================================ */
+    .sidebar {
+      position: fixed; top: 64px; left: 0; bottom: 32px;
+      width: 80px; z-index: 90;
+      background: var(--surface-low);
+      border-right: 1px solid var(--ghost-border);
+      display: flex; flex-direction: column;
+      align-items: center;
+      padding: 16px 0;
+      gap: 4px;
     }
-    .tab-bar::-webkit-scrollbar { height: 0; }
-    .tab {
-      padding: 14px 22px 13px;
-      font-size: 12px; font-weight: 500; cursor: pointer;
-      border: none; border-bottom: 2px solid transparent;
-      color: var(--muted); background: transparent;
+    .sidebar-spacer { flex: 1; }
+    .sidebar-btn {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      width: 64px; height: 56px; gap: 3px;
+      border: none; background: transparent; cursor: pointer;
+      color: var(--outline); border-radius: 0;
       transition: var(--transition);
-      white-space: nowrap;
-      letter-spacing: 0.02em;
+      border-left: 2px solid transparent;
       position: relative;
     }
-    .tab:hover { color: var(--text2); }
-    .tab.active {
-      color: var(--text);
-      border-bottom-color: var(--sage);
-      font-weight: 600;
+    .sidebar-btn:hover { background: var(--surface); color: var(--on-surface-variant); }
+    .sidebar-btn.active {
+      background: var(--surface);
+      color: var(--primary);
+      border-left-color: var(--primary);
     }
+    .sidebar-btn .material-symbols-outlined { font-size: 22px; }
+    .sidebar-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px; font-weight: 600;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+
+    /* Hide the old tab-bar, reuse tab-pane switching */
+    .tab-bar { display: none; }
+    .tab { display: none; }
     .tab-pane { display: none; }
     .tab-pane.active { display: block; }
 
-    /* ════════════════════════════════════════════════════
-       PAGE LAYOUT
-    ════════════════════════════════════════════════════ */
-    .page { padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; max-width: 1600px; margin: 0 auto; }
+    /* ================================================================
+       BOTTOM STATUS BAR (fixed, 32px)
+    ================================================================ */
+    .status-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      height: 32px;
+      background: var(--surface-lowest);
+      border-top: 1px solid var(--ghost-border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; font-weight: 500;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--outline);
+    }
+    .status-bar-left { display: flex; align-items: center; gap: 16px; }
+    .status-bar-right { display: flex; align-items: center; gap: 16px; }
+    .status-bar .sse-dot {
+      width: 6px; height: 6px; border-radius: 0; display: inline-block;
+      background: var(--outline); margin-right: 4px;
+      transition: var(--transition);
+    }
+    .status-bar .sse-dot.live { background: var(--primary); }
 
-    /* ════════════════════════════════════════════════════
-       METRIC CARDS — gradient top border accent
-    ════════════════════════════════════════════════════ */
+    /* ================================================================
+       MAIN CONTENT AREA
+    ================================================================ */
+    .main-content {
+      margin-left: 80px;
+      margin-top: 64px;
+      margin-bottom: 32px;
+      min-height: calc(100vh - 96px);
+    }
+
+    .page {
+      padding: 28px 32px;
+      display: flex; flex-direction: column;
+      gap: 2.75rem;
+      max-width: 1600px; margin: 0 auto;
+    }
+
+    /* ================================================================
+       METRIC CARDS
+    ================================================================ */
     .cards {
       display: grid;
       grid-template-columns: repeat(6, 1fr);
       gap: 16px;
     }
     .card {
-      background: var(--surface);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      border: 1px solid var(--border);
-      border-top: 1px solid var(--border-glow);
-      border-radius: var(--radius-lg);
+      background: var(--surface-low);
+      border: 1px solid var(--ghost-border);
+      border-radius: 0;
       padding: 22px 22px 18px;
       position: relative; overflow: hidden;
       transition: var(--transition);
-      box-shadow: var(--shadow-sm), var(--shadow-inset);
-    }
-    .card::before {
-      /* subtle gradient shimmer along top edge */
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0;
-      height: 1px;
-      background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(107, 165, 140, 0.35) 30%,
-        rgba(143, 168, 103, 0.25) 60%,
-        transparent 100%);
-      pointer-events: none;
-    }
-    .card::after {
-      content: '';
-      position: absolute; inset: 0;
-      border-radius: var(--radius-lg);
-      background: linear-gradient(135deg, rgba(107,165,140,0.04) 0%, transparent 55%);
-      pointer-events: none;
     }
     .card:hover {
-      transform: translateY(-3px);
-      box-shadow: var(--shadow), 0 0 28px rgba(62, 207, 106, 0.05);
-      border-color: var(--border2);
-      border-top-color: rgba(107, 165, 140, 0.30);
+      background: var(--surface);
     }
     .card-label {
-      font-size: 10px; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.85px; margin-bottom: 10px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; font-weight: 600; color: var(--outline);
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;
     }
     .card-value {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 21px; font-weight: 700; line-height: 1.15;
       font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
     }
-    .card-sub { font-size: 11px; color: var(--muted); margin-top: 5px; font-weight: 400; }
+    .card-sub { font-size: 11px; color: var(--outline); margin-top: 5px; font-weight: 400; }
 
-    /* ── Color utilities ── */
-    .c-green  { color: var(--green)  !important; }
-    .c-red    { color: var(--red)    !important; }
-    .c-yellow { color: var(--yellow) !important; }
-    .c-blue   { color: var(--sage)   !important; }
-    .c-white  { color: var(--text)   !important; }
-    .c-muted  { color: var(--muted)  !important; }
+    /* Color utilities */
+    .c-green  { color: var(--primary) !important; }
+    .c-red    { color: var(--error) !important; }
+    .c-yellow { color: var(--secondary) !important; }
+    .c-blue   { color: var(--primary) !important; }
+    .c-white  { color: var(--on-surface) !important; }
+    .c-muted  { color: var(--outline) !important; }
 
-    /* ── Signal pills ── */
+    /* Signal pills */
     .signal-pill {
-      display: inline-block; padding: 5px 18px; border-radius: var(--radius-pill);
-      font-size: 12px; font-weight: 700; letter-spacing: 0.03em;
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      display: inline-block; padding: 5px 18px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
-    .signal-BUY  {
-      background: rgba(62, 207, 106, 0.10); color: var(--green);
-      border: 1px solid rgba(62, 207, 106, 0.20);
-      box-shadow: 0 0 18px rgba(62, 207, 106, 0.07);
+    .signal-BUY {
+      background: rgba(200, 200, 176, 0.10); color: var(--primary);
+      border: 1px solid rgba(200, 200, 176, 0.20);
     }
     .signal-SELL {
-      background: rgba(224, 107, 87, 0.10); color: var(--red);
-      border: 1px solid rgba(224, 107, 87, 0.20);
-      box-shadow: 0 0 18px rgba(224, 107, 87, 0.07);
+      background: rgba(237, 127, 100, 0.10); color: var(--error);
+      border: 1px solid rgba(237, 127, 100, 0.20);
     }
     .signal-HOLD {
-      background: rgba(201, 150, 58, 0.08); color: var(--yellow);
-      border: 1px solid rgba(201, 150, 58, 0.15);
+      background: rgba(159, 157, 157, 0.08); color: var(--secondary);
+      border: 1px solid rgba(159, 157, 157, 0.15);
     }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        CHART CARDS & PANELS
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     .chart-card {
-      background: var(--surface);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
+      background: var(--surface-low);
+      border: 1px solid var(--ghost-border);
+      border-radius: 0;
       padding: 24px 26px 20px;
-      box-shadow: var(--shadow), var(--shadow-inset);
       transition: var(--transition);
     }
     .chart-card:hover {
-      box-shadow: var(--shadow-lg), 0 0 28px rgba(107,165,140,0.04);
-      border-color: var(--border2);
+      border-color: var(--outline-variant);
     }
     .chart-card-header {
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
     }
     .chart-title {
-      font-size: 11px; font-weight: 600; color: var(--text2);
-      text-transform: uppercase; letter-spacing: 0.75px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 600; color: var(--on-surface-variant);
+      text-transform: uppercase; letter-spacing: 0.08em;
     }
     .chart-legend { display: flex; gap: 14px; }
-    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); font-weight: 400; }
-    .legend-dot  { width: 8px; height: 8px; border-radius: 4px; flex-shrink: 0; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--outline); font-weight: 400; }
+    .legend-dot  { width: 8px; height: 8px; border-radius: 0; flex-shrink: 0; }
 
-    #priceChart { height: 320px; width: 100%; border-radius: var(--radius); overflow: hidden; }
+    #priceChart { height: 320px; width: 100%; border-radius: 0; overflow: hidden; }
 
     .sub-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .sub-chart-wrap { height: 130px; border-radius: var(--radius); overflow: hidden; }
+    .sub-chart-wrap { height: 130px; border-radius: 0; overflow: hidden; }
 
-    /* ── Toolbar buttons ── */
+    /* Toolbar buttons */
     .chart-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .tb-group { display: flex; gap: 3px; }
-    .tb-sep { width: 1px; background: var(--border); margin: 0 6px; align-self: stretch; }
+    .tb-sep { width: 1px; background: var(--outline-variant); margin: 0 6px; align-self: stretch; opacity: 0.3; }
     .tb-btn {
-      padding: 6px 13px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 500;
-      cursor: pointer; border: 1px solid var(--border); background: var(--glass);
-      color: var(--muted); transition: var(--transition); white-space: nowrap;
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-      letter-spacing: 0.01em;
+      padding: 6px 13px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 500;
+      cursor: pointer; border: 1px solid var(--ghost-border); background: transparent;
+      color: var(--outline); transition: var(--transition); white-space: nowrap;
+      letter-spacing: 0.04em; text-transform: uppercase;
     }
     .tb-btn:hover {
-      border-color: var(--border-glow); color: var(--text2);
-      transform: translateY(-1px); box-shadow: var(--shadow-sm);
-      background: var(--glass2);
+      border-color: var(--outline-variant); color: var(--on-surface-variant);
+      background: var(--surface);
     }
     .tb-btn.active {
-      background: rgba(107, 165, 140, 0.12);
-      border-color: rgba(107, 165, 140, 0.30);
-      color: var(--sage);
-      box-shadow: 0 0 14px rgba(107, 165, 140, 0.08);
+      background: rgba(200, 200, 176, 0.08);
+      border-color: rgba(200, 200, 176, 0.25);
+      color: var(--primary);
     }
     .tb-btn.draw-active {
-      background: rgba(201, 150, 58, 0.10);
-      border-color: rgba(201, 150, 58, 0.28);
-      color: var(--yellow);
+      background: rgba(159, 157, 157, 0.08);
+      border-color: rgba(159, 157, 157, 0.25);
+      color: var(--secondary);
     }
-    .tb-btn.danger { border-color: rgba(224, 107, 87, 0.22); color: var(--red); }
-    .tb-btn.danger:hover { background: rgba(224, 107, 87, 0.08); box-shadow: 0 0 12px rgba(224, 107, 87, 0.07); }
-    #draw-hint { font-size: 10px; color: var(--yellow); margin-left: 6px; font-weight: 400; }
+    .tb-btn.danger { border-color: rgba(237, 127, 100, 0.22); color: var(--error); }
+    .tb-btn.danger:hover { background: rgba(237, 127, 100, 0.06); }
+    #draw-hint {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; color: var(--secondary); margin-left: 6px; font-weight: 400;
+    }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        WATCHLIST TABLE
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     .watchlist-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .watchlist-table thead tr { border-bottom: 1px solid var(--border); }
+    .watchlist-table thead tr { border-bottom: 1px solid var(--ghost-border); }
     .watchlist-table th {
-      padding: 10px 12px; color: var(--muted); font-weight: 600;
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px;
+      font-family: 'Space Grotesk', sans-serif;
+      padding: 10px 12px; color: var(--outline); font-weight: 600;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
     }
     .watchlist-table th:first-child { text-align: left; }
     .watchlist-table th:not(:first-child) { text-align: right; }
     .watchlist-row {
-      border-bottom: 1px solid rgba(42, 65, 48, 0.25);
+      border-bottom: 1px solid rgba(72, 72, 72, 0.1);
       cursor: pointer; transition: var(--transition);
     }
-    .watchlist-row:nth-child(even) { background: rgba(255, 255, 255, 0.012); }
-    .watchlist-row:hover { background: rgba(107, 165, 140, 0.05) !important; }
+    .watchlist-row:hover { background: var(--surface-high) !important; }
     .watchlist-row.active-chart {
-      background: rgba(107, 165, 140, 0.07) !important;
-      border-left: 2px solid var(--sage);
+      background: rgba(200, 200, 176, 0.04) !important;
+      border-left: 2px solid var(--primary);
     }
     .watchlist-row td { padding: 11px 12px; }
     .watchlist-row td:first-child { text-align: left; font-weight: 500; }
-    .watchlist-row td:not(:first-child) { text-align: right; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
-    .wl-symbol { font-weight: 700; font-size: 13px; }
-    .wl-name   { font-size: 10px; color: var(--muted); font-weight: 400; }
+    .watchlist-row td:not(:first-child) {
+      text-align: right;
+      font-family: 'Space Grotesk', sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+    .wl-symbol { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; }
+    .wl-name   { font-size: 10px; color: var(--outline); font-weight: 400; }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        BOTTOM GRID & PANELS
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     .bottom-grid { display: grid; grid-template-columns: 1.6fr 1fr 0.85fr; gap: 16px; }
     .panel {
-      background: var(--surface);
-      backdrop-filter: blur(var(--glass-blur));
-      -webkit-backdrop-filter: blur(var(--glass-blur));
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
+      background: var(--surface-low);
+      border: 1px solid var(--ghost-border);
+      border-radius: 0;
       padding: 22px 24px;
       display: flex; flex-direction: column;
-      box-shadow: var(--shadow-sm), var(--shadow-inset);
       transition: var(--transition);
     }
-    .panel:hover { box-shadow: var(--shadow), var(--shadow-inset); border-color: var(--border2); }
+    .panel:hover { border-color: var(--outline-variant); }
     .panel-header {
-      font-size: 10px; font-weight: 700; color: var(--text2);
-      text-transform: uppercase; letter-spacing: 0.85px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; font-weight: 700; color: var(--on-surface-variant);
+      text-transform: uppercase; letter-spacing: 0.08em;
       margin-bottom: 16px; padding-bottom: 12px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--ghost-border);
     }
 
-    /* ── News ── */
+    /* News */
     .news-scroll { overflow-y: auto; max-height: 215px; flex: 1; }
-    .news-item { padding: 11px 0; border-bottom: 1px solid rgba(42, 65, 48, 0.25); transition: var(--transition); }
+    .news-item { padding: 11px 0; border-bottom: 1px solid rgba(72, 72, 72, 0.12); transition: var(--transition); }
     .news-item:last-child { border: none; }
     .news-item a {
-      color: var(--text); text-decoration: none;
+      color: var(--on-surface); text-decoration: none;
       font-size: 12px; line-height: 1.58; font-weight: 400; display: block;
-      transition: color 0.25s ease;
+      transition: color 0.15s linear;
     }
-    .news-item a:hover { color: var(--sage); }
-    .news-date { font-size: 10px; color: var(--muted); margin-top: 3px; font-weight: 400; }
+    .news-item a:hover { color: var(--primary); }
+    .news-date { font-size: 10px; color: var(--outline); margin-top: 3px; font-weight: 400; }
 
-    /* ── Mid column ── */
+    /* Mid column */
     .mid-col { display: flex; flex-direction: column; gap: 16px; }
     .sentiment-body { display: flex; flex-direction: column; gap: 12px; }
     .sent-row { display: flex; align-items: center; gap: 10px; }
-    .sent-lbl { font-size: 11px; font-weight: 600; width: 38px; }
-    .sent-track { flex: 1; background: rgba(14, 24, 18, 0.9); border-radius: 10px; height: 8px; overflow: hidden; }
-    .sent-fill  { height: 100%; border-radius: 10px; transition: width 0.85s cubic-bezier(0.4, 0, 0.2, 1); }
-    .fill-green { background: linear-gradient(90deg, #267a40, #3ecf6a); }
-    .fill-red   { background: linear-gradient(90deg, #a84840, #e06b57); }
-    .sent-pct { font-size: 11px; font-weight: 700; width: 30px; text-align: right; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
-    .sent-score { font-size: 10px; color: var(--muted); padding-top: 7px; border-top: 1px solid var(--border); margin-top: 4px; font-weight: 400; }
+    .sent-lbl { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 600; width: 38px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .sent-track { flex: 1; background: var(--surface-lowest); border-radius: 0; height: 8px; overflow: hidden; }
+    .sent-fill  { height: 100%; border-radius: 0; transition: width 0.85s cubic-bezier(0.4, 0, 0.2, 1); }
+    .fill-green { background: var(--primary); }
+    .fill-red   { background: var(--error); }
+    .sent-pct {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 700; width: 30px; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .sent-score { font-size: 10px; color: var(--outline); padding-top: 7px; border-top: 1px solid var(--ghost-border); margin-top: 4px; font-weight: 400; }
 
-    /* ── Trade log ── */
+    /* Trade log */
     .log-scroll { overflow-y: auto; max-height: 135px; flex: 1; }
-    .log-item { padding: 7px 0; border-bottom: 1px solid rgba(42, 65, 48, 0.22); display: flex; align-items: baseline; gap: 8px; }
+    .log-item { padding: 7px 0; border-bottom: 1px solid rgba(72, 72, 72, 0.1); display: flex; align-items: baseline; gap: 8px; }
     .log-item:last-child { border: none; }
-    .log-time     { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--muted2); flex-shrink: 0; }
-    .log-evt      { font-size: 11px; font-weight: 700; flex-shrink: 0; }
-    .log-evt-BUY  { color: var(--green); }
-    .log-evt-SELL { color: var(--red); }
-    .log-evt-PDT_HOLD { color: var(--yellow); }
-    .log-evt-other    { color: var(--muted); }
-    .log-detail   { font-size: 11px; color: var(--muted); font-weight: 400; }
+    .log-time     { font-family: 'Space Grotesk', sans-serif; font-size: 10px; color: var(--outline-variant); flex-shrink: 0; }
+    .log-evt      { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 700; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+    .log-evt-BUY  { color: var(--primary); }
+    .log-evt-SELL { color: var(--error); }
+    .log-evt-PDT_HOLD { color: var(--secondary); }
+    .log-evt-other    { color: var(--outline); }
+    .log-detail   { font-size: 11px; color: var(--outline); font-weight: 400; }
 
-    /* ── Emergency controls ── */
+    /* Emergency controls */
     .controls-col { display: flex; flex-direction: column; gap: 16px; }
-    .kill-panel { border-color: rgba(224, 107, 87, 0.18) !important; }
-    .kill-desc { font-size: 11px; color: var(--muted); line-height: 1.72; margin-bottom: 18px; flex: 1; font-weight: 400; }
+    .kill-panel { border-color: rgba(237, 127, 100, 0.15) !important; }
+    .kill-desc { font-size: 11px; color: var(--outline); line-height: 1.72; margin-bottom: 18px; flex: 1; font-weight: 400; }
     .btn-danger {
-      width: 100%; border: none; border-radius: var(--radius-pill); padding: 13px;
+      width: 100%; border: none; border-radius: 0; padding: 13px;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 12px; font-weight: 700; cursor: pointer;
-      letter-spacing: 0.6px; text-transform: uppercase;
+      letter-spacing: 0.08em; text-transform: uppercase;
       transition: var(--transition);
-      box-shadow: var(--shadow-inset);
     }
     .btn-danger:hover:not(:disabled) { transform: translateY(-2px); }
     .btn-danger:active:not(:disabled) { transform: translateY(0) scale(0.99); }
     .btn-danger:disabled {
-      background: rgba(14, 24, 18, 0.7) !important; color: var(--muted) !important;
-      box-shadow: none !important; cursor: not-allowed;
+      background: var(--surface) !important; color: var(--outline) !important;
+      cursor: not-allowed;
     }
     #kill-btn {
-      background: linear-gradient(135deg, #5a2222, #a84840);
+      background: var(--error-container);
       color: #fff;
-      box-shadow: 0 6px 22px rgba(168, 72, 64, 0.28), var(--shadow-inset);
     }
     #kill-btn:hover:not(:disabled) {
-      box-shadow: 0 10px 32px rgba(168, 72, 64, 0.40), 0 0 20px rgba(224, 107, 87, 0.15);
+      background: var(--error);
     }
     #sell-all-btn {
-      background: linear-gradient(135deg, #6e4218, #c98a4b);
-      color: #fff;
-      box-shadow: 0 6px 22px rgba(201, 138, 75, 0.28), var(--shadow-inset);
+      background: var(--primary-container);
+      color: var(--on-surface);
     }
     #sell-all-btn:hover:not(:disabled) {
-      box-shadow: 0 10px 32px rgba(201, 138, 75, 0.40), 0 0 20px rgba(201, 138, 75, 0.15);
+      background: var(--primary-dim);
+      color: var(--on-primary);
     }
     .ctrl-msg { font-size: 11px; min-height: 16px; text-align: center; margin-top: 8px; font-weight: 400; }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        POSITIONS & ORDERS TABS
-    ════════════════════════════════════════════════════ */
-    .positions-page { padding: 24px 28px; }
+    ================================================================ */
+    .positions-page { padding: 28px 32px; }
     .positions-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .positions-table thead tr { border-bottom: 1px solid var(--border); }
+    .positions-table thead tr { border-bottom: 1px solid var(--ghost-border); }
     .positions-table th {
-      padding: 11px 14px; color: var(--muted); font-weight: 600;
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.7px;
+      font-family: 'Space Grotesk', sans-serif;
+      padding: 11px 14px; color: var(--outline); font-weight: 600;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
     }
     .positions-table th:first-child { text-align: left; }
     .positions-table th:not(:first-child) { text-align: right; }
     .positions-table td {
-      padding: 14px 14px; border-bottom: 1px solid rgba(42, 65, 48, 0.25);
-      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      padding: 14px 14px; border-bottom: 1px solid rgba(72, 72, 72, 0.1);
+      font-family: 'Space Grotesk', sans-serif; font-size: 12px;
       font-variant-numeric: tabular-nums;
     }
-    .positions-table td:first-child { font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; text-align: left; }
+    .positions-table td:first-child { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 13px; text-align: left; }
     .positions-table td:not(:first-child) { text-align: right; }
-    .pos-total-row { border-top: 1px solid var(--border2) !important; font-weight: 700; }
-    #pos-empty { padding: 44px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 400; }
+    .pos-total-row { border-top: 1px solid var(--outline-variant) !important; font-weight: 700; }
+    #pos-empty { padding: 44px; text-align: center; color: var(--outline); font-size: 13px; font-weight: 400; }
 
-    /* ── Bracket status badges ── */
+    /* Bracket status badges */
     .badge-protected {
-      display: inline-block; padding: 2px 9px; border-radius: var(--radius-pill);
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
-      background: rgba(62, 207, 106, 0.10); color: var(--green);
-      border: 1px solid rgba(62, 207, 106, 0.20);
-      box-shadow: 0 0 12px rgba(62, 207, 106, 0.08);
+      display: inline-block; padding: 2px 9px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      background: rgba(200, 200, 176, 0.10); color: var(--primary);
+      border: 1px solid rgba(200, 200, 176, 0.20);
     }
     .badge-unprotected {
-      display: inline-block; padding: 2px 9px; border-radius: var(--radius-pill);
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
-      background: rgba(224, 107, 87, 0.10); color: var(--red);
-      border: 1px solid rgba(224, 107, 87, 0.22);
+      display: inline-block; padding: 2px 9px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      background: rgba(237, 127, 100, 0.10); color: var(--error);
+      border: 1px solid rgba(237, 127, 100, 0.22);
       animation: pulse 2.2s ease-in-out infinite;
     }
     .badge-sl-pending {
-      display: inline-block; padding: 2px 9px; border-radius: var(--radius-pill);
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
-      background: rgba(201, 150, 58, 0.09); color: var(--yellow);
-      border: 1px solid rgba(201, 150, 58, 0.18);
+      display: inline-block; padding: 2px 9px; border-radius: 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      background: rgba(159, 157, 157, 0.09); color: var(--secondary);
+      border: 1px solid rgba(159, 157, 157, 0.18);
     }
 
-    /* ── Flash animations ── */
-    @keyframes flashGreen { 0%,100%{background:transparent} 35%{background:rgba(62,207,106,0.08)} }
-    @keyframes flashRed   { 0%,100%{background:transparent} 35%{background:rgba(224,107,87,0.08)} }
+    /* Flash animations */
+    @keyframes flashGreen { 0%,100%{background:transparent} 35%{background:rgba(200,200,176,0.06)} }
+    @keyframes flashRed   { 0%,100%{background:transparent} 35%{background:rgba(237,127,100,0.06)} }
     .flash-green { animation: flashGreen 0.65s ease; }
     .flash-red   { animation: flashRed   0.65s ease; }
 
-    /* ── Connection dot ── */
+    /* Connection dot (old position kept for JS, new one in status bar) */
     .sse-dot {
-      width: 7px; height: 7px; border-radius: 50%; display: inline-block;
-      background: var(--muted); margin-right: 5px;
+      width: 7px; height: 7px; border-radius: 0; display: inline-block;
+      background: var(--outline); margin-right: 5px;
       transition: var(--transition);
     }
-    .sse-dot.live { background: var(--green); box-shadow: 0 0 7px var(--green), 0 0 16px rgba(62, 207, 106, 0.18); }
+    .sse-dot.live { background: var(--primary); }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        START OVERLAY
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     #start-overlay {
       position: fixed; inset: 0; z-index: 200;
-      background: rgba(7, 14, 11, 0.90);
-      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      background: rgba(0, 0, 0, 0.92);
       display: flex; align-items: center; justify-content: center;
     }
     #start-overlay.hidden { display: none; }
     .start-box {
-      background: var(--surface2);
-      backdrop-filter: blur(var(--glass-blur-md)); -webkit-backdrop-filter: blur(var(--glass-blur-md));
-      border: 1px solid var(--border);
-      border-top: 1px solid var(--border-glow);
-      border-radius: var(--radius-xl); padding: 40px 44px;
+      background: var(--surface-low);
+      border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 40px 44px;
       width: 500px; max-width: 95vw;
-      box-shadow: var(--shadow-lg), 0 0 48px rgba(62, 207, 106, 0.04);
       position: relative;
     }
-    .start-box::before {
-      content: '';
-      position: absolute; top: 0; left: 10%; right: 10%;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(107, 165, 140, 0.4), transparent);
-      pointer-events: none;
-    }
     .start-warning {
-      background: rgba(224, 107, 87, 0.07);
-      border: 1px solid rgba(224, 107, 87, 0.20);
-      border-radius: var(--radius); padding: 14px 20px; margin-bottom: 26px;
-      font-size: 13px; font-weight: 600; color: var(--red); text-align: center;
-      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      background: rgba(237, 127, 100, 0.06);
+      border: 1px solid rgba(237, 127, 100, 0.18);
+      border-radius: 0; padding: 14px 20px; margin-bottom: 26px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px; font-weight: 600; color: var(--error); text-align: center;
+      text-transform: uppercase; letter-spacing: 0.06em;
     }
-    .start-title { font-size: 24px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.02em; }
-    .start-sub { font-size: 12px; color: var(--muted); margin-bottom: 26px; font-weight: 400; }
+    .start-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 24px; font-weight: 800; margin-bottom: 6px;
+      letter-spacing: -0.02em; color: var(--tertiary);
+      text-transform: uppercase;
+    }
+    .start-sub { font-size: 12px; color: var(--outline); margin-bottom: 26px; font-weight: 400; }
     .start-table { width: 100%; border-collapse: collapse; margin-bottom: 26px; }
-    .start-table tr td { padding: 8px 0; border-bottom: 1px solid rgba(42, 65, 48, 0.28); font-size: 12px; font-weight: 400; }
+    .start-table tr td { padding: 8px 0; border-bottom: 1px solid rgba(72, 72, 72, 0.15); font-size: 12px; font-weight: 400; }
     .start-table tr:last-child td { border: none; }
-    .start-table td:first-child { color: var(--muted); }
-    .start-table td:last-child { text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+    .start-table td:first-child { color: var(--outline); }
+    .start-table td:last-child { text-align: right; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
     .pdt-row td { padding-top: 14px !important; }
-    .start-confirm-label { font-size: 11px; color: var(--muted); margin-bottom: 10px; font-weight: 400; }
+    .start-confirm-label { font-size: 11px; color: var(--outline); margin-bottom: 10px; font-weight: 400; }
     .start-input-row { display: flex; gap: 10px; }
     #confirm-input {
       flex: 1;
-      background: rgba(14, 24, 18, 0.85); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 13px 18px;
-      font-size: 15px; font-weight: 700; color: var(--text);
-      font-family: 'JetBrains Mono', monospace; letter-spacing: 3px; outline: none;
+      background: var(--surface-lowest); border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 13px 18px;
+      font-size: 15px; font-weight: 700; color: var(--on-surface);
+      font-family: 'Space Grotesk', sans-serif; letter-spacing: 3px; outline: none;
       transition: var(--transition);
     }
-    #confirm-input:focus { border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107, 165, 140, 0.12); }
-    #confirm-input::placeholder { color: var(--muted2); letter-spacing: normal; font-weight: 400; }
+    #confirm-input:focus { border-color: var(--primary); }
+    #confirm-input::placeholder { color: var(--outline-variant); letter-spacing: normal; font-weight: 400; }
     #start-btn {
-      background: linear-gradient(135deg, #1a5c30, #267a40);
-      color: #fff; border: none; border-radius: var(--radius-pill);
-      padding: 13px 26px; font-size: 13px; font-weight: 700;
+      background: var(--primary-container);
+      color: var(--tertiary); border: none; border-radius: 0;
+      padding: 13px 26px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px; font-weight: 700;
       cursor: pointer; white-space: nowrap;
-      box-shadow: 0 6px 24px rgba(38, 122, 64, 0.30), var(--shadow-inset);
-      transition: var(--transition); letter-spacing: 0.02em;
+      transition: var(--transition); letter-spacing: 0.06em;
+      text-transform: uppercase;
     }
     #start-btn:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 32px rgba(38, 122, 64, 0.42), 0 0 20px rgba(62, 207, 106, 0.15);
+      background: var(--primary);
+      color: var(--on-primary);
     }
-    #start-btn:active:not(:disabled) { transform: translateY(0) scale(0.99); }
-    #start-btn:disabled { background: rgba(14, 24, 18, 0.7); color: var(--muted); box-shadow: none; cursor: not-allowed; }
-    #start-error { font-size: 11px; color: var(--red); margin-top: 10px; min-height: 16px; font-weight: 400; }
+    #start-btn:active:not(:disabled) { transform: scale(0.99); }
+    #start-btn:disabled { background: var(--surface); color: var(--outline); cursor: not-allowed; }
+    #start-error { font-size: 11px; color: var(--error); margin-top: 10px; min-height: 16px; font-weight: 400; }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        PERFORMANCE TAB
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     .progress-bar {
-      background: rgba(14, 24, 18, 0.85); border-radius: var(--radius-pill);
+      background: var(--surface-lowest); border-radius: 0;
       height: 14px; overflow: hidden;
     }
     .progress-fill {
-      height: 100%; border-radius: var(--radius-pill);
-      background: linear-gradient(90deg, #267a40, #3ecf6a);
+      height: 100%; border-radius: 0;
+      background: var(--primary);
       transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 0 14px rgba(62, 207, 106, 0.18);
     }
     .pnl-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
     .cal-day {
-      height: 32px; border-radius: 9px;
+      height: 32px; border-radius: 0;
       display: flex; align-items: center; justify-content: center;
-      font-size: 9px; font-family: 'JetBrains Mono', monospace;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 9px;
       cursor: default; transition: var(--transition);
       font-variant-numeric: tabular-nums;
     }
     .cal-day:hover { transform: scale(1.14); }
-    .cal-pos  { background: rgba(62, 207, 106, 0.16); color: var(--green); border: 1px solid rgba(62, 207, 106, 0.12); }
-    .cal-neg  { background: rgba(224, 107, 87, 0.16);  color: var(--red);   border: 1px solid rgba(224, 107, 87, 0.12); }
-    .cal-zero { background: var(--glass); color: var(--muted2); border: 1px solid var(--border); }
+    .cal-pos  { background: rgba(200, 200, 176, 0.16); color: var(--primary); border: 1px solid rgba(200, 200, 176, 0.12); }
+    .cal-neg  { background: rgba(237, 127, 100, 0.16); color: var(--error); border: 1px solid rgba(237, 127, 100, 0.12); }
+    .cal-zero { background: var(--surface); color: var(--outline-variant); border: 1px solid var(--ghost-border); }
 
-    /* ── Streak warning banner ── */
+    /* Streak warning banner */
     #streak-banner {
-      background: rgba(201, 150, 58, 0.07);
-      border: 1px solid rgba(201, 150, 58, 0.18);
-      border-radius: var(--radius); padding: 9px 20px;
-      font-size: 11px; font-weight: 600; color: var(--yellow);
-      display: none;
+      background: rgba(159, 157, 157, 0.06);
+      border: 1px solid rgba(159, 157, 157, 0.15);
+      border-radius: 0; padding: 9px 20px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px; font-weight: 600; color: var(--secondary);
+      display: none; text-transform: uppercase; letter-spacing: 0.04em;
     }
 
     /* ── Grade pill badges ── */
@@ -747,183 +742,201 @@
       color: var(--muted); line-height: 1.3;
     }
 
-    /* ── Footer ── */
-    footer { text-align: center; font-size: 10px; color: var(--muted2); padding: 12px 0 28px; font-weight: 400; letter-spacing: 0.03em; }
-
-    /* ── Timeframe toolbar ── */
+    /* Timeframe toolbar */
     .tf-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-    .tf-sep { width: 1px; height: 16px; background: var(--border); margin: 0 6px; }
+    .tf-sep { width: 1px; height: 16px; background: var(--outline-variant); margin: 0 6px; opacity: 0.3; }
 
-    /* ── Bid/Ask strip ── */
-    .ba-strip { display: flex; align-items: center; gap: 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-variant-numeric: tabular-nums; }
-    .ba-bid { color: var(--green); } .ba-ask { color: var(--red); }
-    .ba-spread { color: var(--muted); font-size: 10px; }
+    /* Bid/Ask strip */
+    .ba-strip {
+      display: flex; align-items: center; gap: 14px;
+      font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-variant-numeric: tabular-nums;
+    }
+    .ba-bid { color: var(--primary); } .ba-ask { color: var(--error); }
+    .ba-spread { color: var(--outline); font-size: 10px; }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        TRADING PANEL (right slide-out)
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     #trade-panel {
       position: fixed; right: 0; top: 0; bottom: 0; width: 320px; z-index: 150;
-      background: rgba(7, 14, 11, 0.90);
-      backdrop-filter: blur(var(--glass-blur-md)); -webkit-backdrop-filter: blur(var(--glass-blur-md));
-      border-left: 1px solid var(--border);
-      box-shadow: -10px 0 40px rgba(0, 0, 0, 0.45);
-      transform: translateX(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      background: var(--surface-lowest);
+      border-left: 1px solid var(--ghost-border);
+      transform: translateX(100%); transition: transform 0.25s linear;
       display: flex; flex-direction: column; overflow-y: auto;
       padding: 24px 22px;
     }
     #trade-panel.open { transform: translateX(0); }
     .tp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-    .tp-title { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+    .tp-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    }
     .tp-close {
-      background: var(--glass2); border: 1px solid var(--border); color: var(--muted);
+      background: var(--surface); border: 1px solid var(--ghost-border); color: var(--outline);
       font-size: 16px; cursor: pointer; padding: 7px 10px; line-height: 1;
-      transition: var(--transition); border-radius: 50%;
+      transition: var(--transition); border-radius: 0;
     }
-    .tp-close:hover { color: var(--text); background: var(--glass3); }
-    .side-toggle { display: flex; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); margin-bottom: 18px; }
+    .tp-close:hover { color: var(--on-surface); background: var(--surface-high); }
+    .side-toggle { display: flex; border-radius: 0; overflow: hidden; border: 1px solid var(--ghost-border); margin-bottom: 18px; }
     .side-btn {
-      flex: 1; padding: 11px; border: none; font-size: 13px; font-weight: 700;
-      cursor: pointer; background: var(--glass); color: var(--muted); transition: var(--transition);
+      flex: 1; padding: 11px; border: none;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer; background: var(--surface); color: var(--outline); transition: var(--transition);
+      text-transform: uppercase; letter-spacing: 0.06em;
     }
-    .side-btn.buy-active  { background: var(--green2); color: #fff; box-shadow: 0 0 14px rgba(62, 207, 106, 0.14); }
-    .side-btn.sell-active { background: var(--red2);   color: #fff; box-shadow: 0 0 14px rgba(224, 107, 87, 0.14); }
+    .side-btn.buy-active  { background: var(--primary-container); color: var(--tertiary); }
+    .side-btn.sell-active { background: var(--error-container); color: #fff; }
     .tp-field { margin-bottom: 16px; }
-    .tp-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 7px; font-weight: 600; }
-    .tp-input, .tp-select {
-      width: 100%; background: rgba(14, 24, 18, 0.85); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 11px 14px; color: var(--text); font-size: 12px;
-      font-family: 'JetBrains Mono', monospace; outline: none; transition: var(--transition);
+    .tp-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 10px; color: var(--outline); text-transform: uppercase;
+      letter-spacing: 0.08em; margin-bottom: 7px; font-weight: 600;
     }
-    .tp-input:focus, .tp-select:focus { border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107, 165, 140, 0.10); }
-    .tp-select option { background: #0d1a12; }
+    .tp-input, .tp-select {
+      width: 100%; background: var(--surface-lowest); border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 11px 14px; color: var(--on-surface); font-size: 12px;
+      font-family: 'Space Grotesk', sans-serif; outline: none; transition: var(--transition);
+    }
+    .tp-input:focus, .tp-select:focus { border-color: var(--primary); }
+    .tp-select option { background: var(--surface-lowest); }
     .tp-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .tp-preview {
-      background: rgba(14, 24, 18, 0.7); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 18px; font-size: 11px;
+      background: var(--surface); border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 14px 16px; margin-bottom: 18px; font-size: 11px;
     }
-    .tp-preview-row { display: flex; justify-content: space-between; padding: 4px 0; color: var(--muted); }
-    .tp-preview-row span:last-child { color: var(--text); font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+    .tp-preview-row { display: flex; justify-content: space-between; padding: 4px 0; color: var(--outline); }
+    .tp-preview-row span:last-child {
+      color: var(--on-surface);
+      font-family: 'Space Grotesk', sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
     .tp-submit {
-      width: 100%; border: none; border-radius: var(--radius-pill); padding: 14px;
+      width: 100%; border: none; border-radius: 0; padding: 14px;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 13px; font-weight: 700; cursor: pointer;
       transition: var(--transition); margin-bottom: 10px;
-      letter-spacing: 0.02em; box-shadow: var(--shadow-inset);
+      letter-spacing: 0.06em; text-transform: uppercase;
     }
     .tp-submit:hover:not(:disabled) { transform: translateY(-2px); }
     .tp-submit:active:not(:disabled) { transform: translateY(0) scale(0.99); }
-    .tp-submit:disabled { background: rgba(14, 24, 18, 0.7) !important; color: var(--muted) !important; cursor: not-allowed; box-shadow: none !important; }
+    .tp-submit:disabled { background: var(--surface) !important; color: var(--outline) !important; cursor: not-allowed; }
     .tp-submit.buy {
-      background: linear-gradient(135deg, #1a5c30, #267a40); color: #fff;
-      box-shadow: 0 6px 22px rgba(38, 122, 64, 0.24), var(--shadow-inset);
+      background: var(--primary-container); color: var(--tertiary);
     }
-    .tp-submit.buy:hover:not(:disabled) { box-shadow: 0 10px 32px rgba(38, 122, 64, 0.38), 0 0 20px rgba(62, 207, 106, 0.14); }
+    .tp-submit.buy:hover:not(:disabled) { background: var(--primary); color: var(--on-primary); }
     .tp-submit.sell {
-      background: linear-gradient(135deg, #5a2222, #a84840); color: #fff;
-      box-shadow: 0 6px 22px rgba(168, 72, 64, 0.24), var(--shadow-inset);
+      background: var(--error-container); color: #fff;
     }
-    .tp-submit.sell:hover:not(:disabled) { box-shadow: 0 10px 32px rgba(168, 72, 64, 0.38), 0 0 20px rgba(224, 107, 87, 0.14); }
+    .tp-submit.sell:hover:not(:disabled) { background: var(--error); }
     .tp-msg { font-size: 11px; min-height: 14px; text-align: center; font-weight: 400; }
-    .tp-sym { font-family: 'JetBrains Mono', monospace; font-weight: 700; margin-bottom: 20px; text-align: center; font-size: 15px; letter-spacing: 0.05em; }
+    .tp-sym {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700; margin-bottom: 20px; text-align: center;
+      font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase;
+    }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        ORDERS TABLE
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     .orders-table { width: 100%; border-collapse: collapse; font-size: 11px; }
     .orders-table th {
-      padding: 9px 10px; color: var(--muted); font-weight: 600;
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px;
-      text-align: right; border-bottom: 1px solid var(--border);
+      font-family: 'Space Grotesk', sans-serif;
+      padding: 9px 10px; color: var(--outline); font-weight: 600;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+      text-align: right; border-bottom: 1px solid var(--ghost-border);
     }
     .orders-table th:first-child { text-align: left; }
     .orders-table td {
-      padding: 11px 10px; border-bottom: 1px solid rgba(42, 65, 48, 0.22);
-      font-family: 'JetBrains Mono', monospace; text-align: right;
+      padding: 11px 10px; border-bottom: 1px solid rgba(72, 72, 72, 0.1);
+      font-family: 'Space Grotesk', sans-serif; text-align: right;
       font-size: 11px; font-variant-numeric: tabular-nums;
     }
-    .orders-table td:first-child { font-family: 'Inter', sans-serif; font-weight: 600; text-align: left; }
+    .orders-table td:first-child { font-family: 'Space Grotesk', sans-serif; font-weight: 600; text-align: left; }
     .btn-cancel-ord {
-      background: none; border: 1px solid rgba(224, 107, 87, 0.22);
-      border-radius: var(--radius-sm); color: var(--red); font-size: 10px;
+      background: none; border: 1px solid rgba(237, 127, 100, 0.22);
+      border-radius: 0; color: var(--error); font-size: 10px;
       font-weight: 600; padding: 4px 10px; cursor: pointer; transition: var(--transition);
     }
-    .btn-cancel-ord:hover { background: rgba(224, 107, 87, 0.09); box-shadow: 0 0 10px rgba(224, 107, 87, 0.08); }
+    .btn-cancel-ord:hover { background: rgba(237, 127, 100, 0.06); }
     .btn-close-pos {
-      background: none; border: 1px solid rgba(224, 107, 87, 0.22);
-      border-radius: var(--radius-sm); color: var(--red); font-size: 10px;
+      background: none; border: 1px solid rgba(237, 127, 100, 0.22);
+      border-radius: 0; color: var(--error); font-size: 10px;
       font-weight: 600; padding: 5px 12px; cursor: pointer; transition: var(--transition);
     }
-    .btn-close-pos:hover { background: rgba(224, 107, 87, 0.09); box-shadow: 0 0 10px rgba(224, 107, 87, 0.08); }
+    .btn-close-pos:hover { background: rgba(237, 127, 100, 0.06); }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        TOAST NOTIFICATIONS
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     #toast-container {
-      position: fixed; bottom: 28px; right: 28px; z-index: 9999;
+      position: fixed; bottom: 44px; right: 28px; z-index: 9999;
       display: flex; flex-direction: column; gap: 10px; pointer-events: none;
     }
     .toast {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-      border-radius: var(--radius); padding: 14px 18px; font-size: 12px; font-weight: 400;
-      color: var(--text); box-shadow: var(--shadow);
-      animation: toast-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      background: var(--surface-high);
+      border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 14px 18px; font-size: 12px; font-weight: 400;
+      color: var(--on-surface);
+      animation: toast-in 0.2s linear;
       pointer-events: auto; cursor: pointer; max-width: 330px;
     }
-    .toast.success { border-color: rgba(62, 207, 106, 0.28); box-shadow: var(--shadow), 0 0 18px rgba(62, 207, 106, 0.07); }
-    .toast.error   { border-color: rgba(224, 107, 87, 0.28); box-shadow: var(--shadow), 0 0 18px rgba(224, 107, 87, 0.07); }
-    .toast.warning { border-color: rgba(201, 150, 58, 0.28); box-shadow: var(--shadow), 0 0 18px rgba(201, 150, 58, 0.07); }
-    @keyframes toast-in { from { opacity: 0; transform: translateX(20px) scale(0.96); } to { opacity: 1; transform: translateX(0) scale(1); } }
+    .toast.success { border-color: rgba(200, 200, 176, 0.25); }
+    .toast.error   { border-color: rgba(237, 127, 100, 0.25); }
+    .toast.warning { border-color: rgba(159, 157, 157, 0.25); }
+    @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        PRICE ALERT MODAL
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     #alert-modal {
       position: fixed; inset: 0; z-index: 300;
-      background: rgba(7, 14, 11, 0.78);
-      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      background: rgba(0, 0, 0, 0.82);
       display: flex; align-items: center; justify-content: center;
     }
     #alert-modal.hidden { display: none; }
     .alert-box {
-      background: var(--surface2);
-      backdrop-filter: blur(var(--glass-blur-md)); -webkit-backdrop-filter: blur(var(--glass-blur-md));
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl); padding: 30px;
-      width: 370px; max-width: 93vw; box-shadow: var(--shadow-lg);
+      background: var(--surface-low);
+      border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 30px;
+      width: 370px; max-width: 93vw;
     }
-    .alert-box h3 { font-size: 15px; font-weight: 700; margin-bottom: 20px; letter-spacing: -0.01em; }
+    .alert-box h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 15px; font-weight: 700; margin-bottom: 20px;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
     .alert-list { max-height: 145px; overflow-y: auto; margin-bottom: 16px; }
     .alert-item {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 9px 0; border-bottom: 1px solid rgba(42, 65, 48, 0.28);
-      font-size: 12px; font-family: 'JetBrains Mono', monospace;
+      padding: 9px 0; border-bottom: 1px solid rgba(72, 72, 72, 0.15);
+      font-size: 12px; font-family: 'Space Grotesk', sans-serif;
     }
     .alert-item:last-child { border: none; }
-    .btn-rm-alert { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; transition: var(--transition); }
-    .btn-rm-alert:hover { color: var(--red); }
+    .btn-rm-alert { background: none; border: none; color: var(--outline); cursor: pointer; font-size: 14px; transition: var(--transition); }
+    .btn-rm-alert:hover { color: var(--error); }
     .alert-add-row { display: flex; gap: 10px; margin-bottom: 18px; }
     .alert-add-row input {
-      flex: 1; background: rgba(14, 24, 18, 0.85); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 10px 14px; color: var(--text);
-      font-size: 13px; font-family: 'JetBrains Mono', monospace; outline: none; transition: var(--transition);
+      flex: 1; background: var(--surface-lowest); border: 1px solid var(--ghost-border);
+      border-radius: 0; padding: 10px 14px; color: var(--on-surface);
+      font-size: 13px; font-family: 'Space Grotesk', sans-serif; outline: none; transition: var(--transition);
     }
-    .alert-add-row input:focus { border-color: var(--sage); box-shadow: 0 0 0 3px rgba(107, 165, 140, 0.10); }
+    .alert-add-row input:focus { border-color: var(--primary); }
     .btn-add-alert {
-      background: linear-gradient(135deg, #4d8a6f, #6ba58c); color: #fff;
-      border: none; border-radius: var(--radius-pill); padding: 10px 20px;
+      background: var(--primary-container); color: var(--tertiary);
+      border: none; border-radius: 0; padding: 10px 20px;
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 12px; font-weight: 700; cursor: pointer; transition: var(--transition);
-      box-shadow: 0 4px 14px rgba(107, 165, 140, 0.20), var(--shadow-inset);
+      text-transform: uppercase; letter-spacing: 0.06em;
     }
-    .btn-add-alert:hover { transform: translateY(-1px); box-shadow: 0 7px 22px rgba(107, 165, 140, 0.30); }
+    .btn-add-alert:hover { background: var(--primary); color: var(--on-primary); }
 
-    /* ── Orders tab page ── */
-    .orders-page { padding: 24px 28px; display: flex; flex-direction: column; gap: 20px; }
+    /* Orders tab page */
+    .orders-page { padding: 28px 32px; display: flex; flex-direction: column; gap: 20px; }
 
-    /* ════════════════════════════════════════════════════
+    /* ================================================================
        RESPONSIVE
-    ════════════════════════════════════════════════════ */
+    ================================================================ */
     @media (max-width: 1280px) {
       .bottom-grid { grid-template-columns: 1.4fr 1fr; }
       .controls-col { grid-column: span 2; flex-direction: row; flex-wrap: wrap; gap: 14px; }
@@ -933,11 +946,29 @@
       .cards { grid-template-columns: repeat(3, 1fr); }
       .bottom-grid { grid-template-columns: 1fr; }
       .sub-charts { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .main-content { margin-left: 0; }
+      .tab-bar { display: flex; align-items: flex-end; gap: 2px; padding: 0 28px; border-bottom: 1px solid var(--ghost-border); background: var(--surface-lowest); overflow-x: auto; }
+      .tab-bar::-webkit-scrollbar { height: 0; }
+      .tab {
+        display: block;
+        padding: 14px 22px 13px; font-family: 'Space Grotesk', sans-serif;
+        font-size: 12px; font-weight: 500; cursor: pointer;
+        border: none; border-bottom: 2px solid transparent;
+        color: var(--outline); background: transparent;
+        transition: var(--transition); white-space: nowrap;
+        letter-spacing: 0.06em; text-transform: uppercase;
+      }
+      .tab:hover { color: var(--on-surface-variant); }
+      .tab.active {
+        color: var(--on-surface);
+        border-bottom-color: var(--primary);
+        font-weight: 600;
+      }
     }
     @media (max-width: 768px) {
-      header { padding: 0 16px; height: 54px; }
-      .tab-bar { padding: 0 16px; }
-      .page { padding: 16px 16px; gap: 14px; }
+      header { padding: 0 16px; height: 56px; }
+      .page { padding: 16px 16px; gap: 1.5rem; }
       .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
       .chart-card { padding: 18px 16px 14px; }
       .hdr-center { display: none; }
@@ -946,124 +977,153 @@
 </head>
 <body>
 
-<!-- ── Start screen overlay ── -->
+<!-- Start screen overlay -->
 <div id="start-overlay">
   <div class="start-box">
-    <div class="start-warning" id="start-warning">⚠ LIVE TRADING — REAL MONEY</div>
-    <div class="start-title">Trading Bot</div>
+    <div class="start-warning" id="start-warning">LIVE TRADING -- REAL MONEY</div>
+    <div class="start-title">SOVEREIGN</div>
     <div class="start-sub" id="start-sub">Loading account info...</div>
 
     <table class="start-table" id="start-table">
-      <tr><td>Account Equity</td><td id="st-equity">—</td></tr>
-      <tr><td>Cash Available</td><td id="st-cash">—</td></tr>
-      <tr><td>Buying Power</td>  <td id="st-bp">—</td></tr>
-      <tr><td colspan="2" style="padding-top:10px;color:var(--muted2);font-size:10px;border:none;text-transform:uppercase;letter-spacing:.5px">Strategy</td></tr>
-      <tr><td>Symbol</td>         <td id="st-symbol">—</td></tr>
-      <tr><td>Short / Long SMA</td><td id="st-sma">—</td></tr>
-      <tr><td>Bar Timeframe</td>  <td id="st-tf">—</td></tr>
-      <tr><td>Max Position $</td> <td id="st-maxpos">—</td></tr>
-      <tr><td>Daily Loss Limit</td><td id="st-loss">—</td></tr>
-      <tr><td>Take Profit</td>    <td id="st-tp">—</td></tr>
-      <tr><td>Trailing Stop</td>  <td id="st-sl">—</td></tr>
-      <tr><td>Mode</td>           <td id="st-mode">—</td></tr>
-      <tr class="pdt-row"><td colspan="2" style="padding-top:10px;color:var(--muted2);font-size:10px;border:none;text-transform:uppercase;letter-spacing:.5px">PDT Status</td></tr>
-      <tr><td>Day Trades Used</td><td id="st-pdt">—</td></tr>
+      <tr><td>ACCOUNT_EQUITY</td><td id="st-equity">--</td></tr>
+      <tr><td>CASH_AVAILABLE</td><td id="st-cash">--</td></tr>
+      <tr><td>BUYING_POWER</td>  <td id="st-bp">--</td></tr>
+      <tr><td colspan="2" style="padding-top:10px;color:var(--outline-variant);font-family:'Space Grotesk',sans-serif;font-size:10px;border:none;text-transform:uppercase;letter-spacing:.08em">STRATEGY</td></tr>
+      <tr><td>SYMBOL</td>         <td id="st-symbol">--</td></tr>
+      <tr><td>SHORT_/_LONG_SMA</td><td id="st-sma">--</td></tr>
+      <tr><td>BAR_TIMEFRAME</td>  <td id="st-tf">--</td></tr>
+      <tr><td>MAX_POSITION_$</td> <td id="st-maxpos">--</td></tr>
+      <tr><td>DAILY_LOSS_LIMIT</td><td id="st-loss">--</td></tr>
+      <tr><td>TAKE_PROFIT</td>    <td id="st-tp">--</td></tr>
+      <tr><td>TRAILING_STOP</td>  <td id="st-sl">--</td></tr>
+      <tr><td>MODE</td>           <td id="st-mode">--</td></tr>
+      <tr class="pdt-row"><td colspan="2" style="padding-top:10px;color:var(--outline-variant);font-family:'Space Grotesk',sans-serif;font-size:10px;border:none;text-transform:uppercase;letter-spacing:.08em">PDT_STATUS</td></tr>
+      <tr><td>DAY_TRADES_USED</td><td id="st-pdt">--</td></tr>
     </table>
 
     <div class="start-confirm-label">Type <strong>YES</strong> to confirm and start the bot</div>
     <div class="start-input-row">
       <input id="confirm-input" type="text" placeholder="type YES here" autocomplete="off"
              oninput="onConfirmInput()" onkeydown="if(event.key==='Enter') startBot()"/>
-      <button id="start-btn" onclick="startBot()" disabled>Start Bot</button>
+      <button id="start-btn" onclick="startBot()" disabled>START BOT</button>
     </div>
     <div id="start-error"></div>
     <div style="text-align:center;margin-top:14px">
-      <button onclick="skipToDashboard()" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer;text-decoration:underline;padding:4px">
-        View charts without starting →
+      <button onclick="skipToDashboard()" style="background:none;border:none;color:var(--outline);font-family:'Space Grotesk',sans-serif;font-size:10px;cursor:pointer;text-decoration:underline;padding:4px;letter-spacing:0.04em;text-transform:uppercase">
+        View charts without starting
       </button>
     </div>
   </div>
 </div>
 
-<!-- ── Header ── -->
+<!-- Top Nav Bar -->
 <header>
   <div class="hdr-left">
     <div class="logo">
       <div class="logo-dot" id="logo-dot"></div>
-      <h1>Trading Bot <span class="logo-sub" id="header-symbol"></span></h1>
+      <h1>SOVEREIGN <span class="logo-sub" id="header-symbol"></span></h1>
     </div>
     <span id="paper-badge" class="badge badge-paper" style="display:none">PAPER</span>
-    <span id="live-badge"  class="badge badge-live"  style="display:none">LIVE 💰</span>
+    <span id="live-badge"  class="badge badge-live"  style="display:none">LIVE</span>
   </div>
 
-  <!-- hidden price elements kept for JS refs (unused visually) -->
+  <!-- hidden price elements kept for JS refs -->
   <span id="hdr-symbol" style="display:none"></span>
   <span id="live-price" style="display:none"></span>
   <span id="live-change" style="display:none"></span>
 
   <div class="hdr-center">
-    <div id="pdt-warning-banner">⚠ PDT LIMIT REACHED — No new day trades</div>
+    <div id="pdt-warning-banner">PDT LIMIT REACHED -- No new day trades</div>
     <div class="pdt-counter" id="pdt-counter" style="display:none">
-      <span class="pdt-label">Day Trades</span>
-      <span class="pdt-value" id="pdt-display">—/3</span>
+      <span class="pdt-label">DAY_TRADES</span>
+      <span class="pdt-value" id="pdt-display">--/3</span>
     </div>
   </div>
 
   <div class="hdr-right">
+    <span class="material-symbols-outlined" style="color:var(--outline);cursor:pointer;font-size:20px" title="Notifications">notifications</span>
+    <span class="material-symbols-outlined" style="color:var(--outline);cursor:pointer;font-size:20px" title="Profile">person</span>
     <div>
-      <div id="status-badge" class="badge badge-idle">Idle</div>
-      <div class="hdr-meta"><span class="sse-dot" id="sse-dot"></span><span id="last-update">connecting...</span></div>
+      <div id="status-badge" class="badge badge-idle">IDLE</div>
     </div>
   </div>
 </header>
 
-<!-- ── Tab bar ── -->
-<div class="tab-bar">
-  <button class="tab active" id="tab-btn-overview"   onclick="switchTab('overview')">Overview</button>
-  <button class="tab"        id="tab-btn-positions"   onclick="switchTab('positions')">Positions</button>
-  <button class="tab"        id="tab-btn-orders"      onclick="switchTab('orders')">Orders</button>
-  <button class="tab"        id="tab-btn-performance" onclick="switchTab('performance')">Performance</button>
+<!-- Left Sidebar -->
+<nav class="sidebar">
+  <button class="sidebar-btn active" id="tab-btn-overview" onclick="switchTab('overview')">
+    <span class="material-symbols-outlined">grid_view</span>
+    <span class="sidebar-label">DASH</span>
+  </button>
+  <button class="sidebar-btn" id="tab-btn-positions" onclick="switchTab('positions')">
+    <span class="material-symbols-outlined">account_balance_wallet</span>
+    <span class="sidebar-label">PORT</span>
+  </button>
+  <button class="sidebar-btn" id="tab-btn-performance" onclick="switchTab('performance')">
+    <span class="material-symbols-outlined">monitoring</span>
+    <span class="sidebar-label">ANLY</span>
+  </button>
+  <button class="sidebar-btn" id="tab-btn-orders" onclick="switchTab('orders')">
+    <span class="material-symbols-outlined">history</span>
+    <span class="sidebar-label">HIST</span>
+  </button>
+  <div class="sidebar-spacer"></div>
+  <button class="sidebar-btn" style="opacity:0.5;cursor:default">
+    <span class="material-symbols-outlined">settings</span>
+    <span class="sidebar-label">CFG</span>
+  </button>
+</nav>
+
+<!-- Old tab bar (hidden on desktop, shown on mobile as fallback) -->
+<div class="tab-bar" style="margin-top:64px">
+  <button class="tab active" onclick="switchTab('overview')">OVERVIEW</button>
+  <button class="tab"        onclick="switchTab('positions')">POSITIONS</button>
+  <button class="tab"        onclick="switchTab('orders')">ORDERS</button>
+  <button class="tab"        onclick="switchTab('performance')">PERFORMANCE</button>
 </div>
 
-<!-- ── Overview tab ── -->
+<!-- Main content area -->
+<div class="main-content">
+
+<!-- Overview tab -->
 <div class="tab-pane active" id="tab-overview">
 <div class="page">
 
   <!-- Streak warning -->
-  <div id="streak-banner">⚠ Losing streak detected — position sizes reduced by 50% until next win</div>
+  <div id="streak-banner">LOSING STREAK DETECTED -- position sizes reduced by 50% until next win</div>
 
   <!-- Cards -->
   <div class="cards">
     <div class="card">
-      <div class="card-label">Account Equity</div>
-      <div class="card-value c-white" id="equity">$—</div>
-      <div class="card-sub" id="daily-pnl" style="transition:color .3s">Daily P&L —</div>
+      <div class="card-label">ACCOUNT_EQUITY</div>
+      <div class="card-value c-white" id="equity">$--</div>
+      <div class="card-sub" id="daily-pnl" style="transition:color .3s">DAILY_P&L --</div>
     </div>
     <div class="card">
-      <div class="card-label">Cash</div>
-      <div class="card-value c-white" id="cash">$—</div>
-      <div class="card-sub" id="buying-power">Buying power —</div>
+      <div class="card-label">CASH</div>
+      <div class="card-value c-white" id="cash">$--</div>
+      <div class="card-sub" id="buying-power">Buying power --</div>
     </div>
     <div class="card">
-      <div class="card-label">Position · <span id="pos-symbol">—</span></div>
-      <div class="card-value c-white" id="shares">—</div>
-      <div class="card-sub" id="pos-pnl" style="transition:color .3s">P&L —</div>
-      <div class="card-sub c-muted" id="trailing-stop-info" style="margin-top:2px;display:none">Stop —</div>
+      <div class="card-label">POSITION <span id="pos-symbol">--</span></div>
+      <div class="card-value c-white" id="shares">--</div>
+      <div class="card-sub" id="pos-pnl" style="transition:color .3s">P&L --</div>
+      <div class="card-sub c-muted" id="trailing-stop-info" style="margin-top:2px;display:none">Stop --</div>
     </div>
     <div class="card">
-      <div class="card-label">Signal</div>
-      <div><span class="signal-pill signal-HOLD" id="signal">—</span></div>
-      <div class="card-sub" id="sma-detail" style="margin-top:6px">SMA —</div>
+      <div class="card-label">SIGNAL</div>
+      <div><span class="signal-pill signal-HOLD" id="signal">--</span></div>
+      <div class="card-sub" id="sma-detail" style="margin-top:6px">SMA --</div>
     </div>
     <div class="card">
-      <div class="card-label">RSI (14)</div>
-      <div class="card-value" id="rsi-val">—</div>
-      <div class="card-sub" id="rsi-zone">—</div>
+      <div class="card-label">RSI_(14)</div>
+      <div class="card-value" id="rsi-val">--</div>
+      <div class="card-sub" id="rsi-zone">--</div>
     </div>
     <div class="card">
-      <div class="card-label">MACD Hist</div>
-      <div class="card-value" id="macd-val">—</div>
-      <div class="card-sub" id="macd-sub">—</div>
+      <div class="card-label">MACD_HIST</div>
+      <div class="card-value" id="macd-val">--</div>
+      <div class="card-sub" id="macd-sub">--</div>
     </div>
   </div>
 
@@ -1072,35 +1132,35 @@
     <!-- Row 1: symbol title + bid/ask + action btns + chart-type toolbar -->
     <div class="chart-card-header" style="margin-bottom:6px">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-        <span class="chart-title">Price Chart · <span id="chart-symbol-label">—</span></span>
+        <span class="chart-title">PRICE_CHART <span id="chart-symbol-label">--</span></span>
         <div id="ba-strip" class="ba-strip" style="display:none">
-          <span>Bid: <span id="ba-bid" class="ba-bid">—</span></span>
-          <span>Ask: <span id="ba-ask" class="ba-ask">—</span></span>
-          <span class="ba-spread">Spread: <span id="ba-spread">—</span></span>
+          <span>BID: <span id="ba-bid" class="ba-bid">--</span></span>
+          <span>ASK: <span id="ba-ask" class="ba-ask">--</span></span>
+          <span class="ba-spread">SPREAD: <span id="ba-spread">--</span></span>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <button class="tb-btn" onclick="toggleTradePanel()" title="Manual trade">⚡ Trade</button>
-        <button class="tb-btn" onclick="openAlertModal()" title="Price alerts">🔔 Alert</button>
+        <button class="tb-btn" onclick="toggleTradePanel()" title="Manual trade"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">bolt</span> TRADE</button>
+        <button class="tb-btn" onclick="openAlertModal()" title="Price alerts"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">notifications</span> ALERT</button>
         <div class="tb-sep"></div>
         <div class="chart-toolbar">
           <div class="tb-group">
-            <button class="tb-btn active" id="btn-candle" onclick="setChartType('candle')">Candle</button>
-            <button class="tb-btn"        id="btn-line"   onclick="setChartType('line')">Line</button>
-            <button class="tb-btn"        id="btn-area"   onclick="setChartType('area')">Area</button>
-            <button class="tb-btn"        id="btn-bars"   onclick="setChartType('bars')">Bars</button>
+            <button class="tb-btn active" id="btn-candle" onclick="setChartType('candle')">CANDLE</button>
+            <button class="tb-btn"        id="btn-line"   onclick="setChartType('line')">LINE</button>
+            <button class="tb-btn"        id="btn-area"   onclick="setChartType('area')">AREA</button>
+            <button class="tb-btn"        id="btn-bars"   onclick="setChartType('bars')">BARS</button>
           </div>
           <div class="tb-sep"></div>
           <div class="tb-group">
             <button class="tb-btn active" id="btn-sma" onclick="toggleOverlay('sma')">SMA</button>
             <button class="tb-btn active" id="btn-bb"  onclick="toggleOverlay('bb')">BB</button>
-            <button class="tb-btn active" id="btn-vol" onclick="toggleOverlay('vol')">Vol</button>
+            <button class="tb-btn active" id="btn-vol" onclick="toggleOverlay('vol')">VOL</button>
           </div>
           <div class="tb-sep"></div>
           <div class="tb-group">
-            <button class="tb-btn" id="btn-hline" onclick="setDrawTool('hline')">H-Line</button>
-            <button class="tb-btn" id="btn-trend" onclick="setDrawTool('trend')">Trend</button>
-            <button class="tb-btn danger"          onclick="clearDrawings()">✕ Clear</button>
+            <button class="tb-btn" id="btn-hline" onclick="setDrawTool('hline')">H-LINE</button>
+            <button class="tb-btn" id="btn-trend" onclick="setDrawTool('trend')">TREND</button>
+            <button class="tb-btn danger"          onclick="clearDrawings()">CLEAR</button>
           </div>
           <span id="draw-hint"></span>
         </div>
@@ -1108,19 +1168,19 @@
     </div>
     <!-- Row 2: Timeframe + Range toolbar -->
     <div class="tf-toolbar">
-      <span style="font-size:10px;color:var(--muted)">Interval:</span>
+      <span style="font-family:'Space Grotesk',sans-serif;font-size:10px;color:var(--outline);text-transform:uppercase;letter-spacing:0.06em">INTERVAL:</span>
       <div class="tb-group">
-        <button class="tb-btn" id="tf-1m"  onclick="setChartInterval('1m')">1m</button>
-        <button class="tb-btn active" id="tf-5m"  onclick="setChartInterval('5m')">5m</button>
-        <button class="tb-btn" id="tf-15m" onclick="setChartInterval('15m')">15m</button>
-        <button class="tb-btn" id="tf-30m" onclick="setChartInterval('30m')">30m</button>
+        <button class="tb-btn" id="tf-1m"  onclick="setChartInterval('1m')">1M</button>
+        <button class="tb-btn active" id="tf-5m"  onclick="setChartInterval('5m')">5M</button>
+        <button class="tb-btn" id="tf-15m" onclick="setChartInterval('15m')">15M</button>
+        <button class="tb-btn" id="tf-30m" onclick="setChartInterval('30m')">30M</button>
         <button class="tb-btn" id="tf-1H"  onclick="setChartInterval('1H')">1H</button>
         <button class="tb-btn" id="tf-4H"  onclick="setChartInterval('4H')">4H</button>
         <button class="tb-btn" id="tf-1D"  onclick="setChartInterval('1D')">1D</button>
         <button class="tb-btn" id="tf-1W"  onclick="setChartInterval('1W')">1W</button>
       </div>
       <div class="tf-sep"></div>
-      <span style="font-size:10px;color:var(--muted)">Range:</span>
+      <span style="font-family:'Space Grotesk',sans-serif;font-size:10px;color:var(--outline);text-transform:uppercase;letter-spacing:0.06em">RANGE:</span>
       <div class="tb-group">
         <button class="tb-btn" id="rng-1D"  onclick="setChartRange('1D')">1D</button>
         <button class="tb-btn active" id="rng-5D"  onclick="setChartRange('5D')">5D</button>
@@ -1129,66 +1189,66 @@
         <button class="tb-btn" id="rng-6M"  onclick="setChartRange('6M')">6M</button>
         <button class="tb-btn" id="rng-YTD" onclick="setChartRange('YTD')">YTD</button>
         <button class="tb-btn" id="rng-1Y"  onclick="setChartRange('1Y')">1Y</button>
-        <button class="tb-btn" id="rng-All" onclick="setChartRange('All')">All</button>
+        <button class="tb-btn" id="rng-All" onclick="setChartRange('All')">ALL</button>
       </div>
     </div>
     <div id="priceChart" style="height:320px;width:100%"></div>
     <div style="display:flex;gap:14px;margin-top:7px;flex-wrap:wrap">
-      <div class="legend-item"><div class="legend-dot" style="background:#6ba58c"></div><span>Price</span></div>
-      <div class="legend-item"><div class="legend-dot" style="background:#d4a843"></div><span>Short SMA</span></div>
-      <div class="legend-item"><div class="legend-dot" style="background:#e87461"></div><span>Long SMA</span></div>
-      <div class="legend-item"><div class="legend-dot" style="background:#a8b87a;opacity:.7"></div><span>Bollinger</span></div>
-      <div class="legend-item"><div class="legend-dot" style="background:#6ba58c;opacity:.4"></div><span>Volume</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#c8c8b0"></div><span>Price</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#c8c8b0"></div><span>Short SMA</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ed7f64"></div><span>Long SMA</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ababab;opacity:.7"></div><span>Bollinger</span></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#c8c8b0;opacity:.4"></div><span>Volume</span></div>
     </div>
   </div>
 
   <!-- Watchlist scanner -->
   <div class="chart-card" style="padding:14px 16px">
     <div class="chart-card-header" style="margin-bottom:8px">
-      <span class="chart-title">🔍 Watchlist Scanner</span>
+      <span class="chart-title"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">search</span> WATCHLIST_SCANNER</span>
       <div style="display:flex;align-items:center;gap:10px">
-        <span id="scan-mode-badge" style="font-size:10px;padding:2px 8px;border-radius:10px"></span>
-        <span style="font-size:10px;color:var(--muted)" id="scan-time">Last scan: —</span>
+        <span id="scan-mode-badge" style="font-family:'Space Grotesk',sans-serif;font-size:10px;padding:2px 8px;border-radius:0"></span>
+        <span style="font-family:'Space Grotesk',sans-serif;font-size:10px;color:var(--outline);text-transform:uppercase;letter-spacing:0.04em" id="scan-time">LAST_SCAN: --</span>
       </div>
     </div>
     <div style="overflow-x:auto">
       <table class="watchlist-table">
         <thead>
           <tr>
-            <th style="text-align:left">Symbol</th>
-            <th>Price</th>
-            <th>Day %</th>
-            <th style="text-align:center">Signal</th>
+            <th style="text-align:left">SYMBOL</th>
+            <th>PRICE</th>
+            <th>DAY_%</th>
+            <th style="text-align:center">SIGNAL</th>
             <th>RSI</th>
-            <th>Vol Ratio</th>
-            <th>Score</th>
+            <th>VOL_RATIO</th>
+            <th>SCORE</th>
           </tr>
         </thead>
         <tbody id="watchlist-body">
-          <tr><td colspan="7" style="padding:16px 10px;color:var(--muted);text-align:center">Waiting for first scan...</td></tr>
+          <tr><td colspan="7" style="padding:16px 10px;color:var(--outline);text-align:center">Waiting for first scan...</td></tr>
         </tbody>
       </table>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-top:8px">Click any row to view that stock's chart</div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:10px;color:var(--outline);margin-top:8px;text-transform:uppercase;letter-spacing:0.04em">Click any row to view that stock's chart</div>
   </div>
 
   <!-- Open Orders mini-panel -->
   <div class="chart-card" style="padding:14px 16px">
     <div class="chart-card-header" style="margin-bottom:8px">
-      <span class="chart-title">📋 Open Orders</span>
-      <button class="tb-btn" onclick="loadOpenOrders()">↻ Refresh</button>
+      <span class="chart-title"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">receipt_long</span> OPEN_ORDERS</span>
+      <button class="tb-btn" onclick="loadOpenOrders()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">refresh</span> REFRESH</button>
     </div>
     <div style="overflow-x:auto">
       <table class="orders-table">
         <thead>
           <tr>
-            <th style="text-align:left">Symbol</th>
-            <th>Side</th><th>Type</th><th>Qty</th>
-            <th>Limit</th><th>Stop</th><th>TIF</th><th>Status</th><th></th>
+            <th style="text-align:left">SYMBOL</th>
+            <th>SIDE</th><th>TYPE</th><th>QTY</th>
+            <th>LIMIT</th><th>STOP</th><th>TIF</th><th>STATUS</th><th></th>
           </tr>
         </thead>
         <tbody id="open-orders-body">
-          <tr><td colspan="9" style="text-align:center;padding:14px;color:var(--muted)">No open orders.</td></tr>
+          <tr><td colspan="9" style="text-align:center;padding:14px;color:var(--outline)">No open orders.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1198,16 +1258,16 @@
   <div class="sub-charts">
     <div class="chart-card">
       <div class="chart-card-header">
-        <span class="chart-title">RSI (14) — &gt;70 Overbought · &lt;30 Oversold</span>
+        <span class="chart-title">RSI_(14) -- >70 OVERBOUGHT / <30 OVERSOLD</span>
       </div>
       <div class="sub-chart-wrap"><canvas id="rsiChart"></canvas></div>
     </div>
     <div class="chart-card">
       <div class="chart-card-header">
-        <span class="chart-title">MACD (12/26/9)</span>
+        <span class="chart-title">MACD_(12/26/9)</span>
         <div class="chart-legend">
-          <div class="legend-item"><div class="legend-dot" style="background:#6ba58c"></div>MACD</div>
-          <div class="legend-item"><div class="legend-dot" style="background:#d4a843"></div>Signal</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#c8c8b0"></div>MACD</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#ed7f64"></div>Signal</div>
         </div>
       </div>
       <div class="sub-chart-wrap"><canvas id="macdChart"></canvas></div>
@@ -1219,34 +1279,34 @@
 
     <!-- News -->
     <div class="panel">
-      <div class="panel-header">📰 News · <span id="news-symbol">—</span></div>
+      <div class="panel-header"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">newspaper</span> NEWS <span id="news-symbol">--</span></div>
       <div class="news-scroll" id="news-list">
-        <div style="color:var(--muted);font-size:12px">Loading headlines...</div>
+        <div style="color:var(--outline);font-size:12px">Loading headlines...</div>
       </div>
     </div>
 
     <!-- Sentiment + Trade log -->
     <div class="mid-col">
       <div class="panel">
-        <div class="panel-header">📊 Fear &amp; Greed Index</div>
+        <div class="panel-header"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">trending_up</span> FEAR_&amp;_GREED_INDEX</div>
         <div class="sentiment-body">
           <div class="sent-row">
-            <span class="sent-lbl c-green">Greed</span>
+            <span class="sent-lbl c-green">GREED</span>
             <div class="sent-track"><div class="sent-fill fill-green" id="bull-bar" style="width:50%"></div></div>
             <span class="sent-pct c-green" id="bull-pct">50%</span>
           </div>
           <div class="sent-row">
-            <span class="sent-lbl c-red">Fear</span>
+            <span class="sent-lbl c-red">FEAR</span>
             <div class="sent-track"><div class="sent-fill fill-red" id="bear-bar" style="width:50%"></div></div>
             <span class="sent-pct c-red" id="bear-pct">50%</span>
           </div>
-          <div class="sent-score" id="sent-meta">Score: — | —</div>
+          <div class="sent-score" id="sent-meta">Score: -- | --</div>
         </div>
       </div>
       <div class="panel" style="flex:1">
-        <div class="panel-header">📋 Trade Log</div>
+        <div class="panel-header"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">list_alt</span> TRADE_LOG</div>
         <div class="log-scroll" id="trade-log-list">
-          <div style="color:var(--muted);font-size:11px">Waiting for events...</div>
+          <div style="color:var(--outline);font-size:11px">Waiting for events...</div>
         </div>
       </div>
     </div>
@@ -1254,46 +1314,46 @@
     <!-- Emergency controls -->
     <div class="controls-col">
       <div class="panel" style="flex:1">
-        <div class="panel-header" style="color:var(--orange)">⚠ Emergency Controls</div>
+        <div class="panel-header" style="color:var(--secondary)"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">warning</span> EMERGENCY_CONTROLS</div>
         <p class="kill-desc">
-          <strong>Sell All &amp; Stop</strong> — cancels all orders and liquidates
+          <strong>SELL_ALL &amp; STOP</strong> -- cancels all orders and liquidates
           <em>every open position</em> across all symbols, then stops the bot.
         </p>
         <button id="sell-all-btn" class="btn-danger" onclick="stopBotWithCheck()">
-          Sell All &amp; Stop Bot
+          SELL ALL &amp; STOP BOT
         </button>
-        <div class="ctrl-msg" id="sell-all-msg" style="color:var(--orange)"></div>
+        <div class="ctrl-msg" id="sell-all-msg" style="color:var(--secondary)"></div>
       </div>
       <div class="panel kill-panel">
-        <div class="panel-header" style="color:var(--red)">⛔ Kill Switch</div>
+        <div class="panel-header" style="color:var(--error)"><span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">dangerous</span> KILL_SWITCH</div>
         <p class="kill-desc" style="font-size:10px">
-          Sells only the current <strong><span id="kill-symbol">—</span></strong> position.
+          Sells only the current <strong><span id="kill-symbol">--</span></strong> position.
         </p>
         <button id="kill-btn" class="btn-danger" onclick="triggerKill()">
-          Kill Current Position
+          KILL CURRENT POSITION
         </button>
-        <div class="ctrl-msg" id="kill-msg" style="color:var(--red)"></div>
+        <div class="ctrl-msg" id="kill-msg" style="color:var(--error)"></div>
       </div>
 
-      <!-- Exit Settings panel (BRACKET-05) -->
+      <!-- Exit Settings panel -->
       <div class="panel">
-        <div class="panel-header">Exit Settings</div>
+        <div class="panel-header">EXIT_SETTINGS</div>
         <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
           <div>
-            <label style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;display:block;margin-bottom:4px">Stop-Loss %</label>
+            <label style="font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:600;color:var(--outline);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px">STOP-LOSS_%</label>
             <input type="number" id="sl-pct-input" min="1" max="10" step="0.5"
-                   style="padding:8px 12px;background:var(--glass2);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-sm);color:var(--text);font-family:Inter,sans-serif;font-size:12px;width:80px"
+                   style="padding:8px 12px;background:var(--surface);border:1px solid var(--ghost-border);border-radius:0;color:var(--on-surface);font-family:'Space Grotesk',sans-serif;font-size:12px;width:80px"
                    value="">
           </div>
           <div>
-            <label style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;display:block;margin-bottom:4px">Take-Profit %</label>
+            <label style="font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:600;color:var(--outline);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:4px">TAKE-PROFIT_%</label>
             <input type="number" id="tp-pct-input" min="2" max="20" step="0.5"
-                   style="padding:8px 12px;background:var(--glass2);border:1px solid rgba(255,255,255,.08);border-radius:var(--radius-sm);color:var(--text);font-family:Inter,sans-serif;font-size:12px;width:80px"
+                   style="padding:8px 12px;background:var(--surface);border:1px solid var(--ghost-border);border-radius:0;color:var(--on-surface);font-family:'Space Grotesk',sans-serif;font-size:12px;width:80px"
                    value="">
           </div>
           <button id="apply-exits-btn" onclick="applyExitSettings()"
-                  style="background:linear-gradient(135deg,#2d5a47,#4d8a6f);color:#fff;border:none;border-radius:var(--radius-pill);padding:8px 20px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(77,138,111,.25),inset 0 1px 0 rgba(255,255,255,.08)">
-            Apply Changes
+                  style="background:var(--primary-container);color:var(--tertiary);border:none;border-radius:0;padding:8px 20px;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:0.06em">
+            APPLY CHANGES
           </button>
         </div>
         <div id="exit-settings-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
@@ -1304,28 +1364,28 @@
 </div><!-- /page -->
 </div><!-- /tab-overview -->
 
-<!-- ── Positions tab ── -->
+<!-- Positions tab -->
 <div class="tab-pane" id="tab-positions">
 <div class="positions-page">
   <div class="chart-card" style="margin-bottom:14px">
     <div class="chart-card-header">
-      <span class="chart-title">Open Positions</span>
-      <button class="tb-btn" onclick="loadPositions()">↻ Refresh</button>
+      <span class="chart-title">OPEN_POSITIONS</span>
+      <button class="tb-btn" onclick="loadPositions()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">refresh</span> REFRESH</button>
     </div>
     <div style="overflow-x:auto">
       <table class="positions-table">
         <thead>
           <tr>
-            <th style="text-align:left">Symbol</th>
-            <th>Qty</th>
-            <th>Avg Entry</th>
-            <th>Current</th>
-            <th>Unrealized P/L</th>
-            <th>% Change</th>
-            <th>Market Value</th>
-            <th style="text-align:right">Stop-Loss</th>
-            <th style="text-align:right">Take-Profit</th>
-            <th style="text-align:right">Status</th>
+            <th style="text-align:left">SYMBOL</th>
+            <th>QTY</th>
+            <th>AVG_ENTRY</th>
+            <th>CURRENT</th>
+            <th>UNREALIZED_P/L</th>
+            <th>%_CHANGE</th>
+            <th>MARKET_VALUE</th>
+            <th style="text-align:right">STOP-LOSS</th>
+            <th style="text-align:right">TAKE-PROFIT</th>
+            <th style="text-align:right">STATUS</th>
             <th></th>
           </tr>
         </thead>
@@ -1338,27 +1398,27 @@
 </div>
 </div><!-- /tab-positions -->
 
-<!-- ── Orders tab ── -->
+<!-- Orders tab -->
 <div class="tab-pane" id="tab-orders">
 <div class="orders-page">
 
   <!-- Open orders -->
   <div class="chart-card">
     <div class="chart-card-header" style="margin-bottom:8px">
-      <span class="chart-title">Open Orders</span>
-      <button class="tb-btn" onclick="loadOpenOrders(true)">↻ Refresh</button>
+      <span class="chart-title">OPEN_ORDERS</span>
+      <button class="tb-btn" onclick="loadOpenOrders(true)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">refresh</span> REFRESH</button>
     </div>
     <div style="overflow-x:auto">
       <table class="orders-table">
         <thead>
           <tr>
-            <th style="text-align:left">Symbol</th>
-            <th>Side</th><th>Type</th><th>Qty</th>
-            <th>Limit</th><th>Stop</th><th>TIF</th><th>Status</th><th>Time</th><th></th>
+            <th style="text-align:left">SYMBOL</th>
+            <th>SIDE</th><th>TYPE</th><th>QTY</th>
+            <th>LIMIT</th><th>STOP</th><th>TIF</th><th>STATUS</th><th>TIME</th><th></th>
           </tr>
         </thead>
         <tbody id="open-orders-body2">
-          <tr><td colspan="10" style="text-align:center;padding:16px;color:var(--muted)">No open orders.</td></tr>
+          <tr><td colspan="10" style="text-align:center;padding:16px;color:var(--outline)">No open orders.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1367,20 +1427,20 @@
   <!-- Order history -->
   <div class="chart-card">
     <div class="chart-card-header" style="margin-bottom:8px">
-      <span class="chart-title">Order History</span>
-      <button class="tb-btn" onclick="loadOrderHistory()">↻ Refresh</button>
+      <span class="chart-title">ORDER_HISTORY</span>
+      <button class="tb-btn" onclick="loadOrderHistory()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">refresh</span> REFRESH</button>
     </div>
     <div style="overflow-x:auto">
       <table class="orders-table">
         <thead>
           <tr>
-            <th style="text-align:left">Symbol</th>
-            <th>Side</th><th>Type</th><th>Qty</th>
-            <th>Filled Qty</th><th>Filled @</th><th>Status</th><th>Time</th>
+            <th style="text-align:left">SYMBOL</th>
+            <th>SIDE</th><th>TYPE</th><th>QTY</th>
+            <th>FILLED_QTY</th><th>FILLED_@</th><th>STATUS</th><th>TIME</th>
           </tr>
         </thead>
         <tbody id="order-history-body">
-          <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--muted)">Loading...</td></tr>
+          <tr><td colspan="8" style="text-align:center;padding:16px;color:var(--outline)">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1389,73 +1449,73 @@
 </div>
 </div><!-- /tab-orders -->
 
-<!-- ── Performance tab ── -->
+<!-- Performance tab -->
 <div class="tab-pane" id="tab-performance">
 <div class="page">
 
   <!-- Goal progress -->
   <div class="chart-card">
     <div class="chart-card-header" style="margin-bottom:12px">
-      <span class="chart-title">Portfolio Goal Progress</span>
-      <span id="perf-projection" style="font-size:11px;color:var(--sage)">—</span>
+      <span class="chart-title">PORTFOLIO_GOAL_PROGRESS</span>
+      <span id="perf-projection" style="font-family:'Space Grotesk',sans-serif;font-size:11px;color:var(--primary);text-transform:uppercase;letter-spacing:0.04em">--</span>
     </div>
     <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px">
-      <span id="perf-equity-label" style="font-family:'JetBrains Mono',monospace;font-weight:700">$—</span>
-      <span id="perf-goal-label"   style="color:var(--muted)">Goal: $—</span>
+      <span id="perf-equity-label" style="font-family:'Space Grotesk',sans-serif;font-weight:700">$--</span>
+      <span id="perf-goal-label"   style="color:var(--outline)">Goal: $--</span>
     </div>
     <div class="progress-bar">
       <div class="progress-fill" id="perf-progress-fill" style="width:0%"></div>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-top:8px" id="perf-progress-pct">0% toward goal</div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:10px;color:var(--outline);margin-top:8px;text-transform:uppercase;letter-spacing:0.04em" id="perf-progress-pct">0% toward goal</div>
   </div>
 
   <!-- Stats cards -->
   <div class="cards">
     <div class="card">
-      <div class="card-label">Total Trades</div>
-      <div class="card-value c-white" id="perf-total">—</div>
+      <div class="card-label">TOTAL_TRADES</div>
+      <div class="card-value c-white" id="perf-total">--</div>
     </div>
     <div class="card">
-      <div class="card-label">Win Rate</div>
-      <div class="card-value" id="perf-winrate">—</div>
+      <div class="card-label">WIN_RATE</div>
+      <div class="card-value" id="perf-winrate">--</div>
     </div>
     <div class="card">
-      <div class="card-label">Total P&L</div>
-      <div class="card-value" id="perf-total-pnl">—</div>
+      <div class="card-label">TOTAL_P&L</div>
+      <div class="card-value" id="perf-total-pnl">--</div>
     </div>
     <div class="card">
-      <div class="card-label">Avg P&L / Trade</div>
-      <div class="card-value" id="perf-avg-pnl">—</div>
+      <div class="card-label">AVG_P&L_/_TRADE</div>
+      <div class="card-value" id="perf-avg-pnl">--</div>
     </div>
     <div class="card">
-      <div class="card-label">Losing Streak</div>
-      <div class="card-value" id="perf-streak">—</div>
-      <div class="card-sub" id="perf-streak-sub">—</div>
+      <div class="card-label">LOSING_STREAK</div>
+      <div class="card-value" id="perf-streak">--</div>
+      <div class="card-sub" id="perf-streak-sub">--</div>
     </div>
     <div class="card">
-      <div class="card-label">Est. Time to Goal</div>
-      <div class="card-value c-blue" id="perf-eta" style="font-size:13px">—</div>
+      <div class="card-label">EST_TIME_TO_GOAL</div>
+      <div class="card-value c-blue" id="perf-eta" style="font-size:13px">--</div>
     </div>
   </div>
 
   <!-- P&L Calendar -->
   <div class="chart-card">
     <div class="chart-card-header" style="margin-bottom:14px">
-      <span class="chart-title">P&L Calendar — last 30 days</span>
-      <div style="display:flex;gap:14px;font-size:10px;color:var(--muted)">
-        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(74,222,128,.25);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Profit</span>
-        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(232,116,97,.25);border-radius:2px;margin-right:4px;vertical-align:middle"></span>Loss</span>
-        <span><span style="display:inline-block;width:10px;height:10px;background:var(--surface2);border-radius:2px;border:1px solid var(--border);margin-right:4px;vertical-align:middle"></span>No trade</span>
+      <span class="chart-title">P&L_CALENDAR -- LAST 30 DAYS</span>
+      <div style="display:flex;gap:14px;font-size:10px;color:var(--outline)">
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(200,200,176,.25);border-radius:0;margin-right:4px;vertical-align:middle"></span>Profit</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:rgba(237,127,100,.25);border-radius:0;margin-right:4px;vertical-align:middle"></span>Loss</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:var(--surface);border-radius:0;border:1px solid var(--ghost-border);margin-right:4px;vertical-align:middle"></span>No trade</span>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px">
-      <div style="font-size:9px;color:var(--muted);text-align:center">Sun</div>
-      <div style="font-size:9px;color:var(--muted);text-align:center">Mon</div>
-      <div style="font-size:9px;color:var(--muted);text-align:center">Tue</div>
-      <div style="font-size:9px;color:var(--muted);text-align:center">Wed</div>
-      <div style="font-size:9px;color:var(--muted);text-align:center">Thu</div>
-      <div style="font-size:9px;color:var(--muted);text-align:center">Fri</div>
-      <div style="font-size:9px;color:var(--muted);text-align:center">Sat</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Sun</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Mon</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Tue</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Wed</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Thu</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Fri</div>
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:9px;color:var(--outline);text-align:center;text-transform:uppercase;letter-spacing:0.04em">Sat</div>
     </div>
     <div class="pnl-cal-grid" id="pnl-calendar"></div>
   </div>
@@ -1463,22 +1523,22 @@
   <!-- Trade history -->
   <div class="chart-card">
     <div class="chart-card-header" style="margin-bottom:8px">
-      <span class="chart-title">Trade History</span>
+      <span class="chart-title">TRADE_HISTORY</span>
     </div>
     <div style="overflow-x:auto">
       <table class="watchlist-table">
         <thead>
           <tr>
-            <th style="text-align:left">Date</th>
-            <th style="text-align:left">Symbol</th>
-            <th>Entry</th>
-            <th>Exit</th>
+            <th style="text-align:left">DATE</th>
+            <th style="text-align:left">SYMBOL</th>
+            <th>ENTRY</th>
+            <th>EXIT</th>
             <th>P&L</th>
-            <th>Result</th>
+            <th>RESULT</th>
           </tr>
         </thead>
         <tbody id="trade-history-body">
-          <tr><td colspan="6" style="padding:20px;color:var(--muted);text-align:center">No trades recorded yet.</td></tr>
+          <tr><td colspan="6" style="padding:20px;color:var(--outline);text-align:center">No trades recorded yet.</td></tr>
         </tbody>
       </table>
     </div>
@@ -1487,19 +1547,21 @@
 </div>
 </div><!-- /tab-performance -->
 
-<!-- ── Manual Trading Panel (slide-out right sidebar) ── -->
+</div><!-- /main-content -->
+
+<!-- Manual Trading Panel (slide-out right sidebar) -->
 <div id="trade-panel">
   <div class="tp-header">
-    <span class="tp-title">Manual Trade</span>
-    <button class="tp-close" onclick="toggleTradePanel()">✕</button>
+    <span class="tp-title">MANUAL_TRADE</span>
+    <button class="tp-close" onclick="toggleTradePanel()">X</button>
   </div>
-  <div class="tp-sym" id="tp-symbol">—</div>
+  <div class="tp-sym" id="tp-symbol">--</div>
   <div class="side-toggle">
     <button class="side-btn buy-active" id="tp-buy-btn"  onclick="setTradeSide('buy')">BUY</button>
     <button class="side-btn"           id="tp-sell-btn" onclick="setTradeSide('sell')">SELL</button>
   </div>
   <div class="tp-field">
-    <div class="tp-label">Order Type</div>
+    <div class="tp-label">ORDER_TYPE</div>
     <select class="tp-select" id="tp-type" onchange="onOrderTypeChange()">
       <option value="market">Market</option>
       <option value="limit">Limit</option>
@@ -1508,21 +1570,21 @@
     </select>
   </div>
   <div class="tp-field">
-    <div class="tp-label">Quantity (shares)</div>
+    <div class="tp-label">QUANTITY_(SHARES)</div>
     <input class="tp-input" id="tp-qty" type="number" min="0.01" step="0.01" placeholder="0" oninput="updateOrderPreview()"/>
   </div>
   <div class="tp-row2" id="tp-limit-row" style="display:none">
     <div class="tp-field">
-      <div class="tp-label">Limit Price</div>
+      <div class="tp-label">LIMIT_PRICE</div>
       <input class="tp-input" id="tp-limit" type="number" min="0" step="0.01" placeholder="0.00" oninput="updateOrderPreview()"/>
     </div>
     <div class="tp-field" id="tp-stop-field" style="display:none">
-      <div class="tp-label">Stop Price</div>
+      <div class="tp-label">STOP_PRICE</div>
       <input class="tp-input" id="tp-stop" type="number" min="0" step="0.01" placeholder="0.00" oninput="updateOrderPreview()"/>
     </div>
   </div>
   <div class="tp-field">
-    <div class="tp-label">Time in Force</div>
+    <div class="tp-label">TIME_IN_FORCE</div>
     <select class="tp-select" id="tp-tif">
       <option value="day">Day</option>
       <option value="gtc">GTC</option>
@@ -1530,48 +1592,54 @@
     </select>
   </div>
   <div class="tp-preview" id="tp-preview">
-    <div class="tp-preview-row"><span>Symbol</span><span id="tp-prev-sym">—</span></div>
-    <div class="tp-preview-row"><span>Side</span><span id="tp-prev-side">BUY</span></div>
-    <div class="tp-preview-row"><span>Quantity</span><span id="tp-prev-qty">—</span></div>
-    <div class="tp-preview-row"><span>Est. Cost</span><span id="tp-prev-cost">—</span></div>
+    <div class="tp-preview-row"><span>SYMBOL</span><span id="tp-prev-sym">--</span></div>
+    <div class="tp-preview-row"><span>SIDE</span><span id="tp-prev-side">BUY</span></div>
+    <div class="tp-preview-row"><span>QUANTITY</span><span id="tp-prev-qty">--</span></div>
+    <div class="tp-preview-row"><span>EST_COST</span><span id="tp-prev-cost">--</span></div>
   </div>
-  <button class="tp-submit buy" id="tp-submit-btn" onclick="submitOrder()">Place BUY Order</button>
+  <button class="tp-submit buy" id="tp-submit-btn" onclick="submitOrder()">PLACE BUY ORDER</button>
   <div class="tp-msg" id="tp-msg"></div>
 </div>
 
-<!-- ── Toast container ── -->
+<!-- Toast container -->
 <div id="toast-container"></div>
 
-<!-- ── Price Alert Modal ── -->
+<!-- Price Alert Modal -->
 <div id="alert-modal" class="hidden">
   <div class="alert-box">
-    <h3>🔔 Price Alerts · <span id="alert-sym-label">—</span></h3>
+    <h3><span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;margin-right:4px">notifications</span> PRICE_ALERTS <span id="alert-sym-label">--</span></h3>
     <div class="alert-list" id="alert-list"></div>
     <div class="alert-add-row">
       <input id="alert-price-input" type="number" placeholder="Target price" step="0.01" min="0"/>
-      <button class="btn-add-alert" onclick="addAlert()">+ Add</button>
+      <button class="btn-add-alert" onclick="addAlert()">+ ADD</button>
     </div>
-    <button class="tb-btn" style="width:100%" onclick="closeAlertModal()">Close</button>
+    <button class="tb-btn" style="width:100%" onclick="closeAlertModal()">CLOSE</button>
   </div>
 </div>
 
-<!-- ── Shutdown Warning Modal (BRACKET-03) ── -->
-<div id="shutdown-warning" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(10,16,14,.92);backdrop-filter:blur(12px);align-items:center;justify-content:center">
-  <div style="max-width:420px;padding:32px;background:var(--surface2);border-radius:var(--radius-lg);border:1px solid rgba(255,255,255,.06);text-align:center">
-    <div style="font-size:32px;margin-bottom:16px">&#9888;</div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;margin-bottom:12px">Stop Without Protection?</div>
-    <div id="shutdown-warning-body" style="font-size:12px;color:var(--muted);margin-bottom:24px;line-height:1.55"></div>
+<!-- Shutdown Warning Modal -->
+<div id="shutdown-warning" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);align-items:center;justify-content:center">
+  <div style="max-width:420px;padding:32px;background:var(--surface-low);border:1px solid var(--ghost-border);border-radius:0;text-align:center">
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:32px;margin-bottom:16px;color:var(--error)">&#9888;</div>
+    <div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:0.04em">STOP WITHOUT PROTECTION?</div>
+    <div id="shutdown-warning-body" style="font-size:12px;color:var(--outline);margin-bottom:24px;line-height:1.55"></div>
     <div style="display:flex;gap:12px;justify-content:center">
-      <button onclick="placeStopLossesFirst()" style="background:linear-gradient(135deg,#2d5a47,#4d8a6f);color:#fff;border:none;border-radius:var(--radius-pill);padding:10px 20px;font-size:12px;font-weight:600;cursor:pointer">Place Stop-Losses First</button>
-      <button onclick="stopBotAnyway()" style="background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff;border:none;border-radius:var(--radius-pill);padding:10px 20px;font-size:12px;font-weight:600;cursor:pointer">Stop Bot Anyway</button>
+      <button onclick="placeStopLossesFirst()" style="background:var(--primary-container);color:var(--tertiary);border:none;border-radius:0;padding:10px 20px;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:0.04em">PLACE STOP-LOSSES FIRST</button>
+      <button onclick="stopBotAnyway()" style="background:var(--error-container);color:#fff;border:none;border-radius:0;padding:10px 20px;font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:0.04em">STOP BOT ANYWAY</button>
     </div>
   </div>
 </div>
 
-<footer>
-  Live data via Alpaca IEX &middot; Sentiment via Alternative.me &middot; News via Yahoo Finance
-  &middot; Streaming via SSE
-</footer>
+<!-- Bottom Status Bar -->
+<div class="status-bar">
+  <div class="status-bar-left">
+    <span>SYS_STATUS: OPERATIONAL</span>
+    <span><span class="sse-dot" id="sse-dot"></span><span id="last-update">connecting...</span></span>
+  </div>
+  <div class="status-bar-right">
+    <span>SYSTEM_LOG</span>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1582,11 +1650,11 @@ const lwContainer = document.getElementById('priceChart');
 const lwChart = LightweightCharts.createChart(lwContainer, {
   width:     lwContainer.clientWidth || 900,
   height:    320,
-  layout:    { background: { color: '#111a15' }, textColor: '#5a6e52' },
-  grid:      { vertLines: { color: '#1e2e22' }, horzLines: { color: '#1e2e22' } },
+  layout:    { background: { color: '#0e0e0e' }, textColor: '#484848' },
+  grid:      { vertLines: { color: '#191919' }, horzLines: { color: '#191919' } },
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-  rightPriceScale: { borderColor: '#253528', scaleMargins: { top: 0.05, bottom: 0.28 } },
-  timeScale: { borderColor: '#253528', timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: '#191919', scaleMargins: { top: 0.05, bottom: 0.28 } },
+  timeScale: { borderColor: '#191919', timeVisible: true, secondsVisible: false },
   handleScale: true,
   handleScroll: true,
 });
@@ -1627,19 +1695,19 @@ function createMainSeries(type) {
   if (mainSeries) lwChart.removeSeries(mainSeries);
   if (type === 'candle') {
     mainSeries = lwChart.addCandlestickSeries({
-      upColor: '#4ade80', downColor: '#e87461',
-      borderUpColor: '#4ade80', borderDownColor: '#e87461',
-      wickUpColor: '#4ade80', wickDownColor: '#e87461',
+      upColor: '#c8c8b0', downColor: '#484848',
+      borderUpColor: '#c8c8b0', borderDownColor: '#484848',
+      wickUpColor: '#757575', wickDownColor: '#484848',
     });
   } else if (type === 'line') {
-    mainSeries = lwChart.addLineSeries({ color: '#6ba58c', lineWidth: 2 });
+    mainSeries = lwChart.addLineSeries({ color: '#c8c8b0', lineWidth: 2 });
   } else if (type === 'area') {
     mainSeries = lwChart.addAreaSeries({
-      lineColor: '#6ba58c', topColor: 'rgba(107,165,140,.22)',
-      bottomColor: 'rgba(107,165,140,.02)', lineWidth: 2,
+      lineColor: '#c8c8b0', topColor: 'rgba(200,200,176,.15)',
+      bottomColor: 'rgba(200,200,176,.02)', lineWidth: 2,
     });
   } else if (type === 'bars') {
-    mainSeries = lwChart.addBarSeries({ upColor: '#4ade80', downColor: '#e87461' });
+    mainSeries = lwChart.addBarSeries({ upColor: '#c8c8b0', downColor: '#484848' });
   }
   return mainSeries;
 }
@@ -1651,10 +1719,10 @@ function createOverlaySeries() {
   if (bbLowerSeries)  lwChart.removeSeries(bbLowerSeries);
   if (volumeSeries)   lwChart.removeSeries(volumeSeries);
 
-  shortSmaSeries = lwChart.addLineSeries({ color: '#d4a843', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-  longSmaSeries  = lwChart.addLineSeries({ color: '#e87461', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-  bbUpperSeries  = lwChart.addLineSeries({ color: 'rgba(168,184,122,.5)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
-  bbLowerSeries  = lwChart.addLineSeries({ color: 'rgba(168,184,122,.5)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
+  shortSmaSeries = lwChart.addLineSeries({ color: '#c8c8b0', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  longSmaSeries  = lwChart.addLineSeries({ color: '#ed7f64', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  bbUpperSeries  = lwChart.addLineSeries({ color: 'rgba(171,171,171,.4)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
+  bbLowerSeries  = lwChart.addLineSeries({ color: 'rgba(171,171,171,.4)', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false });
 
   volumeSeries = lwChart.addHistogramSeries({
     priceFormat: { type: 'volume' },
@@ -1720,7 +1788,7 @@ lwChart.subscribeClick(param => {
 
   if (drawTool === 'hline') {
     const pl = mainSeries.createPriceLine({
-      price, color: '#d4a843', lineWidth: 1,
+      price, color: '#c8c8b0', lineWidth: 1,
       lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true, title: price.toFixed(2),
     });
@@ -1732,7 +1800,7 @@ lwChart.subscribeClick(param => {
       setText('draw-hint', 'Now click end point');
     } else {
       const tl = lwChart.addLineSeries({
-        color: '#d4a843', lineWidth: 1,
+        color: '#c8c8b0', lineWidth: 1,
         priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
       });
       const pts = [
@@ -1789,8 +1857,8 @@ function populateChart(history) {
     time:  p._t,
     value: p.volume,
     color: (p.price >= (p.open || p.price))
-      ? 'rgba(74,222,128,0.35)'
-      : 'rgba(232,116,97,0.35)',
+      ? 'rgba(200,200,176,0.3)'
+      : 'rgba(237,127,100,0.3)',
   }));
   try { volumeSeries.setData(dedup(volData)); } catch(e) {}
 }
@@ -1817,7 +1885,7 @@ function populateChartFromBars(bars, indicators) {
   const volData = pts.filter(b => b.volume > 0).map(b => ({
     time:  b.time,
     value: b.volume,
-    color: b.close >= b.open ? 'rgba(74,222,128,0.35)' : 'rgba(232,116,97,0.35)',
+    color: b.close >= b.open ? 'rgba(200,200,176,0.3)' : 'rgba(237,127,100,0.3)',
   }));
   try { volumeSeries.setData(volData); } catch(e) {}
 }
@@ -1830,8 +1898,8 @@ function updateChartTitle() {
   const el = $('chart-symbol-label');
   if (!el) return;
   if (!_chartSymbol || _chartSymbol === '—') { el.innerHTML = '—'; return; }
-  const color = _chartChangePct == null ? 'var(--text)'
-    : _chartChangePct >= 0 ? 'var(--green)' : 'var(--red)';
+  const color = _chartChangePct == null ? 'var(--on-surface)'
+    : _chartChangePct >= 0 ? 'var(--primary)' : 'var(--error)';
   const priceStr  = _chartPrice != null ? ` · $${_chartPrice.toFixed(2)}` : '';
   const changeStr = _chartChangePct != null
     ? `<span style="font-size:11px"> (${_chartChangePct >= 0 ? '+' : ''}${_chartChangePct.toFixed(2)}%)</span>` : '';
@@ -1853,7 +1921,7 @@ async function switchChartSymbol(symbol, rowEl) {
   if (alertLbl) alertLbl.textContent = symbol;
 
   const el = $('chart-symbol-label');
-  if (el) el.innerHTML = `<span style="color:var(--muted)">${symbol} loading...</span>`;
+  if (el) el.innerHTML = `<span style="color:var(--outline)">${symbol} loading...</span>`;
 
   try {
     const res  = await fetch(`/api/bars/${symbol}?interval=${_chartInterval}&range=${_chartRange}`);
@@ -1869,10 +1937,10 @@ async function switchChartSymbol(symbol, rowEl) {
       lwChart.timeScale().fitContent();
       updateRsiMacdFromBars(data.indicators || {});
     } else {
-      if (el) el.innerHTML = `<span style="color:var(--muted)">${symbol} — no data</span>`;
+      if (el) el.innerHTML = `<span style="color:var(--outline)">${symbol} — no data</span>`;
     }
   } catch(e) {
-    if (el) el.innerHTML = `<span style="color:var(--red)">${symbol} error</span>`;
+    if (el) el.innerHTML = `<span style="color:var(--error)">${symbol} error</span>`;
   }
 
   // Fetch bid/ask in background
@@ -1951,8 +2019,8 @@ requestAnimationFrame(() => {
 // Chart.js — RSI and MACD
 // ═══════════════════════════════════════════════════════════════════════════
 
-const GRID  = 'rgba(37,42,54,.9)';
-const TICKC = '#3a4d38';
+const GRID  = 'rgba(25,25,25,.9)';
+const TICKC = '#484848';
 
 const baseOpts = {
   animation: false,
@@ -1962,8 +2030,8 @@ const baseOpts = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#162119', titleColor: '#5a6e52', bodyColor: '#dce5d8',
-      borderColor: '#253528', borderWidth: 1, padding: 8,
+      backgroundColor: '#191919', titleColor: '#484848', bodyColor: '#e5e5e5',
+      borderColor: '#262626', borderWidth: 1, padding: 8,
     }
   },
   scales: {
@@ -1979,7 +2047,7 @@ const baseOpts = {
 const rsiChart = new Chart(document.getElementById('rsiChart'), {
   type: 'line',
   data: { labels: [], datasets: [
-    { label:'RSI', data:[], borderColor:'#a8b87a', borderWidth:1.5, pointRadius:0, fill:false, tension:.2 }
+    { label:'RSI', data:[], borderColor:'#c8c8b0', borderWidth:1.5, pointRadius:0, fill:false, tension:.2 }
   ]},
   options: {
     ...baseOpts,
@@ -1991,11 +2059,11 @@ const rsiChart = new Chart(document.getElementById('rsiChart'), {
       if (!a) return;
       const y70 = y.getPixelForValue(70), y30 = y.getPixelForValue(30);
       ctx.save();
-      ctx.fillStyle = 'rgba(232,116,97,.06)';  ctx.fillRect(a.left, a.top, a.width, y70-a.top);
-      ctx.fillStyle = 'rgba(74,222,128,.06)'; ctx.fillRect(a.left, y30, a.width, a.bottom-y30);
-      ctx.strokeStyle='rgba(232,116,97,.3)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+      ctx.fillStyle = 'rgba(237,127,100,.06)';  ctx.fillRect(a.left, a.top, a.width, y70-a.top);
+      ctx.fillStyle = 'rgba(200,200,176,.06)'; ctx.fillRect(a.left, y30, a.width, a.bottom-y30);
+      ctx.strokeStyle='rgba(237,127,100,.3)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       ctx.beginPath(); ctx.moveTo(a.left,y70); ctx.lineTo(a.right,y70); ctx.stroke();
-      ctx.strokeStyle='rgba(74,222,128,.3)';
+      ctx.strokeStyle='rgba(200,200,176,.3)';
       ctx.beginPath(); ctx.moveTo(a.left,y30); ctx.lineTo(a.right,y30); ctx.stroke();
       ctx.restore();
     }
@@ -2005,9 +2073,9 @@ const rsiChart = new Chart(document.getElementById('rsiChart'), {
 const macdChart = new Chart(document.getElementById('macdChart'), {
   type: 'bar',
   data: { labels: [], datasets: [
-    { label:'Histogram', data:[], backgroundColor: ctx => (ctx.raw||0)>=0 ? 'rgba(74,222,128,.65)' : 'rgba(232,116,97,.65)', borderWidth:0, order:1 },
-    { type:'line', label:'MACD',   data:[], borderColor:'#6ba58c', borderWidth:1.5, pointRadius:0, fill:false, tension:.2, order:2 },
-    { type:'line', label:'Signal', data:[], borderColor:'#d4a843', borderWidth:1.5, pointRadius:0, fill:false, tension:.2, order:3 },
+    { label:'Histogram', data:[], backgroundColor: ctx => (ctx.raw||0)>=0 ? 'rgba(200,200,176,.6)' : 'rgba(237,127,100,.6)', borderWidth:0, order:1 },
+    { type:'line', label:'MACD',   data:[], borderColor:'#c8c8b0', borderWidth:1.5, pointRadius:0, fill:false, tension:.2, order:2 },
+    { type:'line', label:'Signal', data:[], borderColor:'#ed7f64', borderWidth:1.5, pointRadius:0, fill:false, tension:.2, order:3 },
   ]},
   options: baseOpts,
 });
@@ -2021,7 +2089,7 @@ const $ = id => document.getElementById(id);
 const mono  = (n, dec=2) => n==null ? '—' : parseFloat(n).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
 const money = n => n==null ? '—' : '$'+mono(n);
 const pnlTxt = n => { if(n==null) return '—'; const v=parseFloat(n); return (v>=0?'+':'')+money(v); };
-const pnlColor = n => parseFloat(n||0) >= 0 ? 'var(--green)' : 'var(--red)';
+const pnlColor = n => parseFloat(n||0) >= 0 ? 'var(--primary)' : 'var(--error)';
 const pct = (n,dec=2) => n==null ? '—' : (parseFloat(n)>=0?'+':'')+parseFloat(n).toFixed(dec)+'%';
 
 function setText(id, val) {
@@ -2093,11 +2161,11 @@ function refresh(d) {
 
   // ── Status badge ──
   const badge = $('status-badge');
-  badge.textContent = d.status || 'unknown';
+  badge.textContent = (d.status || 'unknown').toUpperCase();
   badge.className   = 'badge badge-' + (d.status || 'idle');
   const running = d.status === 'running';
-  $('logo-dot').style.background  = running ? 'var(--green)' : 'var(--muted)';
-  $('logo-dot').style.boxShadow   = running ? '0 0 6px var(--green)' : 'none';
+  $('logo-dot').style.background  = running ? 'var(--primary)' : 'var(--outline)';
+  $('logo-dot').style.boxShadow   = 'none';
   $('logo-dot').style.animation   = running ? 'pulse 2s infinite' : 'none';
 
   // ── Paper / live badge ──
@@ -2167,7 +2235,7 @@ function refresh(d) {
   // ── Cards ──
   setText('equity', money(d.equity));
   const dp = $('daily-pnl');
-  dp.textContent = 'Daily P&L ' + pnlTxt(d.daily_pnl);
+  dp.textContent = 'DAILY_P&L ' + pnlTxt(d.daily_pnl);
   dp.style.color = pnlColor(d.daily_pnl);
 
   setText('cash', money(d.cash));
@@ -2187,13 +2255,13 @@ function refresh(d) {
   const rsiEl = $('rsi-val');
   rsiEl.textContent = rsiV != null ? rsiV.toFixed(1) : '—';
   rsiEl.className   = 'card-value ' + (rsiV == null ? '' : rsiV >= 70 ? 'c-red' : rsiV <= 30 ? 'c-green' : 'c-white');
-  setText('rsi-zone', rsiV == null ? '—' : rsiV >= 70 ? '⚠ Overbought' : rsiV <= 30 ? '✓ Oversold' : 'Neutral');
+  setText('rsi-zone', rsiV == null ? '—' : rsiV >= 70 ? 'OVERBOUGHT' : rsiV <= 30 ? 'OVERSOLD' : 'NEUTRAL');
 
   const macdV = d.macd_hist != null ? parseFloat(d.macd_hist) : null;
   const macdEl = $('macd-val');
   macdEl.textContent = macdV != null ? macdV.toFixed(4) : '—';
   macdEl.className   = 'card-value ' + (macdV == null ? '' : macdV > 0 ? 'c-green' : 'c-red');
-  setText('macd-sub', macdV != null ? (macdV > 0 ? '▲ Bullish momentum' : '▼ Bearish momentum') : '—');
+  setText('macd-sub', macdV != null ? (macdV > 0 ? 'BULLISH MOMENTUM' : 'BEARISH MOMENTUM') : '—');
 
   // ── Check price alerts ──
   if (d.price && _chartSymbol) {
@@ -2278,15 +2346,15 @@ function refresh(d) {
   // ── Watchlist ──
   const wl = d.watchlist || [];
   if (wl.length > 0) {
-    setText('scan-time', 'Last scan: ' + new Date().toLocaleTimeString());
+    setText('scan-time', 'LAST_SCAN: ' + new Date().toLocaleTimeString());
     const topMovers = d.use_top_movers;
     const scanBadge = $('scan-mode-badge');
     if (topMovers) {
-      scanBadge.textContent = '🔥 Top Movers';
-      scanBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(232,116,97,.1);color:var(--orange);border:1px solid rgba(232,116,97,.2)';
+      scanBadge.textContent = 'TOP MOVERS';
+      scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:rgba(237,127,100,.08);color:var(--error);border:1px solid rgba(237,127,100,.18);text-transform:uppercase;letter-spacing:0.04em';
     } else {
-      scanBadge.textContent = '📋 Fixed Watchlist';
-      scanBadge.style.cssText = 'font-size:10px;padding:2px 8px;border-radius:10px;background:var(--surface2);color:var(--muted);border:1px solid var(--border)';
+      scanBadge.textContent = 'FIXED WATCHLIST';
+      scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:var(--surface);color:var(--outline);border:1px solid var(--ghost-border);text-transform:uppercase;letter-spacing:0.04em';
     }
 
     const _threshold = d.conviction_threshold || 5.8;
@@ -2313,7 +2381,7 @@ function refresh(d) {
   if (log_.length !== _prevLogLen) {
     _prevLogLen = log_.length;
     if (log_.length === 0) {
-      setHtml('trade-log-list', '<div style="color:var(--muted);font-size:11px">No events yet.</div>');
+      setHtml('trade-log-list', '<div style="color:var(--outline);font-size:11px">No events yet.</div>');
     } else {
       setHtml('trade-log-list', log_.map(e => {
         const cls = ['BUY','SELL','PDT_HOLD'].includes(e.event)
@@ -2332,7 +2400,7 @@ function refresh(d) {
   if (news.length !== _prevNewsLen) {
     _prevNewsLen = news.length;
     if (news.length === 0) {
-      setHtml('news-list', '<div style="color:var(--muted);font-size:12px">No headlines available.</div>');
+      setHtml('news-list', '<div style="color:var(--outline);font-size:12px">No headlines available.</div>');
     } else {
       setHtml('news-list', news.map(n => `
         <div class="news-item">
@@ -2421,11 +2489,11 @@ async function loadStartScreen() {
     const isPaper = data.paper_trading;
 
     $('start-warning').textContent = isPaper
-      ? '📋 PAPER TRADING — Fake Money'
-      : '⚠ LIVE TRADING — REAL MONEY';
-    $('start-warning').style.color = isPaper ? 'var(--moss)' : 'var(--red)';
-    $('start-warning').style.borderColor = isPaper ? 'rgba(168,184,122,.2)' : 'rgba(232,116,97,.2)';
-    $('start-warning').style.background  = isPaper ? 'rgba(168,184,122,.08)' : 'rgba(232,116,97,.08)';
+      ? 'PAPER TRADING -- FAKE MONEY'
+      : 'LIVE TRADING -- REAL MONEY';
+    $('start-warning').style.color = isPaper ? 'var(--primary-dim)' : 'var(--error)';
+    $('start-warning').style.borderColor = isPaper ? 'rgba(186,186,163,.18)' : 'rgba(237,127,100,.18)';
+    $('start-warning').style.background  = isPaper ? 'rgba(186,186,163,.06)' : 'rgba(237,127,100,.06)';
 
     $('start-sub').textContent = isPaper
       ? 'Paper trading — no real money at risk.'
@@ -2441,7 +2509,7 @@ async function loadStartScreen() {
     setText('st-loss',    money(data.daily_loss_limit));
     setText('st-tp',      (data.take_profit_pct||0).toFixed(2) + '%');
     setText('st-sl',      (data.trailing_stop_pct||0).toFixed(2) + '% trailing');
-    setText('st-mode',    isPaper ? 'Paper 📋' : 'LIVE 💰');
+    setText('st-mode',    isPaper ? 'PAPER' : 'LIVE');
 
     // Initialize Exit Settings inputs with current config values
     const slInput = $('sl-pct-input');
@@ -2452,7 +2520,7 @@ async function loadStartScreen() {
     if (data.pdt_applies) {
       setText('st-pdt', data.pdt_used + ' / 3 used (' + data.pdt_remaining + ' remaining)');
     } else {
-      setText('st-pdt', 'N/A (equity ≥ $25k)');
+      setText('st-pdt', 'N/A (equity >= $25k)');
     }
 
     // Load chart in the background so it's ready when overlay is dismissed
@@ -2488,12 +2556,12 @@ function switchTab(name) {
 
 async function loadPositions() {
   const tbody = $('positions-body');
-  tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--muted)">Loading...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--outline)">Loading...</td></tr>';
   try {
     const res  = await fetch('/api/positions');
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--muted)">No Open Positions</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--outline)">No Open Positions</td></tr>';
       return;
     }
 
@@ -2503,15 +2571,15 @@ async function loadPositions() {
       totalValue += p.market_value;
       const pnlCls = p.pnl >= 0 ? 'c-green' : 'c-red';
 
-      // Stop-Loss column — red, JetBrains Mono
+      // Stop-Loss column
       const slPrice = p.stop_loss_price != null
-          ? `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--red)">$${p.stop_loss_price.toFixed(2)}</span>`
-          : `<span style="color:var(--muted)">&mdash;</span>`;
+          ? `<span style="font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;color:var(--error)">$${p.stop_loss_price.toFixed(2)}</span>`
+          : `<span style="color:var(--outline)">&mdash;</span>`;
 
-      // Take-Profit column — green, JetBrains Mono
+      // Take-Profit column
       const tpPrice = p.take_profit_price != null
-          ? `<span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--green)">$${p.take_profit_price.toFixed(2)}</span>`
-          : `<span style="color:var(--muted)">&mdash;</span>`;
+          ? `<span style="font-family:'Space Grotesk',sans-serif;font-size:12px;font-weight:600;color:var(--primary)">$${p.take_profit_price.toFixed(2)}</span>`
+          : `<span style="color:var(--outline)">&mdash;</span>`;
 
       // Status badge
       let badgeClass, badgeText;
@@ -2538,13 +2606,13 @@ async function loadPositions() {
         <td style="text-align:right">${slPrice}</td>
         <td style="text-align:right">${tpPrice}</td>
         <td style="text-align:right">${statusBadge}</td>
-        <td><button class="btn-close-pos" onclick="closePosition('${p.symbol}',${p.qty})">Close</button></td>
+        <td><button class="btn-close-pos" onclick="closePosition('${p.symbol}',${p.qty})">CLOSE</button></td>
       </tr>`;
     });
 
     const totalCls = totalPnl >= 0 ? 'c-green' : 'c-red';
     rows.push(`<tr class="pos-total-row">
-      <td colspan="3" style="font-size:11px;color:var(--muted)">Total</td>
+      <td colspan="3" style="font-size:11px;color:var(--outline)">TOTAL</td>
       <td></td>
       <td class="${totalCls}">${pnlTxt(totalPnl)}</td>
       <td></td>
@@ -2554,7 +2622,7 @@ async function loadPositions() {
 
     tbody.innerHTML = rows.join('');
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--red)">Error loading positions.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--error)">Error loading positions.</td></tr>';
   }
 }
 
@@ -2581,7 +2649,7 @@ async function triggerSellAll() {
   }
 }
 
-// ── Shutdown warning flow (BRACKET-03) ────────────────────────────────────────
+// ── Shutdown warning flow ────────────────────────────────────────
 
 function stopBotWithCheck() {
   fetch('/api/stop?check_only=true', {method:'POST'})
@@ -2626,7 +2694,7 @@ function actuallyStopBot() {
   });
 }
 
-// ── Exit Settings (BRACKET-05) ───────────────────────────────────────────────
+// ── Exit Settings ───────────────────────────────────────────────
 
 function applyExitSettings() {
   const btn  = $('apply-exits-btn');
@@ -2635,7 +2703,7 @@ function applyExitSettings() {
   const tpVal = $('tp-pct-input').value;
 
   btn.disabled    = true;
-  btn.textContent = 'Applying...';
+  btn.textContent = 'APPLYING...';
   msg.textContent = '';
 
   fetch('/api/config/exits', {
@@ -2649,20 +2717,20 @@ function applyExitSettings() {
   .then(r => r.json())
   .then(data => {
     btn.disabled    = false;
-    btn.textContent = 'Apply Changes';
+    btn.textContent = 'APPLY CHANGES';
     if (data.ok) {
-      msg.style.color = 'var(--green)';
+      msg.style.color = 'var(--primary)';
       msg.textContent = 'Settings saved. New positions will use updated levels.';
       setTimeout(() => { msg.textContent = ''; }, 3000);
     } else {
-      msg.style.color = 'var(--red)';
+      msg.style.color = 'var(--error)';
       msg.textContent = (data.errors || ['Failed to save.']).join(' ');
     }
   })
   .catch(() => {
     btn.disabled    = false;
-    btn.textContent = 'Apply Changes';
-    msg.style.color = 'var(--red)';
+    btn.textContent = 'APPLY CHANGES';
+    msg.style.color = 'var(--error)';
     msg.textContent = 'Failed to save. Check bot logs.';
   });
 }
@@ -2718,7 +2786,7 @@ async function loadPerformance() {
     const streak = d.consecutive_losses || 0;
     const stEl = $('perf-streak');
     if (stEl) { stEl.textContent = streak; stEl.className = 'card-value ' + (streak >= 3 ? 'c-red' : streak >= 2 ? 'c-yellow' : 'c-white'); }
-    setText('perf-streak-sub', streak >= 3 ? '⚠ Position size −50%' : streak > 0 ? streak + ' in a row' : 'None active');
+    setText('perf-streak-sub', streak >= 3 ? 'POSITION SIZE -50%' : streak > 0 ? streak + ' in a row' : 'None active');
     setText('perf-eta', d.projection || '—');
 
     // P&L calendar — last 30 days
@@ -2747,17 +2815,17 @@ async function loadPerformance() {
     const histBody = $('trade-history-body');
     if (histBody) {
       if (history.length === 0) {
-        histBody.innerHTML = '<tr><td colspan="6" style="padding:20px;color:var(--muted);text-align:center">No trades recorded yet.</td></tr>';
+        histBody.innerHTML = '<tr><td colspan="6" style="padding:20px;color:var(--outline);text-align:center">No trades recorded yet.</td></tr>';
       } else {
         histBody.innerHTML = [...history].reverse().map(t => {
           const pnlCls = t.pnl >= 0 ? 'c-green' : 'c-red';
           return `<tr class="watchlist-row">
-            <td style="font-family:\'JetBrains Mono\',monospace;font-size:11px;text-align:left">${t.date}</td>
+            <td style="font-family:'Space Grotesk',sans-serif;font-size:11px;text-align:left">${t.date}</td>
             <td style="font-weight:700;text-align:left">${t.symbol}</td>
             <td style="text-align:right">$${(t.entry||0).toFixed(2)}</td>
             <td style="text-align:right">$${(t.exit||0).toFixed(2)}</td>
             <td style="text-align:right" class="${pnlCls}">${pnlTxt(t.pnl)}</td>
-            <td style="text-align:center" class="${t.win ? 'c-green' : 'c-red'}">${t.win ? '✓ Win' : '✗ Loss'}</td>
+            <td style="text-align:center" class="${t.win ? 'c-green' : 'c-red'}">${t.win ? 'WIN' : 'LOSS'}</td>
           </tr>`;
         }).join('');
       }
@@ -2781,7 +2849,7 @@ async function loadOpenOrders(fullTab) {
     const orders = await res.json();
 
     const html = orders.length === 0
-      ? `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--muted)">No open orders.</td></tr>`
+      ? `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--outline)">No open orders.</td></tr>`
       : orders.map(o => {
           const sideCls = o.side === 'buy' ? 'c-green' : 'c-red';
           const lim  = o.limit_price ? `$${o.limit_price.toFixed(2)}` : '—';
@@ -2795,8 +2863,8 @@ async function loadOpenOrders(fullTab) {
             <td>${lim}</td><td>${stop}</td>
             <td>${o.tif}</td>
             <td>${o.status}</td>
-            <td style="font-size:10px;color:var(--muted)">${ts}</td>
-            <td><button class="btn-cancel-ord" onclick="cancelOrder('${o.id}')">✕</button></td>
+            <td style="font-size:10px;color:var(--outline)">${ts}</td>
+            <td><button class="btn-cancel-ord" onclick="cancelOrder('${o.id}')">X</button></td>
           </tr>`;
         }).join('');
 
@@ -2804,7 +2872,7 @@ async function loadOpenOrders(fullTab) {
   } catch(e) {
     bodyIds.forEach(id => {
       const el = $(id);
-      if (el) el.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--red)">Error loading orders.</td></tr>`;
+      if (el) el.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--error)">Error loading orders.</td></tr>`;
     });
   }
 }
@@ -2836,12 +2904,12 @@ setInterval(() => loadOpenOrders(false), 10000);
 async function loadOrderHistory() {
   const tbody = $('order-history-body');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--muted)">Loading...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--outline)">Loading...</td></tr>';
   try {
     const res    = await fetch('/api/orders/history');
     const orders = await res.json();
     if (orders.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--muted)">No order history.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--outline)">No order history.</td></tr>';
       return;
     }
     tbody.innerHTML = orders.map(o => {
@@ -2856,11 +2924,11 @@ async function loadOrderHistory() {
         <td>${(o.filled_qty||0).toFixed(2)}</td>
         <td>${fp}</td>
         <td>${o.status}</td>
-        <td style="font-size:10px;color:var(--muted)">${ts}</td>
+        <td style="font-size:10px;color:var(--outline)">${ts}</td>
       </tr>`;
     }).join('');
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--red)">Error loading history.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:16px;color:var(--error)">Error loading history.</td></tr>';
   }
 }
 
@@ -2912,7 +2980,7 @@ function setTradeSide(side) {
   $('tp-sell-btn').className = 'side-btn' + (side === 'sell' ? ' sell-active' : '');
   const btn = $('tp-submit-btn');
   btn.className = 'tp-submit ' + side;
-  btn.textContent = `Place ${side.toUpperCase()} Order`;
+  btn.textContent = `PLACE ${side.toUpperCase()} ORDER`;
   updateOrderPreview();
 }
 
@@ -2972,14 +3040,14 @@ async function submitOrder() {
     const d = await res.json();
     if (d.ok) {
       showToast(`Order placed: ${_tradeSide.toUpperCase()} ${qty} ${sym}`, 'success');
-      setText('tp-msg', '✓ Order submitted — ' + d.order_id.substring(0,8));
+      setText('tp-msg', 'Order submitted — ' + d.order_id.substring(0,8));
       loadOpenOrders(false);
     } else {
-      setText('tp-msg', '✗ ' + (d.error || 'Failed'));
+      setText('tp-msg', 'FAILED: ' + (d.error || 'Failed'));
       showToast('Order failed: ' + (d.error || '?'), 'error');
     }
   } catch(e) {
-    setText('tp-msg', '✗ Connection error.');
+    setText('tp-msg', 'CONNECTION ERROR');
   }
   btn.disabled = false;
 }
@@ -3012,13 +3080,13 @@ function renderAlertList() {
   if (!list) return;
   const prices = _alerts[sym] ? Array.from(_alerts[sym]).sort((a,b)=>a-b) : [];
   if (prices.length === 0) {
-    list.innerHTML = '<div style="color:var(--muted);font-size:11px;padding:6px 0">No alerts set.</div>';
+    list.innerHTML = '<div style="color:var(--outline);font-size:11px;padding:6px 0">No alerts set.</div>';
     return;
   }
   list.innerHTML = prices.map(p =>
     `<div class="alert-item">
       <span>$${p.toFixed(2)}</span>
-      <button class="btn-rm-alert" onclick="removeAlert(${p})">✕</button>
+      <button class="btn-rm-alert" onclick="removeAlert(${p})">X</button>
     </div>`
   ).join('');
 }
@@ -3052,7 +3120,7 @@ function checkAlerts(price, symbol) {
     if (Math.abs(price - target) / target < 0.002) {  // within 0.2%
       _triggeredAlerts.add(key);
       playAlertSound();
-      showToast(`🔔 ALERT: ${symbol} @ $${price.toFixed(2)} hit $${target.toFixed(2)}!`, 'warning', 8000);
+      showToast(`ALERT: ${symbol} @ $${price.toFixed(2)} hit $${target.toFixed(2)}!`, 'warning', 8000);
     }
   });
 }
