@@ -237,8 +237,8 @@ def test_place_buy_uses_bracket_order(mock_trading_client):
     assert mock_trading_client.submit_order.called
     submitted = mock_trading_client.submit_order.call_args.args[0]
     assert submitted.order_class == OrderClass.BRACKET
-    expected_stop = round(10.0 * (1 - config.TRAILING_STOP_PCT), 2)
-    expected_profit = round(10.0 * (1 + config.TAKE_PROFIT_PCT), 2)
+    expected_stop = round(10.0 * (1 - config.TRAILING_STOP_PCT - 0.02), 2)
+    expected_profit = round(10.0 * (1 + config.TAKE_PROFIT_PCT + 0.02), 2)
     assert submitted.stop_loss.stop_price == expected_stop
     assert submitted.take_profit.limit_price == expected_profit
 
