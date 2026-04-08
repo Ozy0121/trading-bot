@@ -104,6 +104,7 @@ _state = {
     "scan_results":           [],    # list of candidate dicts (df stripped)
     "last_scan_time":         None,  # ISO timestamp of last scan completion
     "scan_conviction_scores": {},    # {symbol: composite_score} quick lookup
+    "conviction_threshold":   0.0,  # grade cutoff from config (set on bot start)
 
     # ── Agent system (Phase 3) ───────────────────────────────────────────
     "agent_quant_count":  0,     # symbols analyzed by quant last cycle

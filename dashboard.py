@@ -122,6 +122,7 @@ def api_account():
             "pdt_applies":           equity < 25_000,
             "pdt_used":              dt_count,
             "pdt_remaining":         max(0, 3 - dt_count),
+            "conviction_threshold":  config.CONVICTION_THRESHOLD,
         })
     except Exception as exc:
         abort(500, str(exc))
@@ -546,7 +547,8 @@ def api_start():
     if _start_fn is None:
         abort(503, "Server not ready.")
     log.info("[dashboard] Bot start requested.")
-    shared_state.update(status="starting")
+    shared_state.update(status="starting",
+                       conviction_threshold=config.CONVICTION_THRESHOLD)
     threading.Thread(target=_start_fn, args=(_trading_client, _data_client),
                      daemon=True, name="bot-loop").start()
     return jsonify({"ok": True, "message": "Bot started."})
