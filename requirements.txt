@@ -10,5 +10,11 @@ numpy>=1.24.0
 # Data manipulation for bar/OHLCV data
 pandas>=2.0.0
 
+# Timezone handling for overnight scanner scheduling
+pytz>=2023.3
+
+# HTML table parsing for S&P 500 / NASDAQ 100 lists from Wikipedia
+lxml>=4.9.0
+
 # Anthropic SDK for multi-agent Claude orchestration
 anthropic>=0.40.0

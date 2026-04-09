@@ -33,6 +33,12 @@ if not os.path.exists(env_file):
 from dotenv import load_dotenv
 load_dotenv(env_file, override=True)
 
+# ── Suppress noisy third-party loggers ──────────────────────────────────────
+import logging
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+logging.getLogger("peewee").setLevel(logging.WARNING)
+
 # ── Now safe to import everything else ───────────────────────────────────────
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
@@ -96,6 +102,11 @@ coordinator = AgentCoordinator(
 )
 dashboard.set_coordinator(coordinator)
 bot.set_coordinator(coordinator)
+
+# ── Start overnight scanner scheduler ────────────────────────────────────────
+from overnight_scanner import start_scheduler as start_overnight_scheduler
+start_overnight_scheduler()
+log.info("[server] Overnight scanner scheduler started")
 
 print()
 print("=" * 55)

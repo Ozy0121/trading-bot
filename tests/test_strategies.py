@@ -64,8 +64,8 @@ def make_flat_df() -> pd.DataFrame:
 # ── Registry tests ────────────────────────────────────────────────────────────
 
 def test_registry():
-    """REGISTRY has exactly 3 keys and all values are callable."""
-    assert set(REGISTRY.keys()) == {"momentum", "mean_reversion", "catalyst"}
+    """REGISTRY has all expected strategy keys and all values are callable."""
+    assert set(REGISTRY.keys()) == {"momentum", "mean_reversion", "catalyst", "accumulation"}
     for name, fn in REGISTRY.items():
         assert callable(fn), f"REGISTRY['{name}'] is not callable"
 

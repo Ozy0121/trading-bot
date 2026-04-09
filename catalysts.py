@@ -74,6 +74,7 @@ def fetch_ark_buys() -> dict[str, bool]:
         log.info("[catalysts] Fetching ARK Invest daily trades...")
 
         ark_buys: dict[str, bool] = {}
+        failed_etfs: list[str] = []
 
         for etf in _ARK_ETFS:
             url = f"https://arkfunds.io/api/v2/etf/trades?symbol={etf}"
@@ -89,14 +90,18 @@ def fetch_ark_buys() -> dict[str, bool]:
                     if direction == "buy" and ticker:
                         ark_buys[ticker] = True
                         log.debug("[catalysts] ARK %s buying: %s", etf, ticker)
-            except Exception as exc:
-                log.warning("[catalysts] ARK fetch failed for %s: %s", etf, exc)
+            except Exception:
+                failed_etfs.append(etf)
+
+        if failed_etfs:
+            if len(failed_etfs) == len(_ARK_ETFS):
+                log.warning("[catalysts] ARK API down — all %d ETF fetches timed out. Catalyst data unavailable today.", len(_ARK_ETFS))
+            else:
+                log.warning("[catalysts] ARK fetch failed for %s (%d/%d)", ", ".join(failed_etfs), len(failed_etfs), len(_ARK_ETFS))
 
         if ark_buys:
             log.info("[catalysts] ARK buying %d stocks: %s",
                      len(ark_buys), ", ".join(sorted(ark_buys.keys())))
-        else:
-            log.warning("[catalysts] No ARK trades found — API may be down.")
 
         _ark_cache = ark_buys
         _ark_cache_date = today

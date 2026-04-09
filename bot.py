@@ -20,7 +20,7 @@ import time
 from datetime import datetime, timezone
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, TakeProfitRequest
+from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopLossRequest, TakeProfitRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, OrderStatus
 from alpaca.data.historical import StockHistoricalDataClient
 
@@ -157,8 +157,11 @@ def place_buy(trading_client: TradingClient, equity: float, price: float,
                     price, equity)
         return False
 
-    stop_price = round(price * (1 - config.TRAILING_STOP_PCT), 2)
-    profit_price = round(price * (1 + config.TAKE_PROFIT_PCT), 2)
+    # Add slippage buffer so bracket legs clear Alpaca's base_price validation.
+    # Market orders can fill above the last quote; TP must be >= fill + 0.01.
+    slippage_buffer = 0.02  # 2% cushion for market-order slippage
+    stop_price = round(price * (1 - config.TRAILING_STOP_PCT - slippage_buffer), 2)
+    profit_price = round(price * (1 + config.TAKE_PROFIT_PCT + slippage_buffer), 2)
 
     log.info("[bot] BUY: %d shares of %s @ ~$%.2f (fraction=%.1f%%) SL=$%.2f TP=$%.2f",
              qty, symbol, price, fraction * 100, stop_price, profit_price)
@@ -224,6 +227,68 @@ def place_buy(trading_client: TradingClient, equity: float, price: float,
     return True
 
 
+def place_limit_buy(trading_client: TradingClient, equity: float,
+                    limit_price: float, symbol: str,
+                    stop_loss: float, take_profit: float,
+                    consecutive_losses: int = 0) -> bool:
+    """
+    Place a GTC limit bracket order — sits waiting until the price hits.
+    Used for prediction-based entries placed outside market hours.
+    The order persists across sessions until filled or cancelled.
+    """
+    fraction = get_dynamic_fraction(consecutive_losses)
+    qty = calculate_safe_qty(limit_price, equity, fraction=fraction)
+    if qty < 1:
+        log.warning("[bot] LIMIT BUY: qty=0 (price=%.2f equity=%.2f). Skipping.",
+                    limit_price, equity)
+        return False
+
+    stop_price = round(stop_loss, 2)
+    profit_price = round(take_profit, 2)
+
+    log.info("[bot] LIMIT BUY (GTC): %d shares of %s @ $%.2f "
+             "(fraction=%.1f%%) SL=$%.2f TP=$%.2f",
+             qty, symbol, limit_price, fraction * 100, stop_price, profit_price)
+    log_trade_event(log, "LIMIT_BUY_ATTEMPT", symbol=symbol, qty=qty,
+                    limit_price=f"{limit_price:.2f}", tif="GTC")
+
+    order = trading_client.submit_order(
+        LimitOrderRequest(
+            symbol=symbol,
+            qty=qty,
+            side=OrderSide.BUY,
+            time_in_force=TimeInForce.GTC,
+            limit_price=limit_price,
+            order_class=OrderClass.BRACKET,
+            stop_loss=StopLossRequest(stop_price=stop_price),
+            take_profit=TakeProfitRequest(limit_price=profit_price),
+        )
+    )
+    log_trade_event(log, "LIMIT_BUY_SUBMITTED", symbol=symbol, qty=qty,
+                    order_id=order.id, status=order.status,
+                    limit_price=f"{limit_price:.2f}")
+
+    log.info("[bot] GTC limit order placed: %s %d sh @ $%.2f — "
+             "will fill when price drops to limit. SL=$%.2f TP=$%.2f",
+             symbol, qty, limit_price, stop_price, profit_price)
+
+    shared_state.update(
+        bracket_info={symbol: {
+            "stop_loss_price": stop_price,
+            "take_profit_price": profit_price,
+            "status": "pending_limit",
+            "limit_price": limit_price,
+        }}
+    )
+
+    shared_state.push_trade(
+        time=datetime.now(timezone.utc).strftime("%H:%M:%S"),
+        event="LIMIT_BUY",
+        detail=f"{symbol} {qty}sh limit@${limit_price:.2f} GTC | SL=${stop_price:.2f} TP=${profit_price:.2f}",
+    )
+    return True
+
+
 def place_sell(trading_client: TradingClient, qty: float, price: float,
                reason: str = "SIGNAL", symbol: str = None,
                avg_cost: float = 0.0) -> None:
@@ -259,6 +324,112 @@ def place_sell(trading_client: TradingClient, qty: float, price: float,
         event="SELL",
         detail=f"{symbol} {qty:.0f}sh @ ~${price:.2f} [{reason}]",
     )
+
+
+# ── Prediction-based entry ───────────────────────────────────────────────────
+
+# Minimum requirements for auto-trading from predictions
+PRED_MIN_CONFIDENCE = 8        # out of 10
+PRED_MIN_ACCURACY   = 0.55     # 55% historical hit rate
+PRED_ALLOWED_STAGES = {"launch_zone", "pre_breakout"}
+
+
+def _get_prediction_candidate() -> dict | None:
+    """
+    Check overnight/prediction picks for a trade-ready candidate.
+    Only returns a candidate if it meets strict confidence + accuracy filters
+    and the price is within the predicted entry zone.
+
+    Returns a dict shaped like a scanner result, or None.
+    """
+    try:
+        from overnight_scanner import get_latest_predictions
+        import yfinance as yf
+
+        preds = get_latest_predictions()
+        if not preds:
+            return None
+
+        all_picks = preds.get("ready_tomorrow", []) + preds.get("all_predictions", [])
+        if not all_picks:
+            return None
+
+        # Deduplicate by symbol, keep first (highest ranked)
+        seen = set()
+        unique = []
+        for p in all_picks:
+            if p["symbol"] not in seen:
+                seen.add(p["symbol"])
+                unique.append(p)
+
+        for p in unique:
+            sym        = p["symbol"]
+            confidence = p.get("confidence", 0)
+            stage      = p.get("stage", "")
+            hist_acc   = p.get("historical_accuracy", 0)
+            entry_low  = p.get("entry_low", 0)
+            entry_high = p.get("entry_high", 0)
+
+            # Filter: must be high confidence + right stage
+            if confidence < PRED_MIN_CONFIDENCE:
+                continue
+            if stage not in PRED_ALLOWED_STAGES:
+                continue
+            if hist_acc > 0 and hist_acc < PRED_MIN_ACCURACY:
+                continue
+
+            # Get live price and check it's in the entry zone
+            try:
+                ticker = yf.Ticker(sym)
+                hist = ticker.history(period="1d", interval="1m")
+                if hist is None or hist.empty:
+                    continue
+                hist.columns = [c.lower() for c in hist.columns]
+                live_price = float(hist["close"].iloc[-1])
+            except Exception:
+                continue
+
+            # Price must be within entry zone (with 1% tolerance)
+            zone_low  = entry_low * 0.99
+            zone_high = entry_high * 1.01
+            if not (zone_low <= live_price <= zone_high):
+                log.debug("[bot] Prediction %s: price $%.2f outside entry zone $%.2f–$%.2f",
+                          sym, live_price, entry_low, entry_high)
+                continue
+
+            # Build a scanner-compatible candidate dict
+            patterns = [pt["name"] for pt in p.get("patterns", []) if pt.get("detected")]
+            log.info(
+                "[bot] PREDICTION CANDIDATE: %s @ $%.2f (conf=%d, stage=%s, "
+                "accuracy=%.0f%%, patterns=%s, target=$%.2f)",
+                sym, live_price, confidence, stage,
+                hist_acc * 100, "+".join(patterns),
+                p.get("target_price", 0),
+            )
+
+            return {
+                "symbol": sym,
+                "price": live_price,
+                "score": confidence * 10,   # map 1-10 to 10-100
+                "signal": "BUY",
+                "rsi": p.get("patterns", [{}])[0].get("details", {}).get("rsi", 50),
+                "volume_ratio": 1.5,  # prediction already verified volume
+                "macd_hist": 0.0,
+                "conviction": {
+                    "composite": confidence,
+                    "technical": confidence,
+                    "volume": 5.0,
+                    "sentiment": 5.0,
+                    "sector": 5.0,
+                    "strategies_fired": ["prediction:" + stage],
+                },
+            }
+
+        return None
+
+    except Exception as exc:
+        log.debug("[bot] Prediction candidate check failed: %s", exc)
+        return None
 
 
 # ── Main trading loop ────────────────────────────────────────────────────────
@@ -501,8 +672,19 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                     )
                 else:
                     candidates = best_buy(scan_results)
+                    candidate = None
+                    source = "watchlist"
+
                     if candidates:
-                        candidate = candidates[0]  # Take the top candidate for this trade
+                        candidate = candidates[0]
+                    else:
+                        # ── 14a. Check prediction engine picks ──────────────
+                        pred_candidate = _get_prediction_candidate()
+                        if pred_candidate:
+                            candidate = pred_candidate
+                            source = "prediction"
+
+                    if candidate:
                         buy_sym   = candidate["symbol"]
                         buy_price = candidate["price"]
                         conv      = candidate.get("conviction", {})
@@ -515,13 +697,13 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
 
                         log.info("[bot] HIGH CONVICTION BUY: %s @ $%.2f "
                                  "(score=%.1f rsi=%.1f vol=%.1fx macd=%.4f) "
-                                 "[%d candidates available]",
+                                 "[source=%s, %d candidates available]",
                                  buy_sym, buy_price,
-                                 candidate["score"],
-                                 candidate["rsi"],
-                                 candidate["volume_ratio"],
-                                 candidate["macd_hist"],
-                                 len(candidates))
+                                 candidate.get("score", 0),
+                                 candidate.get("rsi", 50),
+                                 candidate.get("volume_ratio", 1.0),
+                                 candidate.get("macd_hist", 0),
+                                 source, len(candidates) if candidates else 1)
 
                         log.info("[bot] Best candidate: %s (conviction: %.1f/10 -- "
                                  "tech:%.1f vol:%.1f sent:%.1f sec:%.1f)",
@@ -529,7 +711,8 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                                  conv.get("technical", 0), conv.get("volume", 0),
                                  conv.get("sentiment", 0), conv.get("sector", 0))
 
-                        log.info("[bot] Executing trade from strategy: %s",
+                        log.info("[bot] Executing trade from %s strategy: %s",
+                                 source,
                                  ", ".join(conv.get("strategies_fired", ["unknown"])))
 
                         shared_state.update(symbol=buy_sym)

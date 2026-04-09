@@ -1067,6 +1067,10 @@
     <span class="material-symbols-outlined">history</span>
     <span class="sidebar-label">HIST</span>
   </button>
+  <button class="sidebar-btn" id="tab-btn-intelligence" onclick="switchTab('intelligence')">
+    <span class="material-symbols-outlined">neurology</span>
+    <span class="sidebar-label">INTEL</span>
+  </button>
   <div class="sidebar-spacer"></div>
   <button class="sidebar-btn" style="opacity:0.5;cursor:default">
     <span class="material-symbols-outlined">settings</span>
@@ -1221,11 +1225,12 @@
             <th style="text-align:center">SIGNAL</th>
             <th>RSI</th>
             <th>VOL_RATIO</th>
+            <th>SETUP</th>
             <th>SCORE</th>
           </tr>
         </thead>
         <tbody id="watchlist-body">
-          <tr><td colspan="7" style="padding:16px 10px;color:var(--outline);text-align:center">Waiting for first scan...</td></tr>
+          <tr><td colspan="8" style="padding:16px 10px;color:var(--outline);text-align:center">Waiting for first scan...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1397,6 +1402,129 @@
   </div>
 </div>
 </div><!-- /tab-positions -->
+
+<!-- Intelligence tab -->
+<div class="tab-pane" id="tab-intelligence">
+<div class="page">
+
+  <!-- Scan summary banner -->
+  <div id="intel-summary" class="chart-card" style="margin-bottom:14px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+    <div>
+      <span class="chart-title" style="margin-right:12px">PREDICTION_ENGINE</span>
+      <span id="intel-scan-summary" style="color:var(--on-surface-variant);font-size:12px">Scan not started</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="tb-btn" onclick="runPredictionScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> SCAN NOW</button>
+      <button class="tb-btn" onclick="runOvernightScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
+      <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
+    </div>
+  </div>
+
+  <!-- Overnight picks (shown at top if available) -->
+  <div id="overnight-section" class="chart-card" style="margin-bottom:14px;display:none">
+    <div class="chart-card-header">
+      <span class="chart-title">TOMORROW'S PRE-SPIKE PICKS</span>
+      <span id="overnight-date" style="font-size:11px;color:var(--outline)"></span>
+    </div>
+    <div id="overnight-accuracy" style="font-size:11px;color:var(--on-surface-variant);padding:4px 0 8px 0"></div>
+    <div id="overnight-picks" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px"></div>
+  </div>
+
+  <!-- Prediction Scorecard -->
+  <div id="scorecard-section" class="chart-card" style="margin-bottom:14px">
+    <div class="chart-card-header">
+      <span class="chart-title">PREDICTION SCORECARD</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="scorecard-cumulative" style="font-size:11px;color:var(--outline)"></span>
+        <button class="tb-btn" onclick="checkAccuracy()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">fact_check</span> CHECK ACCURACY</button>
+      </div>
+    </div>
+    <!-- Score bar -->
+    <div id="scorecard-stats" style="display:none;padding:8px 0">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px;text-align:center;font-size:12px">
+        <div><span style="color:var(--outline)">CORRECT</span><br><span id="sc-correct" style="font-size:20px;font-weight:700;color:#66bb6a">—</span></div>
+        <div><span style="color:var(--outline)">WRONG</span><br><span id="sc-wrong" style="font-size:20px;font-weight:700;color:#ef5350">—</span></div>
+        <div><span style="color:var(--outline)">ACCURACY</span><br><span id="sc-accuracy" style="font-size:20px;font-weight:700">—</span></div>
+        <div><span style="color:var(--outline)">HIT TARGET</span><br><span id="sc-target" style="font-size:20px;font-weight:700;color:#42a5f5">—</span></div>
+        <div><span style="color:var(--outline)">HIT STOP</span><br><span id="sc-stop" style="font-size:20px;font-weight:700;color:#ef5350">—</span></div>
+      </div>
+      <!-- Accuracy bar visual -->
+      <div style="height:6px;border-radius:3px;background:var(--surface-high);overflow:hidden;margin-bottom:8px">
+        <div id="sc-bar" style="height:100%;border-radius:3px;background:#66bb6a;transition:width 0.4s;width:0%"></div>
+      </div>
+      <div id="sc-avg-move" style="font-size:11px;color:var(--on-surface-variant);margin-bottom:8px"></div>
+      <!-- Failure breakdown -->
+      <div id="sc-failures" style="display:none;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--outline);margin-bottom:4px;font-weight:600">WHY PREDICTIONS FAILED</div>
+        <div id="sc-failure-list" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <!-- Individual prediction results -->
+    <div id="scorecard-results" style="max-height:500px;overflow-y:auto"></div>
+    <div id="scorecard-empty" style="text-align:center;padding:20px;color:var(--outline);font-size:12px">
+      Click CHECK ACCURACY to grade yesterday's predictions against actual prices
+    </div>
+  </div>
+
+  <!-- Strategy Report Card -->
+  <div id="backtest-section" class="chart-card" style="margin-bottom:14px">
+    <div class="chart-card-header">
+      <span class="chart-title">STRATEGY REPORT CARD</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="backtest-date" style="font-size:11px;color:var(--outline)"></span>
+        <button class="tb-btn" onclick="runBacktest()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">science</span> RUN BACKTEST</button>
+      </div>
+    </div>
+    <div id="backtest-empty" style="text-align:center;padding:20px;color:var(--outline);font-size:12px">
+      Click RUN BACKTEST to test all strategies against 1 year of historical data
+    </div>
+    <div id="backtest-recommendation" style="display:none;padding:8px 12px;margin-bottom:10px;border-radius:4px;background:var(--surface-high);font-size:12px;line-height:1.5"></div>
+    <div id="backtest-ranking" style="display:none;margin-bottom:10px"></div>
+    <div id="backtest-cards" style="display:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px"></div>
+  </div>
+
+  <!-- Prediction stages -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+    <div class="chart-card" style="border-top:2px solid #66bb6a">
+      <div class="chart-card-header"><span class="chart-title" style="color:#66bb6a">READY TO SPIKE (1 DAY)</span><span id="ready-count" class="badge" style="background:#1b3a1b;color:#66bb6a;font-size:11px">0</span></div>
+      <div id="pred-ready" style="max-height:400px;overflow-y:auto"></div>
+    </div>
+    <div class="chart-card" style="border-top:2px solid #ffa726">
+      <div class="chart-card-header"><span class="chart-title" style="color:#ffa726">BUILDING UP (2-3 DAYS)</span><span id="building-count" class="badge" style="background:#3a2a10;color:#ffa726;font-size:11px">0</span></div>
+      <div id="pred-building" style="max-height:400px;overflow-y:auto"></div>
+    </div>
+    <div class="chart-card" style="border-top:2px solid var(--outline)">
+      <div class="chart-card-header"><span class="chart-title">EARLY ACCUMULATION</span><span id="early-count" class="badge" style="background:var(--surface-high);font-size:11px">0</span></div>
+      <div id="pred-early" style="max-height:400px;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <!-- Market heatmap -->
+  <div class="chart-card" style="margin-bottom:14px">
+    <div class="chart-card-header">
+      <span class="chart-title">MARKET HEATMAP — S&P 500 + NASDAQ 100</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="tb-btn heatmap-range active" data-range="1D" onclick="loadHeatmap('1D')">1D</button>
+        <button class="tb-btn heatmap-range" data-range="1W" onclick="loadHeatmap('1W')">1W</button>
+        <button class="tb-btn heatmap-range" data-range="1M" onclick="loadHeatmap('1M')">1M</button>
+      </div>
+    </div>
+    <div id="heatmap-tooltip" style="display:none;position:fixed;z-index:9999;background:var(--surface-highest);border:1px solid var(--outline-variant);padding:8px 12px;font-size:12px;pointer-events:none;max-width:200px"></div>
+    <canvas id="market-heatmap" style="width:100%;height:500px;cursor:crosshair"></canvas>
+  </div>
+
+  <!-- Positions heatmap -->
+  <div class="chart-card">
+    <div class="chart-card-header">
+      <span class="chart-title">MY POSITIONS HEATMAP</span>
+      <button class="tb-btn" onclick="loadPositionsHeatmap()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">refresh</span></button>
+    </div>
+    <canvas id="positions-heatmap" style="width:100%;height:300px;cursor:crosshair"></canvas>
+    <div id="pos-heatmap-empty" style="text-align:center;padding:32px;color:var(--outline);display:none">No open positions — heatmap will appear when you have positions</div>
+  </div>
+
+</div>
+</div><!-- /tab-intelligence -->
 
 <!-- Orders tab -->
 <div class="tab-pane" id="tab-orders">
@@ -2364,6 +2492,20 @@ function refresh(d) {
       const isActive = r.symbol === _chartSymbol ? ' active-chart' : '';
       const volRatio = r.volume_ratio || 0;
       const volCls = volRatio >= 2 ? 'c-green' : volRatio >= 1 ? '' : 'c-muted';
+      // Setup stage from accumulation strategy
+      const conv = r.conviction || {};
+      const fired = conv.strategies_fired || [];
+      const hasAccum = fired.includes('accumulation');
+      let setupHtml = '<td style="text-align:center;font-size:10px;color:var(--outline)">—</td>';
+      if (hasAccum) {
+        const stageMap = {launch_zone:'LAUNCH',pre_breakout:'PRE-BRK',accumulation:'ACCUM',early_accumulation:'EARLY'};
+        const stageColors = {launch_zone:'#66bb6a',pre_breakout:'#ffa726',accumulation:'#42a5f5',early_accumulation:'var(--outline)'};
+        // Look for accumulation details in the scan result
+        const stage = r._accum_stage || (fired.length >= 3 ? 'pre_breakout' : fired.length >= 2 ? 'accumulation' : 'early_accumulation');
+        const label = stageMap[stage] || '—';
+        const color = stageColors[stage] || 'var(--outline)';
+        setupHtml = `<td style="text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:2px;background:${color}22;color:${color};font-weight:600">${label}</span></td>`;
+      }
       return `<tr class="watchlist-row${isActive}" onclick="switchChartSymbol('${r.symbol}', this)">
         <td class="wl-symbol">${r.symbol}</td>
         <td>$${(r.price||0).toFixed(2)}</td>
@@ -2371,6 +2513,7 @@ function refresh(d) {
         <td style="text-align:center"><span class="signal-pill signal-${r.signal}">${r.signal}</span></td>
         <td class="${r.rsi>=70?'c-red':r.rsi<=30?'c-green':''}">${(r.rsi||0).toFixed(1)}</td>
         <td class="${volCls}">${volRatio.toFixed(1)}x</td>
+        ${setupHtml}
         ${gradeCell(r, _threshold)}
       </tr>`;
     }).join('');
@@ -2543,15 +2686,16 @@ loadStartScreen();
 // ═══════════════════════════════════════════════════════════════════════════
 
 function switchTab(name) {
-  ['overview','positions','orders','performance'].forEach(t => {
+  ['overview','positions','orders','performance','intelligence'].forEach(t => {
     const pane = $('tab-' + t);
     const btn  = $('tab-btn-' + t);
     if (pane) pane.classList.toggle('active', t === name);
     if (btn)  btn.classList.toggle('active', t === name);
   });
-  if (name === 'positions')   loadPositions();
-  if (name === 'orders')      { loadOpenOrders(true); loadOrderHistory(); }
-  if (name === 'performance') loadPerformance();
+  if (name === 'positions')    loadPositions();
+  if (name === 'orders')       { loadOpenOrders(true); loadOrderHistory(); }
+  if (name === 'performance')  loadPerformance();
+  if (name === 'intelligence') loadIntelligenceTab();
 }
 
 async function loadPositions() {
@@ -3150,6 +3294,652 @@ $('alert-modal').addEventListener('click', e => {
 // ═══════════════════════════════════════════════════════════════════════════
 // Toast notifications
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Intelligence Tab — Predictions, Heatmaps, Overnight Scanner
+// ═══════════════════════════════════════════════════════════════════════════
+
+function loadIntelligenceTab() {
+  loadPredictions();
+  loadOvernightPicks();
+  loadScorecard();
+  loadBacktest();
+  loadHeatmap('1D');
+  loadPositionsHeatmap();
+}
+
+// ── Prediction cards ──────────────────────────────────────────────────────
+
+function renderPredictionCard(p) {
+  const conf = p.confidence || 0;
+  const confColor = conf >= 8 ? '#66bb6a' : conf >= 6 ? '#ffa726' : '#ef5350';
+  const stageLabels = {
+    launch_zone: 'LAUNCH ZONE',
+    pre_breakout: 'PRE-BREAKOUT',
+    accumulation: 'ACCUMULATION',
+    early_accumulation: 'EARLY',
+  };
+  const stageLabel = stageLabels[p.stage] || p.stage;
+  const patterns = (p.patterns || []).filter(pt => pt.detected).map(pt => pt.name.replace(/_/g,' ')).join(', ');
+  const reasons = (p.reasons || []).map(r => `<div style="font-size:11px;color:var(--on-surface-variant);padding:2px 0">• ${r}</div>`).join('');
+  const accPct = p.historical_accuracy > 0 ? (p.historical_accuracy * 100).toFixed(0) + '%' : '—';
+  const samples = p.historical_samples || 0;
+
+  return `<div class="chart-card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer" onclick="openChart('${p.symbol}')">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-weight:700;font-size:14px;color:var(--on-surface)">${p.symbol}</span>
+        <span style="font-size:10px;padding:2px 6px;border-radius:2px;background:${confColor}22;color:${confColor};font-weight:600">${stageLabel}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:11px;color:var(--outline)">Accuracy: ${accPct}${samples > 0 ? ' / ' + samples : ''}</span>
+        <span style="font-size:18px;font-weight:700;color:${confColor}">${conf}/10</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px;font-size:11px">
+      <div><span style="color:var(--outline)">ENTRY</span><br>$${p.entry_low?.toFixed(2)} – $${p.entry_high?.toFixed(2)}</div>
+      <div><span style="color:var(--outline)">TARGET</span><br><span style="color:#66bb6a">$${p.target_price?.toFixed(2)}</span> (+${p.expected_move_pct?.toFixed(1)}%)</div>
+      <div><span style="color:var(--outline)">STOP</span><br><span style="color:#ef5350">$${p.stop_loss?.toFixed(2)}</span></div>
+      <div><span style="color:var(--outline)">TIMEFRAME</span><br>${p.timeframe || '1-3 days'}</div>
+    </div>
+    <div style="font-size:11px;color:var(--outline);margin-bottom:4px">Patterns: ${patterns}</div>
+    ${reasons}
+  </div>`;
+}
+
+async function loadPredictions() {
+  try {
+    const res = await fetch('/api/predictions');
+    const data = await res.json();
+
+    const sumEl = $('intel-scan-summary');
+    if (data.scan_summary) sumEl.textContent = data.scan_summary;
+    else if (data.count > 0) sumEl.textContent = `${data.count} predictions active`;
+
+    const preds = data.predictions || [];
+    const ready = preds.filter(p => p.stage === 'launch_zone' || p.stage === 'pre_breakout');
+    const building = preds.filter(p => p.stage === 'accumulation');
+    const early = preds.filter(p => p.stage === 'early_accumulation');
+
+    $('ready-count').textContent = ready.length;
+    $('building-count').textContent = building.length;
+    $('early-count').textContent = early.length;
+
+    $('pred-ready').innerHTML = ready.length ? ready.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No stocks in launch zone — run a scan</div>';
+    $('pred-building').innerHTML = building.length ? building.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No stocks building up yet</div>';
+    $('pred-early').innerHTML = early.length ? early.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No early accumulation detected</div>';
+  } catch (e) {
+    console.error('loadPredictions error:', e);
+  }
+}
+
+async function runPredictionScan() {
+  showToast('Prediction scan started — scanning full universe...', 'info', 5000);
+  $('intel-scan-summary').textContent = 'Scanning...';
+  try {
+    await fetch('/api/predictions/run', { method: 'POST' });
+    // Poll for results
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      const res = await fetch('/api/predictions');
+      const data = await res.json();
+      if (data.count > 0 || attempts > 60) {
+        clearInterval(poll);
+        loadPredictions();
+        if (data.count > 0) showToast(`Scan complete: ${data.count} predictions found`, 'success');
+      }
+    }, 5000);
+  } catch (e) {
+    showToast('Scan failed: ' + e.message, 'error');
+  }
+}
+
+// ── Overnight scanner ─────────────────────────────────────────────────────
+
+async function loadOvernightPicks() {
+  try {
+    const res = await fetch('/api/overnight');
+    const data = await res.json();
+    const preds = data.predictions;
+    const accuracy = data.accuracy;
+
+    if (!preds || !preds.all_predictions || preds.all_predictions.length === 0) {
+      $('overnight-section').style.display = 'none';
+      return;
+    }
+
+    $('overnight-section').style.display = '';
+    $('overnight-date').textContent = 'Scan: ' + (preds.scan_date || '') + ' | ' + (preds.summary || '');
+
+    // Accuracy line
+    const cum = accuracy?.cumulative || {};
+    if (cum.total > 0) {
+      const accColor = (cum.correct_pct || 0) >= 60 ? '#66bb6a' : (cum.correct_pct || 0) >= 40 ? '#ffa726' : '#ef5350';
+      $('overnight-accuracy').innerHTML = `Track record: <strong style="color:${accColor}">${cum.correct || 0}/${cum.total} correct (${cum.correct_pct || 0}%)</strong> &nbsp;|&nbsp; ${cum.profitable || 0} profitable &nbsp;|&nbsp; ${cum.hit_target || 0} hit target`;
+    }
+
+    const picks = preds.all_predictions.slice(0, 12);
+    $('overnight-picks').innerHTML = picks.map(renderPredictionCard).join('');
+  } catch (e) {
+    $('overnight-section').style.display = 'none';
+  }
+}
+
+async function runOvernightScan() {
+  showToast('Overnight scan started — this may take several minutes...', 'info', 8000);
+  try {
+    await fetch('/api/overnight/run', { method: 'POST' });
+    setTimeout(loadOvernightPicks, 30000);
+  } catch (e) {
+    showToast('Overnight scan failed: ' + e.message, 'error');
+  }
+}
+
+// ── Auto-trade from predictions ──────────────────────────────────────────
+
+async function autoTradePredictions() {
+  if (!confirm('Place a GTC limit bracket order for the top prediction pick?\n\nThis will set a limit buy at the entry price with stop-loss and take-profit.\nThe order persists until filled or cancelled.')) return;
+  try {
+    const res = await fetch('/api/predictions/auto-trade', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({confirm: 'YES', max_orders: 1}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(data.message, 'success', 5000);
+    } else {
+      showToast(data.error || 'Failed to place order', 'error');
+    }
+  } catch (e) {
+    showToast('Auto-trade failed: ' + e.message, 'error');
+  }
+}
+
+// ── Prediction Scorecard ─────────────────────────────────────────────────
+
+function loadScorecard() {
+  // Load cumulative stats from overnight accuracy summary
+  fetch('/api/overnight')
+    .then(r => r.json())
+    .then(data => {
+      const cum = data.accuracy?.cumulative || {};
+      const el = $('scorecard-cumulative');
+      if (cum.total > 0) {
+        el.textContent = `All-time: ${cum.correct || 0}/${cum.total} correct (${cum.correct_pct || 0}%)`;
+      }
+      // If we have recent history, show the last check automatically
+      const recent = data.accuracy?.recent || [];
+      if (recent.length > 0) {
+        const last = recent[recent.length - 1];
+        if (last.results && last.results.length > 0) {
+          renderScorecardResults(last);
+        }
+      }
+    })
+    .catch(() => {});
+}
+
+async function checkAccuracy() {
+  showToast('Checking prediction accuracy against actual prices...', 'info', 5000);
+  $('scorecard-empty').style.display = 'none';
+  try {
+    const res = await fetch('/api/overnight/accuracy');
+    const data = await res.json();
+    if (data.error) {
+      $('scorecard-empty').style.display = '';
+      $('scorecard-empty').textContent = data.error;
+      showToast(data.error, 'warning');
+      return;
+    }
+    renderScorecardResults(data);
+    showToast(`Accuracy check complete: ${data.correct || 0}/${data.total_checked} correct`, 'success');
+    // Refresh cumulative
+    loadScorecard();
+  } catch (e) {
+    showToast('Accuracy check failed: ' + e.message, 'error');
+  }
+}
+
+function renderScorecardResults(data) {
+  $('scorecard-stats').style.display = '';
+  $('scorecard-empty').style.display = 'none';
+
+  const correct = data.correct || 0;
+  const wrong = data.wrong || 0;
+  const total = data.total_checked || 0;
+  const correctPct = data.correct_pct || 0;
+
+  $('sc-correct').textContent = correct;
+  $('sc-wrong').textContent = wrong;
+  $('sc-accuracy').textContent = correctPct + '%';
+  $('sc-accuracy').style.color = correctPct >= 60 ? '#66bb6a' : correctPct >= 40 ? '#ffa726' : '#ef5350';
+  $('sc-target').textContent = data.hit_target || 0;
+  $('sc-stop').textContent = data.hit_stop || 0;
+  $('sc-bar').style.width = correctPct + '%';
+  $('sc-bar').style.background = correctPct >= 60 ? '#66bb6a' : correctPct >= 40 ? '#ffa726' : '#ef5350';
+
+  const avgPred = data.avg_predicted_move || 0;
+  const avgActual = data.avg_actual_move || 0;
+  $('sc-avg-move').innerHTML = `Predicted: <strong style="color:var(--on-surface)">+${avgPred.toFixed(1)}%</strong> avg &nbsp;|&nbsp; Actual: <strong style="color:${avgActual >= 0 ? '#66bb6a' : '#ef5350'}">${avgActual >= 0 ? '+' : ''}${avgActual.toFixed(1)}%</strong> avg &nbsp;|&nbsp; Checked: ${data.prediction_date || 'unknown'} predictions`;
+
+  // Failure breakdown
+  const failures = data.failure_breakdown || {};
+  const failureKeys = Object.keys(failures);
+  if (failureKeys.length > 0) {
+    $('sc-failures').style.display = '';
+    const failureLabels = {
+      hit_stop_loss: { label: 'Hit Stop Loss', color: '#ef5350', icon: 'trending_down' },
+      went_opposite: { label: 'Went Opposite', color: '#ef5350', icon: 'south' },
+      no_movement: { label: 'No Movement', color: '#ffa726', icon: 'horizontal_rule' },
+      weak_move: { label: 'Weak Move', color: '#ffa726', icon: 'trending_flat' },
+    };
+    $('sc-failure-list').innerHTML = failureKeys
+      .sort((a, b) => failures[b] - failures[a])
+      .map(k => {
+        const f = failureLabels[k] || { label: k, color: 'var(--outline)', icon: 'error' };
+        return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:4px;background:${f.color}15;border:1px solid ${f.color}30;font-size:11px">
+          <span class="material-symbols-outlined" style="font-size:14px;color:${f.color}">${f.icon}</span>
+          <span style="color:${f.color};font-weight:600">${failures[k]}</span>
+          <span style="color:var(--on-surface-variant)">${f.label}</span>
+        </div>`;
+      }).join('');
+  } else {
+    $('sc-failures').style.display = 'none';
+  }
+
+  // Individual results
+  const results = data.results || [];
+  if (results.length > 0) {
+    $('scorecard-results').innerHTML = results.map(r => {
+      const isCorrect = r.verdict === 'CORRECT';
+      const borderColor = isCorrect ? '#66bb6a' : '#ef5350';
+      const icon = isCorrect ? 'check_circle' : 'cancel';
+      const verdictColor = isCorrect ? '#66bb6a' : '#ef5350';
+      const actualColor = r.actual_close_move >= 0 ? '#66bb6a' : '#ef5350';
+      const patternsStr = (r.patterns || []).join(', ').replace(/_/g, ' ');
+
+      return `<div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px;border-radius:6px;overflow:hidden;border:1px solid ${borderColor}30;cursor:pointer" onclick="openChart('${r.symbol}')">
+        <div style="width:4px;background:${borderColor};flex-shrink:0"></div>
+        <div style="flex:1;padding:8px 12px;background:${borderColor}08">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span class="material-symbols-outlined" style="font-size:16px;color:${verdictColor}">${icon}</span>
+              <span style="font-weight:700;font-size:13px;color:var(--on-surface)">${r.symbol}</span>
+              <span style="font-size:10px;padding:1px 6px;border-radius:2px;background:${verdictColor}22;color:${verdictColor};font-weight:600">${r.verdict}</span>
+              <span style="font-size:10px;color:var(--outline)">conf ${r.confidence}/10</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:12px">
+              <span style="color:var(--outline)">Predicted <strong style="color:var(--on-surface)">+${r.predicted_move?.toFixed(1)}%</strong></span>
+              <span style="color:var(--outline)">Actual <strong style="color:${actualColor}">${r.actual_close_move >= 0 ? '+' : ''}${r.actual_close_move?.toFixed(1)}%</strong></span>
+              <span style="color:var(--outline)">Peak <strong style="color:${r.actual_max_move >= 0 ? '#66bb6a' : '#ef5350'}">+${r.actual_max_move?.toFixed(1)}%</strong></span>
+            </div>
+          </div>
+          ${!isCorrect && r.failure_reason ? `<div style="font-size:11px;color:#ef5350;padding:2px 0 0 22px">${r.failure_reason}</div>` : ''}
+          ${patternsStr ? `<div style="font-size:10px;color:var(--outline);padding:2px 0 0 22px">Patterns: ${patternsStr}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ── Strategy Backtest ─────────────────────────────────────────────────────
+
+function loadBacktest() {
+  fetch('/api/backtest')
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) return;
+      renderBacktestResults(data);
+    })
+    .catch(() => {});
+}
+
+async function runBacktest() {
+  showToast('Backtest started — testing all strategies against 1 year of data. This takes a few minutes...', 'info', 10000);
+  $('backtest-empty').textContent = 'Running backtest...';
+  try {
+    await fetch('/api/backtest/run', { method: 'POST' });
+    // Poll for results
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const res = await fetch('/api/backtest');
+        const data = await res.json();
+        if (!data.error && data.backtest_date === new Date().toISOString().slice(0,10)) {
+          clearInterval(poll);
+          renderBacktestResults(data);
+          showToast('Backtest complete!', 'success');
+        } else if (attempts > 120) {
+          clearInterval(poll);
+          showToast('Backtest timed out — check logs', 'warning');
+        }
+      } catch(e) {}
+    }, 5000);
+  } catch (e) {
+    showToast('Backtest failed: ' + e.message, 'error');
+  }
+}
+
+function renderBacktestResults(data) {
+  $('backtest-empty').style.display = 'none';
+  $('backtest-date').textContent = `Tested ${data.stocks_tested} stocks over ${data.period} | ${data.backtest_date} | ${data.duration_seconds}s`;
+
+  // Recommendation
+  if (data.recommendation) {
+    const recEl = $('backtest-recommendation');
+    recEl.style.display = '';
+    recEl.innerHTML = `<span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;margin-right:4px">lightbulb</span> ${data.recommendation}`;
+  }
+
+  // Ranking bar
+  const ranking = data.ranking || [];
+  if (ranking.length > 0) {
+    const rankEl = $('backtest-ranking');
+    rankEl.style.display = '';
+    rankEl.innerHTML = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px">
+      <span style="font-size:11px;color:var(--outline);font-weight:600">RANKING:</span>
+      ${ranking.map((r, i) => {
+        const vColor = r.verdict === 'RELIABLE' ? '#66bb6a' : r.verdict === 'MARGINAL' ? '#ffa726' : '#ef5350';
+        return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:4px;background:${vColor}15;border:1px solid ${vColor}30;font-size:12px">
+          <span style="font-weight:700;color:var(--on-surface)">#${i+1}</span>
+          <span style="color:var(--on-surface)">${r.strategy.replace(/_/g,' ')}</span>
+          <span style="font-size:10px;padding:1px 5px;border-radius:2px;background:${vColor}22;color:${vColor};font-weight:600">${r.verdict}</span>
+          <span style="color:var(--outline);font-size:10px">${r.expectancy >= 0 ? '+' : ''}${r.expectancy.toFixed(2)}%/trade</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // Strategy cards
+  const strats = data.strategies || {};
+  const cardsEl = $('backtest-cards');
+  cardsEl.style.display = '';
+  cardsEl.innerHTML = Object.values(strats).map(s => {
+    const vColor = s.verdict === 'RELIABLE' ? '#66bb6a' : s.verdict === 'MARGINAL' ? '#ffa726' : '#ef5350';
+    const expColor = s.expectancy >= 0 ? '#66bb6a' : '#ef5350';
+
+    const issuesHtml = (s.issues || []).length > 0
+      ? `<div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--outline-variant)">
+          ${s.issues.map(issue => `<div style="font-size:10px;color:#ef5350;padding:1px 0">⚠ ${issue}</div>`).join('')}
+        </div>`
+      : '';
+
+    const bestHtml = s.best_signal
+      ? `<div style="font-size:10px;color:var(--outline);margin-top:4px">Best: ${s.best_signal.symbol} ${s.best_signal.signal_date} → +${s.best_signal.day3_return}%</div>`
+      : '';
+    const worstHtml = s.worst_signal
+      ? `<div style="font-size:10px;color:var(--outline)">Worst: ${s.worst_signal.symbol} ${s.worst_signal.signal_date} → ${s.worst_signal.day3_return}%</div>`
+      : '';
+
+    return `<div class="chart-card" style="padding:12px;border-top:3px solid ${vColor}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-weight:700;font-size:14px;color:var(--on-surface);text-transform:uppercase">${s.strategy.replace(/_/g, ' ')}</span>
+          <span style="font-size:10px;padding:2px 6px;border-radius:2px;background:${vColor}22;color:${vColor};font-weight:600">${s.verdict}</span>
+        </div>
+        <span style="font-size:11px;color:var(--outline)">${s.total_signals} signals</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;font-size:11px;margin-bottom:8px">
+        <div><span style="color:var(--outline)">WIN RATE</span><br><span style="font-size:16px;font-weight:700;color:${s.win_rate >= 50 ? '#66bb6a' : s.win_rate >= 40 ? '#ffa726' : '#ef5350'}">${s.win_rate}%</span></div>
+        <div><span style="color:var(--outline)">EXPECTANCY</span><br><span style="font-size:16px;font-weight:700;color:${expColor}">${s.expectancy >= 0 ? '+' : ''}${s.expectancy}%</span></div>
+        <div><span style="color:var(--outline)">AVG WIN</span><br><span style="font-size:16px;font-weight:700;color:#66bb6a">+${s.avg_win_pct}%</span></div>
+        <div><span style="color:var(--outline)">AVG LOSS</span><br><span style="font-size:16px;font-weight:700;color:#ef5350">${s.avg_loss_pct}%</span></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;font-size:11px">
+        <div><span style="color:var(--outline)">DAY 1</span><br>${s.avg_day1 >= 0 ? '+' : ''}${s.avg_day1}%</div>
+        <div><span style="color:var(--outline)">DAY 3</span><br>${s.avg_day3 >= 0 ? '+' : ''}${s.avg_day3}%</div>
+        <div><span style="color:var(--outline)">HIT TARGET</span><br>${s.hit_target_pct}%</div>
+        <div><span style="color:var(--outline)">HIT STOP</span><br>${s.hit_stop_pct}%</div>
+      </div>
+      ${bestHtml}${worstHtml}
+      ${issuesHtml}
+    </div>`;
+  }).join('');
+}
+
+// ── Market heatmap (treemap) ──────────────────────────────────────────────
+
+let _heatmapData = [];
+
+function loadHeatmap(range) {
+  document.querySelectorAll('.heatmap-range').forEach(b => b.classList.toggle('active', b.dataset.range === range));
+  fetch('/api/heatmap/market')
+    .then(r => r.json())
+    .then(data => {
+      if (Array.isArray(data) && data.length > 0) {
+        _heatmapData = data;
+        drawMarketHeatmap(data);
+      } else {
+        // Data loading in background, retry
+        const canvas = $('market-heatmap');
+        const ctx = canvas.getContext('2d');
+        canvas.width = canvas.offsetWidth;
+        canvas.height = 500;
+        ctx.fillStyle = '#191919';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#757575';
+        ctx.font = '13px Manrope, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Loading heatmap data — first load may take 1-2 minutes...', canvas.width / 2, 250);
+        setTimeout(() => loadHeatmap(range), 10000);
+      }
+    })
+    .catch(() => {});
+}
+
+function getHeatmapColor(changePct) {
+  if (changePct > 3) return '#1b5e20';
+  if (changePct > 2) return '#2e7d32';
+  if (changePct > 1) return '#388e3c';
+  if (changePct > 0.5) return '#43a047';
+  if (changePct > 0) return '#2d4a2d';
+  if (changePct > -0.5) return '#4a2d2d';
+  if (changePct > -1) return '#c62828';
+  if (changePct > -2) return '#b71c1c';
+  if (changePct > -3) return '#8b1a1a';
+  return '#6d1414';
+}
+
+function drawMarketHeatmap(data) {
+  const canvas = $('market-heatmap');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth;
+  const h = 500;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+
+  // Sort by market cap descending for treemap
+  data.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+  const totalCap = data.reduce((s, d) => s + (d.market_cap || 0), 0);
+  if (totalCap === 0) return;
+
+  // Simple squarified treemap layout
+  const rects = squarify(data.map(d => ({
+    ...d,
+    value: d.market_cap / totalCap,
+  })), 0, 0, w, h);
+
+  // Store rects for hover
+  canvas._rects = rects;
+
+  rects.forEach(r => {
+    ctx.fillStyle = getHeatmapColor(r.change_pct || 0);
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = '#0e0e0e';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+
+    // Label if big enough
+    if (r.w > 35 && r.h > 25) {
+      ctx.fillStyle = '#fff';
+      ctx.font = r.w > 80 ? 'bold 12px Manrope' : '10px Manrope';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.symbol, r.x + r.w / 2, r.y + r.h / 2 - 6);
+
+      if (r.w > 50 && r.h > 35) {
+        const sign = r.change_pct >= 0 ? '+' : '';
+        ctx.font = '10px Manrope';
+        ctx.fillStyle = r.change_pct >= 0 ? '#a5d6a7' : '#ef9a9a';
+        ctx.fillText(sign + r.change_pct.toFixed(1) + '%', r.x + r.w / 2, r.y + r.h / 2 + 8);
+      }
+    }
+  });
+
+  // Hover tooltip
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = (canvas._rects || []).find(r => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h);
+    const tip = $('heatmap-tooltip');
+    if (hit) {
+      const sign = hit.change_pct >= 0 ? '+' : '';
+      const cap = hit.market_cap > 1e12 ? (hit.market_cap / 1e12).toFixed(1) + 'T' :
+                  hit.market_cap > 1e9 ? (hit.market_cap / 1e9).toFixed(1) + 'B' :
+                  (hit.market_cap / 1e6).toFixed(0) + 'M';
+      tip.innerHTML = `<strong>${hit.symbol}</strong><br>$${hit.price?.toFixed(2) || '—'}<br>${sign}${hit.change_pct?.toFixed(2)}%<br>Cap: $${cap}`;
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+    } else {
+      tip.style.display = 'none';
+    }
+  };
+  canvas.onmouseleave = () => { $('heatmap-tooltip').style.display = 'none'; };
+  canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = (canvas._rects || []).find(r => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h);
+    if (hit) openChart(hit.symbol);
+  };
+}
+
+// Simple treemap layout (slice-and-dice)
+function squarify(items, x, y, w, h) {
+  const rects = [];
+  if (!items.length || w <= 0 || h <= 0) return rects;
+
+  const total = items.reduce((s, i) => s + i.value, 0);
+  if (total <= 0) return rects;
+
+  let cx = x, cy = y;
+  const vertical = w >= h;
+
+  items.forEach(item => {
+    const frac = item.value / total;
+    let rw, rh;
+    if (vertical) {
+      rw = frac * w;
+      rh = h;
+    } else {
+      rw = w;
+      rh = frac * h;
+    }
+    rects.push({ ...item, x: cx, y: cy, w: rw, h: rh });
+    if (vertical) cx += rw;
+    else cy += rh;
+  });
+
+  return rects;
+}
+
+// ── Positions heatmap ─────────────────────────────────────────────────────
+
+async function loadPositionsHeatmap() {
+  try {
+    const res = await fetch('/api/heatmap/positions');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      $('pos-heatmap-empty').style.display = '';
+      return;
+    }
+    $('pos-heatmap-empty').style.display = 'none';
+    drawPositionsHeatmap(data);
+  } catch (e) {
+    $('pos-heatmap-empty').style.display = '';
+  }
+}
+
+function drawPositionsHeatmap(data) {
+  const canvas = $('positions-heatmap');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth;
+  const h = 300;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.scale(dpr, dpr);
+
+  data.sort((a, b) => (b.market_value || 0) - (a.market_value || 0));
+  const totalVal = data.reduce((s, d) => s + Math.abs(d.market_value || 0), 0);
+  if (totalVal === 0) return;
+
+  const rects = squarify(data.map(d => ({
+    ...d,
+    value: Math.abs(d.market_value) / totalVal,
+  })), 0, 0, w, h);
+
+  canvas._rects = rects;
+
+  rects.forEach(r => {
+    ctx.fillStyle = getHeatmapColor(r.pnl_pct || 0);
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = '#0e0e0e';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+
+    if (r.w > 40 && r.h > 30) {
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px Manrope';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.symbol, r.x + r.w / 2, r.y + r.h / 2 - 10);
+
+      const sign = r.pnl >= 0 ? '+' : '';
+      ctx.font = '11px Manrope';
+      ctx.fillStyle = r.pnl >= 0 ? '#a5d6a7' : '#ef9a9a';
+      ctx.fillText(sign + '$' + r.pnl?.toFixed(2), r.x + r.w / 2, r.y + r.h / 2 + 6);
+      ctx.fillText(sign + r.pnl_pct?.toFixed(1) + '%', r.x + r.w / 2, r.y + r.h / 2 + 20);
+    }
+  });
+
+  canvas.onmousemove = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = (canvas._rects || []).find(r => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h);
+    const tip = $('heatmap-tooltip');
+    if (hit) {
+      const sign = hit.pnl >= 0 ? '+' : '';
+      tip.innerHTML = `<strong>${hit.symbol}</strong><br>Entry: $${hit.avg_entry?.toFixed(2)}<br>Current: $${hit.current_price?.toFixed(2)}<br>P&L: ${sign}$${hit.pnl?.toFixed(2)} (${sign}${hit.pnl_pct?.toFixed(1)}%)<br>Value: $${hit.market_value?.toFixed(2)}<br>SL: $${hit.stop_loss || '—'} | TP: $${hit.take_profit || '—'}`;
+      tip.style.display = 'block';
+      tip.style.left = (e.clientX + 14) + 'px';
+      tip.style.top = (e.clientY + 14) + 'px';
+    } else {
+      tip.style.display = 'none';
+    }
+  };
+  canvas.onmouseleave = () => { $('heatmap-tooltip').style.display = 'none'; };
+  canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const hit = (canvas._rects || []).find(r => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h);
+    if (hit) openChart(hit.symbol);
+  };
+}
+
 
 function showToast(msg, type = 'success', duration = 3500) {
   const container = $('toast-container');

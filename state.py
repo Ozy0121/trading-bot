@@ -109,6 +109,15 @@ _state = {
     # ── Agent system (Phase 3) ───────────────────────────────────────────
     "agent_quant_count":  0,     # symbols analyzed by quant last cycle
     "agent_news_count":   0,     # symbols analyzed by news last cycle
+
+    # ── Prediction engine (Phase 7) ──────────────────────────────────────
+    "predictions":               [],     # list of prediction dicts (pre-spike picks)
+    "prediction_count":          0,      # total predictions this cycle
+    "overnight_predictions":     None,   # last overnight scan result dict
+    "overnight_accuracy":        None,   # cumulative accuracy stats
+    "scan_universe_size":        0,      # total stocks in expanded universe
+    "scan_summary":              "",     # "Scanned 2,400 → 200 passed → Top 30"
+    "heatmap_data":              [],     # market heatmap data [{symbol, price, change_pct, market_cap}]
 }
 
 

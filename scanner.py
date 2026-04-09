@@ -546,7 +546,7 @@ def scan(watchlist: list[str], catalysts: dict | None = None) -> list[dict]:
 
     results: list[dict] = []
 
-    with ThreadPoolExecutor(max_workers=15) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_sym = {
             executor.submit(_score_symbol_multi, sym, etf_scores, catalysts): sym
             for sym in watchlist

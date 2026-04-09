@@ -665,6 +665,250 @@ def api_agents_status():
                     mimetype="application/json")
 
 
+# ── Prediction & Overnight Scanner endpoints ─────────────────────────────────
+
+@app.route("/api/predictions")
+def api_predictions():
+    """Return current pre-spike predictions from the prediction engine."""
+    snap = shared_state.snapshot()
+    return jsonify({
+        "predictions": snap.get("predictions", []),
+        "count": snap.get("prediction_count", 0),
+        "scan_summary": snap.get("scan_summary", ""),
+        "universe_size": snap.get("scan_universe_size", 0),
+    })
+
+
+@app.route("/api/predictions/run", methods=["POST"])
+def api_predictions_run():
+    """Trigger a prediction scan in the background."""
+    def _do():
+        try:
+            from stock_universe import get_full_universe, get_scan_summary
+            from prediction import predict_batch
+
+            universe = get_full_universe(include_discovery=True)
+            predictions = predict_batch(universe)
+
+            pred_dicts = [p.to_dict() for p in predictions[:30]]
+            shared_state.update(
+                predictions=pred_dicts,
+                prediction_count=len(predictions),
+                scan_universe_size=len(universe),
+                scan_summary=get_scan_summary(len(universe), len(predictions), min(30, len(predictions))),
+            )
+        except Exception as exc:
+            log.error("[dashboard] Prediction scan failed: %s", exc, exc_info=True)
+
+    threading.Thread(target=_do, daemon=True, name="prediction-scan").start()
+    return jsonify({"ok": True, "message": "Prediction scan started."})
+
+
+@app.route("/api/overnight")
+def api_overnight():
+    """Return the latest overnight predictions and accuracy stats."""
+    from overnight_scanner import get_latest_predictions, get_accuracy_summary
+    preds = get_latest_predictions()
+    accuracy = get_accuracy_summary()
+    return jsonify({
+        "predictions": preds,
+        "accuracy": accuracy,
+    })
+
+
+@app.route("/api/overnight/run", methods=["POST"])
+def api_overnight_run():
+    """Trigger an overnight scan manually."""
+    def _do():
+        try:
+            from overnight_scanner import run_overnight_scan
+            result = run_overnight_scan()
+            shared_state.update(overnight_predictions=result)
+        except Exception as exc:
+            log.error("[dashboard] Overnight scan failed: %s", exc, exc_info=True)
+
+    threading.Thread(target=_do, daemon=True, name="manual-overnight").start()
+    return jsonify({"ok": True, "message": "Overnight scan started."})
+
+
+@app.route("/api/overnight/accuracy")
+def api_overnight_accuracy():
+    """Check and return prediction accuracy."""
+    from overnight_scanner import check_prediction_accuracy
+    try:
+        result = check_prediction_accuracy()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+
+@app.route("/api/heatmap/market")
+def api_heatmap_market():
+    """Return market heatmap data for S&P 500 + NASDAQ 100."""
+    snap = shared_state.snapshot()
+    cached = snap.get("heatmap_data", [])
+    if cached:
+        return jsonify(cached)
+
+    # Trigger background fetch if empty
+    def _do():
+        try:
+            from stock_universe import fetch_heatmap_data
+            data = fetch_heatmap_data()
+            shared_state.update(heatmap_data=data)
+        except Exception as exc:
+            log.error("[dashboard] Heatmap fetch failed: %s", exc)
+
+    threading.Thread(target=_do, daemon=True, name="heatmap-fetch").start()
+    return jsonify([])
+
+
+@app.route("/api/heatmap/positions")
+def api_heatmap_positions():
+    """Return positions heatmap data (size=value, color=P&L)."""
+    if _trading_client is None:
+        return jsonify([])
+    try:
+        positions = _trading_client.get_all_positions()
+        bracket_info = shared_state.snapshot().get("bracket_info", {})
+        result = []
+        for p in positions:
+            qty = float(p.qty)
+            if qty <= 0:
+                continue
+            sym = p.symbol.upper()
+            avg_entry = float(p.avg_entry_price)
+            current = float(p.current_price)
+            market_val = float(p.market_value)
+            pnl = float(p.unrealized_pl)
+            try:
+                pnl_pct = float(p.unrealized_plpc) * 100
+            except Exception:
+                pnl_pct = ((current - avg_entry) / avg_entry * 100) if avg_entry > 0 else 0.0
+
+            sym_bracket = bracket_info.get(sym, {})
+            sl = sym_bracket.get("stop_loss_price",
+                    round(avg_entry * (1 - config.TRAILING_STOP_PCT), 2) if avg_entry > 0 else None)
+            tp = sym_bracket.get("take_profit_price",
+                    round(avg_entry * (1 + config.TAKE_PROFIT_PCT), 2) if avg_entry > 0 else None)
+
+            result.append({
+                "symbol": sym,
+                "qty": qty,
+                "avg_entry": round(avg_entry, 4),
+                "current_price": round(current, 4),
+                "market_value": round(market_val, 2),
+                "pnl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 2),
+                "stop_loss": sl,
+                "take_profit": tp,
+            })
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+
+# ── Auto-trade from predictions ─────────────────────────────────────────────
+
+@app.route("/api/predictions/auto-trade", methods=["POST"])
+def api_predictions_auto_trade():
+    """
+    Place GTC limit bracket orders for the top prediction picks.
+    Can be called anytime — orders sit waiting for the price to hit.
+    """
+    if _trading_client is None:
+        abort(503, "Not connected.")
+
+    body = request.get_json(silent=True) or {}
+    if body.get("confirm") != "YES":
+        abort(400, "Confirmation required.")
+
+    max_orders = body.get("max_orders", 1)  # default: 1 order at a time (PDT safe)
+
+    def _do():
+        try:
+            from overnight_scanner import get_latest_predictions
+            from bot import place_limit_buy
+            from safety import check_pdt_allows_buy, calculate_safe_qty, get_dynamic_fraction
+
+            preds = get_latest_predictions()
+            if not preds:
+                log.warning("[auto-trade] No predictions available")
+                return
+
+            # Get account equity
+            acct = _trading_client.get_account()
+            equity = float(acct.equity)
+            snap = shared_state.snapshot()
+            consecutive_losses = snap.get("consecutive_losses", 0)
+
+            # Check PDT
+            if not check_pdt_allows_buy(_trading_client):
+                log.warning("[auto-trade] PDT limit reached — cannot place orders")
+                return
+
+            # Get top picks (launch_zone and pre_breakout only)
+            ready = preds.get("ready_tomorrow", [])
+            if not ready:
+                # Fall back to all predictions with high confidence
+                ready = [p for p in preds.get("all_predictions", [])
+                         if p.get("confidence", 0) >= 8
+                         and p.get("stage") in ("launch_zone", "pre_breakout")]
+
+            placed = 0
+            for p in ready[:max_orders]:
+                sym = p["symbol"]
+                entry_price = p["entry_high"]     # limit at top of entry zone
+                stop_loss = p["stop_loss"]
+                target = p["target_price"]
+
+                log.info("[auto-trade] Placing GTC limit order: %s @ $%.2f "
+                         "(SL=$%.2f TP=$%.2f conf=%d stage=%s)",
+                         sym, entry_price, stop_loss, target,
+                         p.get("confidence", 0), p.get("stage", ""))
+
+                ok = place_limit_buy(
+                    _trading_client, equity, entry_price, sym,
+                    stop_loss=stop_loss, take_profit=target,
+                    consecutive_losses=consecutive_losses,
+                )
+                if ok:
+                    placed += 1
+
+            log.info("[auto-trade] Placed %d/%d orders", placed, min(len(ready), max_orders))
+        except Exception as exc:
+            log.error("[auto-trade] Failed: %s", exc, exc_info=True)
+
+    threading.Thread(target=_do, daemon=True, name="auto-trade").start()
+    return jsonify({"ok": True, "message": f"Placing up to {max_orders} prediction order(s)..."})
+
+
+# ── Strategy Backtester endpoints ───────────────────────────────────────────
+
+@app.route("/api/backtest")
+def api_backtest():
+    """Return the latest backtest results."""
+    from backtester import get_latest_backtest
+    result = get_latest_backtest()
+    if result is None:
+        return jsonify({"error": "no backtest results — run one first"})
+    return jsonify(result)
+
+
+@app.route("/api/backtest/run", methods=["POST"])
+def api_backtest_run():
+    """Trigger a full strategy backtest in the background."""
+    def _do():
+        try:
+            from backtester import run_backtest
+            run_backtest()
+        except Exception as exc:
+            log.error("[dashboard] Backtest failed: %s", exc, exc_info=True)
+
+    threading.Thread(target=_do, daemon=True, name="strategy-backtest").start()
+    return jsonify({"ok": True, "message": "Backtest started — this takes a few minutes."})
+
+
 def run(port: int = 5000):
     log.info("[dashboard] http://localhost:%d", port)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)

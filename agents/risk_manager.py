@@ -112,7 +112,7 @@ class RiskManager(BaseAgent):
         equity = self._get_equity()
         pdt_info = get_pdt_info(self._trading_client)
         remaining = pdt_info.get("remaining", 3) if isinstance(pdt_info, dict) else 3
-        loss_exceeded = daily_loss_exceeded()
+        loss_exceeded = daily_loss_exceeded(equity)
         held = self._get_held_symbols()
         return RiskConstraints(
             max_position_usd=round(equity * _MAX_POSITION_FRACTION, 2),
