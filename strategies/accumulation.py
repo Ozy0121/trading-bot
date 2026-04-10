@@ -15,11 +15,11 @@ from __future__ import annotations
 import pandas as pd
 
 from prediction import (
-    detect_bb_squeeze,
+    detect_keltner_squeeze,
+    detect_obv_divergence,
     detect_volume_accumulation,
     detect_higher_lows,
     detect_macd_launch_zone,
-    detect_decreasing_sell_volume,
     _classify_stage,
     STAGE_LABELS,
 )
@@ -52,11 +52,11 @@ def scan(symbol: str, df: pd.DataFrame) -> dict:
 
     # Run the prediction pattern detectors (skip relative_strength — too slow for scanning)
     patterns = [
-        detect_bb_squeeze(df),
+        detect_keltner_squeeze(df),
+        detect_obv_divergence(df),
         detect_volume_accumulation(df),
         detect_higher_lows(df),
         detect_macd_launch_zone(df),
-        detect_decreasing_sell_volume(df),
     ]
 
     active = [p for p in patterns if p.detected]

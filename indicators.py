@@ -1,7 +1,8 @@
 """
 indicators.py
 -------------
-RSI, MACD, and Bollinger Bands from a closing-price Series.
+Technical indicators from OHLCV data.
+RSI, MACD, Bollinger Bands, Keltner Channels, ATR, OBV, ADL.
 Pure pandas/numpy — no extra dependencies.
 """
 
@@ -36,6 +37,41 @@ def bollinger_bands(closes: pd.Series,
     middle = closes.rolling(period).mean()
     std    = closes.rolling(period).std()
     return middle + num_std * std, middle, middle - num_std * std
+
+
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Average True Range — volatility measure for position sizing and stops."""
+    high, low, close = df["high"], df["low"], df["close"]
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low - close.shift(1)).abs(),
+    ], axis=1).max(axis=1)
+    return tr.ewm(span=period, adjust=False).mean()
+
+
+def keltner_channels(df: pd.DataFrame, period: int = 20, mult: float = 1.5
+                     ) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """Keltner Channels — EMA ± ATR multiplier."""
+    mid = df["close"].ewm(span=period, adjust=False).mean()
+    atr_val = atr(df, period)
+    return mid + mult * atr_val, mid, mid - mult * atr_val
+
+
+def obv(df: pd.DataFrame) -> pd.Series:
+    """On-Balance Volume — cumulative volume weighted by price direction."""
+    close, volume = df["close"], df["volume"]
+    direction = np.sign(close.diff()).fillna(0)
+    return (volume * direction).cumsum()
+
+
+def adl(df: pd.DataFrame) -> pd.Series:
+    """Accumulation/Distribution Line — money flow based on close position in range."""
+    high, low, close, volume = df["high"], df["low"], df["close"], df["volume"]
+    hl_range = high - low
+    mfm = ((close - low) - (high - close)) / hl_range.replace(0, np.nan)
+    mfm = mfm.fillna(0)
+    return (mfm * volume).cumsum()
 
 
 def compute_all(df: pd.DataFrame) -> dict:
