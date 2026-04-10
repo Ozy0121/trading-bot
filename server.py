@@ -49,7 +49,7 @@ import stream as live_stream
 import sentiment as sentiment_feed
 import dashboard
 import bot
-from safety import kill_switch, validate_options_enabled
+from safety import kill_switch, validate_options_enabled, start_protection_monitor
 from logger_setup import get_logger
 
 log = get_logger()
@@ -107,6 +107,10 @@ bot.set_coordinator(coordinator)
 from overnight_scanner import start_scheduler as start_overnight_scheduler
 start_overnight_scheduler()
 log.info("[server] Overnight scanner scheduler started")
+
+# ── Start stop-loss protection monitor ──────────────────────────────────────
+start_protection_monitor(trading_client, interval=60)
+log.info("[server] Stop-loss protection monitor started (checks every 60s)")
 
 print()
 print("=" * 55)

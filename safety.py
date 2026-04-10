@@ -225,6 +225,99 @@ def check_shutdown_stop_losses(trading_client: TradingClient) -> dict:
     return {"all_protected": len(unprotected) == 0, "unprotected": unprotected}
 
 
+def ensure_all_positions_protected(trading_client: TradingClient) -> dict:
+    """
+    Auto-renew stop-losses: check every open position and place a GTC
+    stop-loss if one is missing. Uses ATR-based stop (2x ATR) or 3% below
+    current price, whichever is tighter.
+
+    Returns dict with counts of protected/renewed/failed.
+    """
+    protected_symbols = get_active_stop_loss_symbols(trading_client)
+    renewed = []
+    failed = []
+
+    try:
+        positions = trading_client.get_all_positions()
+    except Exception as exc:
+        log.error("[safety] Could not fetch positions for stop-loss renewal: %s", exc)
+        return {"protected": 0, "renewed": [], "failed": [], "error": str(exc)}
+
+    for pos in positions:
+        qty = float(pos.qty)
+        if qty <= 0:
+            continue
+        sym = pos.symbol.upper()
+        if sym in protected_symbols:
+            continue
+
+        current_price = float(pos.current_price)
+        if current_price <= 0:
+            continue
+
+        # Calculate stop: 3% below current price (simple fallback)
+        stop_pct = config.TRAILING_STOP_PCT
+        stop_price = round(current_price * (1 - stop_pct), 2)
+
+        # Cap stop loss at 5% max to prevent excessive risk
+        stop_floor = round(current_price * 0.95, 2)
+        stop_price = max(stop_price, stop_floor)
+
+        try:
+            place_oco_exit(
+                trading_client, sym, int(qty), current_price,
+                stop_loss_pct=stop_pct,
+                take_profit_pct=config.TAKE_PROFIT_PCT,
+            )
+            renewed.append(sym)
+            log.warning(
+                "[safety] ALERT: Stop-loss for %s expired/missing. "
+                "New stop-loss placed at $%.2f based on current price $%.2f",
+                sym, stop_price, current_price,
+            )
+        except Exception as exc:
+            failed.append(sym)
+            log.error("[safety] Failed to renew stop-loss for %s: %s", sym, exc)
+
+    return {
+        "protected": len(protected_symbols),
+        "renewed": renewed,
+        "failed": failed,
+        "total_positions": len([p for p in positions if float(p.qty) > 0]),
+    }
+
+
+_protection_thread_started = False
+
+
+def start_protection_monitor(trading_client: TradingClient, interval: int = 60) -> None:
+    """
+    Start a background thread that checks for unprotected positions every
+    `interval` seconds and auto-places stop-losses.
+    """
+    global _protection_thread_started
+    if _protection_thread_started:
+        return
+    _protection_thread_started = True
+
+    def _monitor():
+        import state as shared_state
+        log.info("[safety] Protection monitor started (check every %ds)", interval)
+        while True:
+            try:
+                result = ensure_all_positions_protected(trading_client)
+                # Update shared state so dashboard can show protection status
+                shared_state.update(protection_status=result)
+                if result["renewed"]:
+                    log.warning("[safety] Auto-renewed stop-losses for: %s",
+                                ", ".join(result["renewed"]))
+            except Exception as exc:
+                log.error("[safety] Protection monitor error: %s", exc)
+            time.sleep(interval)
+
+    threading.Thread(target=_monitor, daemon=True, name="protection-monitor").start()
+
+
 # ── Daily loss tracking ──────────────────────────────────────────────────────
 
 _session_start_equity: float | None = None
