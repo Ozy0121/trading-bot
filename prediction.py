@@ -970,7 +970,8 @@ _bad_symbols: set[str] = set()  # symbols that failed data fetch — skip for th
 _bad_symbols_date: date | None = None
 
 
-def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None = None) -> list[Prediction]:
+def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None = None,
+                   progress_cb: callable | None = None) -> list[Prediction]:
     """
     Run predictions on a batch of symbols. Returns only stocks with valid predictions,
     sorted by confidence descending.
@@ -1015,19 +1016,24 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
     # Process in batches of 50 with pauses to avoid Yahoo rate limits
     import time as _time
     BATCH_SIZE = 50
-    for batch_start in range(0, len(valid_symbols), BATCH_SIZE):
+    done_count = 0
+    total = len(valid_symbols)
+    for batch_start in range(0, total, BATCH_SIZE):
         batch = valid_symbols[batch_start:batch_start + BATCH_SIZE]
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_to_sym = {executor.submit(_predict_one, sym): sym for sym in batch}
             for future in as_completed(future_to_sym):
                 sym = future_to_sym[future]
+                done_count += 1
+                if progress_cb:
+                    progress_cb(done_count, total)
                 try:
                     result = future.result()
                     if result is not None:
                         predictions.append(result)
                 except Exception as exc:
                     log.debug("[prediction] %s failed: %s", sym, exc)
-        if batch_start + BATCH_SIZE < len(valid_symbols):
+        if batch_start + BATCH_SIZE < total:
             _time.sleep(2)  # 2s pause between batches
 
     # Sort by confidence descending, then by historical accuracy

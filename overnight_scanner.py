@@ -45,7 +45,7 @@ def _ensure_data_dir():
 
 # ── Core overnight scan ─────────────────────────────────────────────────────
 
-def run_overnight_scan() -> dict:
+def run_overnight_scan(progress_cb: callable | None = None) -> dict:
     """
     Run the full overnight scan. Scans the expanded universe, runs predictions,
     ranks by expected value, and saves results.
@@ -67,7 +67,11 @@ def run_overnight_scan() -> dict:
     log.info("[overnight] Scanning %d stocks...", total_scanned)
 
     # Run predictions on full universe
-    predictions = predict_batch(universe)
+    def _relay_progress(cur, tot, lbl=None):
+        if progress_cb:
+            progress_cb(cur, tot, lbl or f"Analyzing stock {cur}/{tot}...")
+
+    predictions = predict_batch(universe, progress_cb=_relay_progress)
 
     # Filter to confidence >= 7
     high_confidence = [p for p in predictions if p.confidence >= 7]

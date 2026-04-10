@@ -32,6 +32,7 @@ import time
 from flask import Flask, Response, jsonify, render_template, request, abort, stream_with_context
 
 import config
+import progress
 import state as shared_state
 from logger_setup import get_logger
 from safety import get_active_stop_loss_symbols, check_shutdown_stop_losses
@@ -79,11 +80,13 @@ def api_state():
 
 @app.route("/api/stream")
 def api_stream():
-    """SSE: pushes full state every second."""
+    """SSE: pushes full state + progress every second."""
     def generate():
         try:
             while True:
-                yield f"data: {_snap_json(shared_state.snapshot())}\n\n"
+                snap = shared_state.snapshot()
+                snap["_progress"] = progress.snapshot()
+                yield f"data: {_snap_json(snap)}\n\n"
                 time.sleep(1)
         except GeneratorExit:
             pass
@@ -525,14 +528,18 @@ def api_scan():
     def _do():
         try:
             from scanner import get_watchlist, scan as run_scan
-            wl      = get_watchlist()
-            results = run_scan(wl)
+            wl = get_watchlist()
+            progress.track("scan", total=len(wl), current=0, label=f"Scanning {len(wl)} stocks...")
+            results = run_scan(wl, progress_cb=lambda cur, tot: progress.track("scan", current=cur, total=tot))
             shared_state.update(
                 watchlist=[{k: v for k, v in r.items() if k != "df"} for r in results],
                 use_top_movers=config.USE_TOP_MOVERS,
             )
+            passed = len([r for r in results if r.get("fired")])
+            progress.complete("scan", message=f"{passed} stocks passed filters")
         except Exception as exc:
             log.warning("[dashboard] Background scan error: %s", exc)
+            progress.fail("scan", message=str(exc))
     threading.Thread(target=_do, daemon=True, name="dashboard-scan").start()
     return jsonify({"ok": True, "message": "Scan started."})
 
@@ -687,8 +694,12 @@ def api_predictions_run():
             from stock_universe import get_full_universe, get_scan_summary
             from prediction import predict_batch
 
+            progress.track("predictions", total=0, current=0, label="Building stock universe...")
             universe = get_full_universe(include_discovery=True)
-            predictions = predict_batch(universe)
+            progress.track("predictions", total=len(universe), current=0,
+                           label=f"AI analyzing {len(universe)} stocks...")
+            predictions = predict_batch(universe,
+                                        progress_cb=lambda cur, tot: progress.track("predictions", current=cur, total=tot))
 
             pred_dicts = [p.to_dict() for p in predictions[:30]]
             shared_state.update(
@@ -697,8 +708,10 @@ def api_predictions_run():
                 scan_universe_size=len(universe),
                 scan_summary=get_scan_summary(len(universe), len(predictions), min(30, len(predictions))),
             )
+            progress.complete("predictions", message=f"{len(predictions)} predictions generated")
         except Exception as exc:
             log.error("[dashboard] Prediction scan failed: %s", exc, exc_info=True)
+            progress.fail("predictions", message=str(exc))
 
     threading.Thread(target=_do, daemon=True, name="prediction-scan").start()
     return jsonify({"ok": True, "message": "Prediction scan started."})
@@ -722,10 +735,16 @@ def api_overnight_run():
     def _do():
         try:
             from overnight_scanner import run_overnight_scan
-            result = run_overnight_scan()
+            progress.track("overnight", total=0, current=0, label="Running overnight analysis...")
+            result = run_overnight_scan(
+                progress_cb=lambda cur, tot, lbl=None: progress.track("overnight", current=cur, total=tot,
+                                                                       label=lbl or f"Analyzing stock {cur}/{tot}..."))
             shared_state.update(overnight_predictions=result)
+            count = len(result) if isinstance(result, list) else 0
+            progress.complete("overnight", message=f"{count} picks for tomorrow")
         except Exception as exc:
             log.error("[dashboard] Overnight scan failed: %s", exc, exc_info=True)
+            progress.fail("overnight", message=str(exc))
 
     threading.Thread(target=_do, daemon=True, name="manual-overnight").start()
     return jsonify({"ok": True, "message": "Overnight scan started."})
@@ -901,9 +920,13 @@ def api_backtest_run():
     def _do():
         try:
             from backtester import run_backtest
-            run_backtest()
+            progress.track("backtest", total=0, current=0, label="Running backtest...")
+            run_backtest(progress_cb=lambda cur, tot, lbl=None: progress.track("backtest", current=cur, total=tot,
+                                                                                label=lbl or f"Processing day {cur}/{tot}..."))
+            progress.complete("backtest", message="Backtest finished")
         except Exception as exc:
             log.error("[dashboard] Backtest failed: %s", exc, exc_info=True)
+            progress.fail("backtest", message=str(exc))
 
     threading.Thread(target=_do, daemon=True, name="strategy-backtest").start()
     return jsonify({"ok": True, "message": "Backtest started — this takes a few minutes."})

@@ -887,6 +887,62 @@
     @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
 
     /* ================================================================
+       LOADING OVERLAY + PROGRESS
+    ================================================================ */
+    #loading-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0, 0, 0, 0.65);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 18px;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.2s linear;
+    }
+    #loading-overlay.active { opacity: 1; pointer-events: auto; }
+
+    .spinner-ring {
+      width: 44px; height: 44px;
+      border: 3px solid var(--outline-variant);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-label {
+      color: var(--on-surface);
+      font-size: 13px; font-weight: 500;
+      text-align: center; max-width: 320px;
+    }
+
+    .progress-wrap {
+      width: 280px; background: var(--surface); height: 6px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%; width: 0%;
+      background: var(--primary);
+      transition: width 0.3s linear;
+    }
+    .progress-text {
+      color: var(--on-surface-variant);
+      font-size: 11px; font-weight: 400;
+      margin-top: -8px;
+    }
+
+    /* Mini spinner inside buttons */
+    .btn-loading {
+      position: relative; pointer-events: none; opacity: 0.7;
+    }
+    .btn-loading::after {
+      content: ''; position: absolute; right: 8px; top: 50%;
+      width: 14px; height: 14px; margin-top: -7px;
+      border: 2px solid var(--outline-variant);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ================================================================
        PRICE ALERT MODAL
     ================================================================ */
     #alert-modal {
@@ -1731,6 +1787,12 @@
 
 <!-- Toast container -->
 <div id="toast-container"></div>
+<div id="loading-overlay">
+  <div class="spinner-ring"></div>
+  <div class="loading-label" id="loading-label">Loading...</div>
+  <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+  <div class="progress-text" id="progress-text"></div>
+</div>
 
 <!-- Price Alert Modal -->
 <div id="alert-modal" class="hidden">
@@ -2256,7 +2318,9 @@ function connectSSE() {
 
   es.onmessage = e => {
     try {
-      refresh(JSON.parse(e.data));
+      const data = JSON.parse(e.data);
+      handleProgress(data._progress || {});
+      refresh(data);
     } catch(err) {
       console.error('SSE parse error', err);
     }
@@ -3373,21 +3437,20 @@ async function loadPredictions() {
   }
 }
 
-async function runPredictionScan() {
-  showToast('Prediction scan started — scanning full universe...', 'info', 5000);
+async function runPredictionScan(btn) {
+  if (btn) btnLoading(btn, 'predictions');
   $('intel-scan-summary').textContent = 'Scanning...';
   try {
     await fetch('/api/predictions/run', { method: 'POST' });
-    // Poll for results
+    // Poll for results — overlay shows progress via SSE
     let attempts = 0;
     const poll = setInterval(async () => {
       attempts++;
       const res = await fetch('/api/predictions');
       const data = await res.json();
-      if (data.count > 0 || attempts > 60) {
+      if (data.count > 0 || attempts > 120) {
         clearInterval(poll);
         loadPredictions();
-        if (data.count > 0) showToast(`Scan complete: ${data.count} predictions found`, 'success');
       }
     }, 5000);
   } catch (e) {
@@ -3426,11 +3489,24 @@ async function loadOvernightPicks() {
   }
 }
 
-async function runOvernightScan() {
-  showToast('Overnight scan started — this may take several minutes...', 'info', 8000);
+async function runOvernightScan(btn) {
+  if (btn) btnLoading(btn, 'overnight');
   try {
     await fetch('/api/overnight/run', { method: 'POST' });
-    setTimeout(loadOvernightPicks, 30000);
+    // Progress overlay handles status; poll for final results
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      if (attempts > 120) { clearInterval(poll); return; }
+      try {
+        const res = await fetch('/api/overnight');
+        const data = await res.json();
+        if (data.predictions?.all_predictions?.length > 0) {
+          clearInterval(poll);
+          loadOvernightPicks();
+        }
+      } catch(_) {}
+    }, 5000);
   } catch (e) {
     showToast('Overnight scan failed: ' + e.message, 'error');
   }
@@ -3596,12 +3672,12 @@ function loadBacktest() {
     .catch(() => {});
 }
 
-async function runBacktest() {
-  showToast('Backtest started — testing all strategies against 1 year of data. This takes a few minutes...', 'info', 10000);
+async function runBacktest(btn) {
+  if (btn) btnLoading(btn, 'backtest');
   $('backtest-empty').textContent = 'Running backtest...';
   try {
     await fetch('/api/backtest/run', { method: 'POST' });
-    // Poll for results
+    // Poll for results — progress overlay shows status via SSE
     let attempts = 0;
     const poll = setInterval(async () => {
       attempts++;
@@ -3611,7 +3687,6 @@ async function runBacktest() {
         if (!data.error && data.backtest_date === new Date().toISOString().slice(0,10)) {
           clearInterval(poll);
           renderBacktestResults(data);
-          showToast('Backtest complete!', 'success');
         } else if (attempts > 120) {
           clearInterval(poll);
           showToast('Backtest timed out — check logs', 'warning');
@@ -3940,6 +4015,61 @@ function drawPositionsHeatmap(data) {
   };
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Loading / Progress System
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _completedOps = new Set();
+
+function handleProgress(ops) {
+  const overlay = $('loading-overlay');
+  const label = $('loading-label');
+  const bar = $('progress-bar');
+  const ptext = $('progress-text');
+  if (!overlay) return;
+
+  // Find any running operation
+  const running = Object.values(ops).filter(o => o.status === 'running');
+  const justCompleted = Object.values(ops).filter(o =>
+    (o.status === 'completed' || o.status === 'error') && !_completedOps.has(o.id)
+  );
+
+  // Show toasts for completed operations
+  justCompleted.forEach(op => {
+    _completedOps.add(op.id);
+    if (op.status === 'completed' && op.message) {
+      showToast(op.message, 'success');
+    } else if (op.status === 'error' && op.message) {
+      showToast(op.message, 'error');
+    }
+    // Remove btn-loading from associated buttons
+    const btn = document.querySelector(`[data-op="${op.id}"]`);
+    if (btn) btn.classList.remove('btn-loading');
+  });
+
+  if (running.length > 0) {
+    // Show overlay with first running operation
+    const op = running[0];
+    overlay.classList.add('active');
+    label.textContent = op.label || 'Processing...';
+    if (op.total > 0) {
+      bar.style.width = op.pct + '%';
+      ptext.textContent = op.current + ' / ' + op.total + ' (' + op.pct + '%)';
+    } else {
+      bar.style.width = '0%';
+      ptext.textContent = '';
+    }
+  } else {
+    overlay.classList.remove('active');
+    bar.style.width = '0%';
+  }
+}
+
+function btnLoading(btn, opId) {
+  btn.classList.add('btn-loading');
+  btn.setAttribute('data-op', opId);
+}
 
 function showToast(msg, type = 'success', duration = 3500) {
   const container = $('toast-container');

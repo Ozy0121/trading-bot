@@ -277,7 +277,8 @@ STRATEGIES = {
 }
 
 
-def run_backtest(symbols: list[str] | None = None) -> dict:
+def run_backtest(symbols: list[str] | None = None,
+                 progress_cb: callable | None = None) -> dict:
     """
     Run full backtest of all strategies against the backtest universe.
     Returns comprehensive report dict.
@@ -292,10 +293,14 @@ def run_backtest(symbols: list[str] | None = None) -> dict:
 
     # Fetch all stock data in parallel
     stock_data: dict[str, pd.DataFrame] = {}
+    fetch_done = 0
     with ThreadPoolExecutor(max_workers=4) as executor:
         future_to_sym = {executor.submit(_fetch_stock_data, sym): sym for sym in symbols}
         for future in as_completed(future_to_sym):
             sym = future_to_sym[future]
+            fetch_done += 1
+            if progress_cb:
+                progress_cb(fetch_done, len(symbols), f"Fetching data: {fetch_done}/{len(symbols)}...")
             try:
                 df = future.result()
                 if df is not None:
@@ -307,6 +312,8 @@ def run_backtest(symbols: list[str] | None = None) -> dict:
 
     # Run each strategy against all stocks
     strategy_reports: dict[str, StrategyReport] = {}
+    total_tests = len(STRATEGIES) * len(stock_data)
+    test_done = 0
 
     for strat_name, strat_fn in STRATEGIES.items():
         log.info("[backtest] Testing strategy: %s", strat_name)
@@ -315,6 +322,9 @@ def run_backtest(symbols: list[str] | None = None) -> dict:
         for sym, df in stock_data.items():
             signals = _backtest_strategy_on_stock(strat_name, strat_fn, sym, df)
             all_signals.extend(signals)
+            test_done += 1
+            if progress_cb:
+                progress_cb(test_done, total_tests, f"Backtesting {strat_name}: {sym}...")
 
         report = _build_report(strat_name, all_signals, len(stock_data))
         strategy_reports[strat_name] = report

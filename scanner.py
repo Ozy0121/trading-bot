@@ -534,7 +534,8 @@ def _log_scan_results(results: list[dict]) -> None:
 
 # ── Public interface ──────────────────────────────────────────────────────────
 
-def scan(watchlist: list[str], catalysts: dict | None = None) -> list[dict]:
+def scan(watchlist: list[str], catalysts: dict | None = None,
+         progress_cb: callable | None = None) -> list[dict]:
     """
     Multi-strategy scan of all symbols. Returns results sorted by composite
     conviction score descending. (STRAT-06, SCAN-01, SCAN-05)
@@ -545,6 +546,8 @@ def scan(watchlist: list[str], catalysts: dict | None = None) -> list[dict]:
     etf_scores = _fetch_sector_scores()
 
     results: list[dict] = []
+    done_count = 0
+    total = len(watchlist)
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_sym = {
@@ -553,6 +556,9 @@ def scan(watchlist: list[str], catalysts: dict | None = None) -> list[dict]:
         }
         for future in as_completed(future_to_sym):
             sym = future_to_sym[future]
+            done_count += 1
+            if progress_cb:
+                progress_cb(done_count, total)
             try:
                 result = future.result()
                 if result is not None:
