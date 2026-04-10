@@ -18,3 +18,6 @@ lxml>=4.9.0
 
 # Anthropic SDK for multi-agent Claude orchestration
 anthropic>=0.40.0
+
+# Unified data layer (currently broken on Python 3.14, using direct yfinance+FMP)
+openbb>=4.5.0
