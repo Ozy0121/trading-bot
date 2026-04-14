@@ -197,11 +197,11 @@ def api_bars(symbol):
 
     try:
         import pandas as pd
-        import yfinance as yf
+        from openbb_data import fetch_bars
         from indicators import bollinger_bands
         from indicators import rsi as calc_rsi, macd as calc_macd
 
-        # ── Map UI params → yfinance ──────────────────────────────────────
+        # ── Map UI params → fetch_bars ────────────────────────────────────
         INTERVAL_MAP = {
             "1m": "1m",  "5m": "5m",  "15m": "15m", "30m": "30m",
             "1H": "60m", "4H": "60m",          # 4H needs resample
@@ -215,7 +215,7 @@ def api_bars(symbol):
         yf_period    = RANGE_MAP.get(range_param, "5d")
         resample_4h  = (interval_param == "4H")
 
-        # Enforce yfinance intraday data limits
+        # Enforce intraday data limits
         INTRADAY_MAX = {"1m": 7, "5m": 60, "15m": 60, "30m": 60, "60m": 730}
         PERIOD_DAYS  = {
             "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
@@ -228,13 +228,13 @@ def api_bars(symbol):
                 yf_period = f"{max_d}d" if max_d != 730 else "730d"
 
         # ── Fetch ─────────────────────────────────────────────────────────
-        df = yf.Ticker(symbol).history(period=yf_period, interval=yf_interval)
+        df = fetch_bars(symbol, period=yf_period, interval=yf_interval)
         if df is None or df.empty:
             return jsonify({"error": "no data", "symbol": symbol,
                             "bars": [], "indicators": {}})
 
-        df.columns = [c.lower() for c in df.columns]
-        df = df[["open", "high", "low", "close", "volume"]].copy().sort_index()
+        # fetch_bars already returns lowercase columns and sorted index
+        df = df[["open", "high", "low", "close", "volume"]].copy()
 
         if resample_4h:
             df = df.resample("4h").agg(

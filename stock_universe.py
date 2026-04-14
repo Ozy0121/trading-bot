@@ -23,9 +23,10 @@ import threading
 from datetime import date, datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import yfinance as yf
 import pandas as pd
 import requests
+
+from openbb_data import fetch_bars, fetch_bulk_bars, fetch_ticker_info
 
 from logger_setup import get_logger
 
@@ -401,29 +402,18 @@ def fetch_heatmap_data(symbols: list[str] | None = None) -> list[dict]:
     results = []
 
     # Batch download today's data
-    try:
-        data = yf.download(
-            symbols,
-            period="2d",
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=True,
-            progress=False,
-            threads=True,
-        )
-    except Exception as exc:
-        log.warning("[universe] Heatmap batch download failed: %s", exc)
+    bulk = fetch_bulk_bars(symbols, period="2d", interval="1d")
+    if not bulk:
+        log.warning("[universe] Heatmap batch download returned no data")
         return results
 
-    # Fetch info for market cap and sector (cached by yfinance)
+    # Fetch info for market cap and sector
     def _get_info(sym):
         try:
-            if len(symbols) == 1:
-                closes = data["Close"].dropna()
-            else:
-                if sym not in data.columns.get_level_values(0):
-                    return None
-                closes = data[sym]["Close"].dropna()
+            sym_df = bulk.get(sym)
+            if sym_df is None or sym_df.empty:
+                return None
+            closes = sym_df["close"].dropna()
 
             if len(closes) < 2:
                 return None
@@ -432,8 +422,8 @@ def fetch_heatmap_data(symbols: list[str] | None = None) -> list[dict]:
             prev_close = float(closes.iloc[-2])
             change_pct = (price - prev_close) / prev_close * 100 if prev_close > 0 else 0.0
 
-            info = yf.Ticker(sym).fast_info
-            market_cap = getattr(info, "market_cap", None) or 0
+            info = fetch_ticker_info(sym)
+            market_cap = info.get("marketCap", 0) or info.get("market_cap", 0) or 0
 
             return {
                 "symbol": sym,

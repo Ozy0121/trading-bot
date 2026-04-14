@@ -344,7 +344,7 @@ def _get_prediction_candidate() -> dict | None:
     """
     try:
         from overnight_scanner import get_latest_predictions
-        import yfinance as yf
+        from openbb_data import fetch_bars
 
         preds = get_latest_predictions()
         if not preds:
@@ -380,11 +380,9 @@ def _get_prediction_candidate() -> dict | None:
 
             # Get live price and check it's in the entry zone
             try:
-                ticker = yf.Ticker(sym)
-                hist = ticker.history(period="1d", interval="1m")
+                hist = fetch_bars(sym, period="1d", interval="1m")
                 if hist is None or hist.empty:
                     continue
-                hist.columns = [c.lower() for c in hist.columns]
                 live_price = float(hist["close"].iloc[-1])
             except Exception:
                 continue

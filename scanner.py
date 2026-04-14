@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import requests
 import threading
-import yfinance as yf
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
@@ -30,6 +29,7 @@ from datetime import date, datetime, timezone
 import config
 from indicators import rsi as calc_rsi, macd as calc_macd, bollinger_bands
 from logger_setup import get_logger, log_trade_event
+from openbb_data import fetch_bars, fetch_ticker_info, fetch_bulk_bars, get_sector_cached  # noqa: F401
 from strategies import REGISTRY
 from sentiment_cache import get_sentiment_score, get_earnings_penalty
 import state as shared_state
@@ -88,23 +88,16 @@ def _fetch_sector_scores() -> dict[str, float]:
     Returns dict mapping ETF symbol to score. Falls back to {etf: 5.0} on error.
     """
     try:
-        df = yf.download(
-            SECTOR_ETFS,
-            period="5d",
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=True,
-            progress=False,
-        )
+        bulk = fetch_bulk_bars(SECTOR_ETFS, period="5d", interval="1d")
 
         changes: dict[str, float] = {}
         for etf in SECTOR_ETFS:
             try:
-                if etf in df.columns.get_level_values(0):
-                    closes = df[etf]["Close"].dropna()
+                etf_df = bulk.get(etf)
+                if etf_df is not None and not etf_df.empty:
+                    closes = etf_df["close"].dropna()
                 else:
-                    # Single-ticker fallback (when only one ETF is passed)
-                    closes = df["Close"].dropna()
+                    closes = pd.Series(dtype=float)
                 if len(closes) >= 2:
                     pct = (float(closes.iloc[-1]) - float(closes.iloc[0])) / float(closes.iloc[0])
                     changes[etf] = pct
@@ -152,9 +145,9 @@ def _get_stock_sector_score(symbol: str, etf_scores: dict[str, float]) -> float:
                 etf = SECTOR_ETF_MAP.get(sector, "")
                 return etf_scores.get(etf, 5.0)
 
-    # Fetch sector from yfinance (outside the lock to avoid blocking other threads)
+    # Fetch sector via openbb_data (outside the lock to avoid blocking other threads)
     try:
-        sector = yf.Ticker(symbol).info.get("sector", "") or ""
+        sector = fetch_ticker_info(symbol).get("sector", "") or ""
     except Exception:
         sector = ""
 
@@ -182,12 +175,11 @@ def _market_regime_multiplier() -> float:
             return cached[1]
 
     try:
-        spy = yf.Ticker(config.MARKET_REGIME_ETF)
-        hist = spy.history(period="30d", interval="1d")
+        hist = fetch_bars(config.MARKET_REGIME_ETF, period="30d", interval="1d")
         if hist is None or len(hist) < 20:
             multiplier = 1.0
         else:
-            closes = hist["Close"] if "Close" in hist.columns else hist["close"]
+            closes = hist["close"]
             sma_20  = float(closes.tail(20).mean())
             current = float(closes.iloc[-1])
             if current < sma_20:
@@ -326,12 +318,12 @@ def fetch_bars_yf(symbol: str) -> pd.DataFrame | None:
     period   = "5d" if interval in ("1m", "2m", "5m", "15m", "30m") else "60d"
 
     try:
-        df = yf.Ticker(symbol).history(period=period, interval=interval)
-        if df.empty:
+        df = fetch_bars(symbol, period=period, interval=interval)
+        if df is None or df.empty:
             return None
 
-        df.columns = [c.lower() for c in df.columns]
-        df = df[["open", "high", "low", "close", "volume"]].copy().sort_index()
+        # openbb_data already returns lowercase columns and sorted index
+        df = df[["open", "high", "low", "close", "volume"]].copy()
 
         # Drop last forming bar
         if len(df) > 1:
@@ -339,7 +331,7 @@ def fetch_bars_yf(symbol: str) -> pd.DataFrame | None:
 
         return df
     except Exception as exc:
-        log.warning("[scanner] yfinance failed for %s: %s", symbol, exc)
+        log.warning("[scanner] fetch_bars failed for %s: %s", symbol, exc)
         return None
 
 

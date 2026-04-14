@@ -31,8 +31,8 @@ from datetime import date, datetime, timezone
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
+from openbb_data import fetch_bars
 from strategies.momentum import scan as momentum_scan
 from strategies.mean_reversion import scan as mean_reversion_scan
 from strategies.accumulation import scan as accumulation_scan
@@ -180,12 +180,11 @@ def _backtest_strategy_on_stock(
 def _fetch_stock_data(symbol: str) -> pd.DataFrame | None:
     """Fetch 1 year of daily data for backtesting."""
     try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=LOOKBACK_PERIOD, interval="1d")
+        df = fetch_bars(symbol, period=LOOKBACK_PERIOD, interval="1d")
         if df is None or df.empty or len(df) < MIN_WARMUP_BARS + FORWARD_DAYS + 10:
             return None
-        df.columns = [c.lower() for c in df.columns]
-        df = df[["open", "high", "low", "close", "volume"]].copy().sort_index()
+        # fetch_bars already returns lowercase columns and sorted index
+        df = df[["open", "high", "low", "close", "volume"]].copy()
         return df
     except Exception as exc:
         log.debug("[backtest] Failed to fetch %s: %s", symbol, exc)

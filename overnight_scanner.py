@@ -56,7 +56,7 @@ def run_overnight_scan(progress_cb: callable | None = None) -> dict:
 
     from stock_universe import get_full_universe, get_scan_summary
     from prediction import predict_batch
-    import yfinance as yf
+    from openbb_data import fetch_bars
 
     log.info("[overnight] Starting overnight scan...")
     scan_start = datetime.now(timezone.utc)
@@ -143,7 +143,7 @@ def check_prediction_accuracy() -> dict:
     Check yesterday's predictions against today's actual prices.
     Updates the accuracy log.
     """
-    import yfinance as yf
+    from openbb_data import fetch_bars
 
     _ensure_data_dir()
 
@@ -178,12 +178,11 @@ def check_prediction_accuracy() -> dict:
         patterns = [p["name"] for p in pred.get("patterns", []) if p.get("detected")]
 
         try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="5d", interval="1d")
+            hist = fetch_bars(symbol, period="5d", interval="1d")
             if hist is None or len(hist) < 2:
                 continue
 
-            hist.columns = [c.lower() for c in hist.columns]
+            # fetch_bars already returns lowercase columns
             # Get the max price in the 3 days after prediction
             recent_high = float(hist["high"].iloc[-3:].max()) if len(hist) >= 3 else float(hist["high"].iloc[-1])
             recent_low = float(hist["low"].iloc[-3:].min()) if len(hist) >= 3 else float(hist["low"].iloc[-1])

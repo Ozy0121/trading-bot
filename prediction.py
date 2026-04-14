@@ -30,7 +30,6 @@ from dataclasses import dataclass, field, asdict
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 from indicators import (
     rsi as calc_rsi,
@@ -42,7 +41,7 @@ from indicators import (
     adl as calc_adl,
 )
 from logger_setup import get_logger
-from yf_limiter import rate_limited_yf, get_spy_history
+from openbb_data import fetch_bars, get_spy_history
 
 log = get_logger()
 
@@ -679,12 +678,9 @@ def _compute_historical_accuracy(
         if bar_df is not None and len(bar_df) >= 60:
             hist = bar_df
         else:
-            hist = rate_limited_yf(
-                lambda: yf.Ticker(symbol).history(period="1y", interval="1d")
-            )
+            hist = fetch_bars(symbol, period="1y", interval="1d")
             if hist is None or len(hist) < 60:
                 return {"accuracy": 0.0, "samples": 0, "avg_move": 0.0, "expected_move": 0.0}
-            hist.columns = [c.lower() for c in hist.columns]
 
         closes = hist["close"]
         volumes = hist["volume"]
@@ -1000,14 +996,12 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
             df = bars_cache[sym]
         else:
             try:
-                df = rate_limited_yf(
-                    lambda: yf.Ticker(sym).history(period="60d", interval="1d")
-                )
+                df = fetch_bars(sym, period="60d", interval="1d")
                 if df is None or df.empty:
                     _bad_symbols.add(sym)
                     return None
-                df.columns = [c.lower() for c in df.columns]
-                df = df[["open", "high", "low", "close", "volume"]].copy().sort_index()
+                # fetch_bars already returns lowercase columns, sorted index
+                df = df[["open", "high", "low", "close", "volume"]].copy()
             except Exception:
                 _bad_symbols.add(sym)
                 return None
