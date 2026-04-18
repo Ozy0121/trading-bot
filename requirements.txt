@@ -7,6 +7,9 @@ python-dotenv>=1.0.0
 # Numerical operations for moving average calculations
 numpy>=1.24.0
 
+# Smart Money Concepts — institutional order flow detection (OB, FVG, BOS/CHoCH)
+smartmoneyconcepts>=0.0.27
+
 # Data manipulation for bar/OHLCV data
 pandas>=2.0.0
 
