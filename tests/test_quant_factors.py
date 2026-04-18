@@ -63,7 +63,19 @@ class TestComputeQuantScore:
     def test_quality_score_flat_obv(self):
         from quant_factors import compute_quant_score
 
-        df = _make_ohlcv(30, trend="flat")
+        # Truly flat data: constant OHLC with no range => OBV=0, ADL=0
+        n = 30
+        dates = pd.date_range("2024-06-01", periods=n, freq="B")
+        df = pd.DataFrame(
+            {
+                "open": np.full(n, 100.0),
+                "high": np.full(n, 100.0),
+                "low": np.full(n, 100.0),
+                "close": np.full(n, 100.0),
+                "volume": np.full(n, 1_000_000.0),
+            },
+            index=dates,
+        )
         result = compute_quant_score("FLAT", df, momentum_rank=0.5)
         assert result["quality_score"] == 0.0
 
