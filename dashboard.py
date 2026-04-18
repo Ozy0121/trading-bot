@@ -683,6 +683,7 @@ def api_predictions():
         "count": snap.get("prediction_count", 0),
         "scan_summary": snap.get("scan_summary", ""),
         "universe_size": snap.get("scan_universe_size", 0),
+        "scan_funnel": snap.get("scan_funnel", {}),
     })
 
 
@@ -691,13 +692,14 @@ def api_predictions_run():
     """Trigger a prediction scan in the background."""
     def _do():
         try:
-            from stock_universe import get_full_universe, get_scan_summary
+            from stock_universe import get_full_universe, get_scan_summary, get_funnel_stats
             from prediction import predict_batch
 
             progress.track("predictions", total=0, current=0, label="Building stock universe...")
             universe = get_full_universe(include_discovery=True)
+            funnel = get_funnel_stats()
             progress.track("predictions", total=len(universe), current=0,
-                           label=f"AI analyzing {len(universe)} stocks...")
+                           label=f"AI analyzing {len(universe):,} stocks...")
             predictions = predict_batch(universe,
                                         progress_cb=lambda cur, tot: progress.track("predictions", current=cur, total=tot))
 
@@ -706,6 +708,7 @@ def api_predictions_run():
                 predictions=pred_dicts,
                 prediction_count=len(predictions),
                 scan_universe_size=len(universe),
+                scan_funnel=funnel.get("breakdown", {}),
                 scan_summary=get_scan_summary(len(universe), len(predictions), min(30, len(predictions))),
             )
             progress.complete("predictions", message=f"{len(predictions)} predictions generated")
@@ -758,6 +761,24 @@ def api_overnight_accuracy():
         result = check_prediction_accuracy()
         return jsonify(result)
     except Exception as exc:
+        return jsonify({"error": str(exc)})
+
+
+@app.route("/api/intelligence")
+def api_intelligence():
+    """Return intelligence data: treasury rates, insider trades, SEC filings, market movers."""
+    from openbb_intel import get_intelligence_report, check_openbb_status
+    try:
+        watchlist = list(config.WATCHLIST) if hasattr(config, "WATCHLIST") else []
+        # Use top prediction symbols if available
+        snap = shared_state.snapshot()
+        pred_symbols = [p.get("symbol", "") for p in snap.get("predictions", [])[:20]]
+        symbols = list(dict.fromkeys(pred_symbols + watchlist))[:30]
+        report = get_intelligence_report(symbols)
+        report["openbb_check"] = check_openbb_status()
+        return jsonify(report)
+    except Exception as exc:
+        log.error("[dashboard] Intelligence report failed: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)})
 
 

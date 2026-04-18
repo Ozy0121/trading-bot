@@ -1464,15 +1464,33 @@
 <div class="page">
 
   <!-- Scan summary banner -->
-  <div id="intel-summary" class="chart-card" style="margin-bottom:14px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-    <div>
-      <span class="chart-title" style="margin-right:12px">PREDICTION_ENGINE</span>
-      <span id="intel-scan-summary" style="color:var(--on-surface-variant);font-size:12px">Scan not started</span>
+  <div id="intel-summary" class="chart-card" style="margin-bottom:14px;padding:12px 16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <span class="chart-title" style="margin-right:12px">PREDICTION_ENGINE</span>
+        <span id="intel-scan-summary" style="color:var(--on-surface-variant);font-size:12px">Scan not started</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="rr-mode-select" onchange="filterByRRMode()" style="font-size:11px;padding:4px 8px;border-radius:4px;border:1px solid var(--outline-variant);background:var(--surface);color:var(--on-surface);cursor:pointer">
+          <option value="all">All R:R Modes</option>
+          <option value="conservative">Conservative 1:2</option>
+          <option value="standard">Standard 1:3</option>
+          <option value="pre_spike">Pre-Spike 1:5</option>
+          <option value="positive_ev">Positive EV Only</option>
+        </select>
+        <button class="tb-btn" onclick="runPredictionScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> SCAN NOW</button>
+        <button class="tb-btn" onclick="runOvernightScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
+        <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
+      </div>
     </div>
-    <div style="display:flex;gap:8px">
-      <button class="tb-btn" onclick="runPredictionScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> SCAN NOW</button>
-      <button class="tb-btn" onclick="runOvernightScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
-      <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
+    <!-- Scan funnel breakdown -->
+    <div id="intel-funnel" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--outline-variant)">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px">
+        <span style="color:var(--on-surface-variant);font-weight:500">SCAN FUNNEL:</span>
+        <span id="funnel-chips"></span>
+      </div>
+      <div id="funnel-bar" style="margin-top:8px;height:6px;border-radius:3px;background:var(--surface-variant);overflow:hidden;display:flex">
+      </div>
     </div>
   </div>
 
@@ -3389,21 +3407,31 @@ function renderPredictionCard(p) {
   const accPct = p.historical_accuracy > 0 ? (p.historical_accuracy * 100).toFixed(0) + '%' : '—';
   const samples = p.historical_samples || 0;
 
-  return `<div class="chart-card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer" onclick="openChart('${p.symbol}')">
+  // Risk-reward badges
+  const rrBadge = p.rr_badge ? `<span style="font-size:9px;padding:2px 6px;border-radius:2px;background:#ffd74422;color:#ffd744;font-weight:700;border:1px solid #ffd74466">&#9733; ${p.rr_badge}</span>` : '';
+  const rrRatio = p.best_rr_ratio > 0 ? `<span style="font-size:10px;padding:2px 5px;border-radius:2px;background:var(--surface-variant);color:var(--on-surface-variant)">1:${p.best_rr_ratio}</span>` : '';
+  const evStr = p.expected_value !== undefined && p.expected_value !== 0
+    ? `<span style="font-size:10px;color:${p.expected_value > 0 ? '#66bb6a' : '#ef5350'}">EV $${p.expected_value > 0 ? '+' : ''}${p.expected_value?.toFixed(2)}</span>`
+    : '';
+
+  return `<div class="chart-card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer${p.rr_badge ? ';border-left:3px solid #ffd744' : ''}" onclick="openChart('${p.symbol}')">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <span style="font-weight:700;font-size:14px;color:var(--on-surface)">${p.symbol}</span>
         <span style="font-size:10px;padding:2px 6px;border-radius:2px;background:${confColor}22;color:${confColor};font-weight:600">${stageLabel}</span>
+        ${rrRatio} ${rrBadge}
       </div>
       <div style="display:flex;align-items:center;gap:6px">
+        ${evStr}
         <span style="font-size:11px;color:var(--outline)">Accuracy: ${accPct}${samples > 0 ? ' / ' + samples : ''}</span>
         <span style="font-size:18px;font-weight:700;color:${confColor}">${conf}/10</span>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:6px;font-size:11px">
-      <div><span style="color:var(--outline)">ENTRY</span><br>$${p.entry_low?.toFixed(2)} – $${p.entry_high?.toFixed(2)}</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:6px;font-size:11px">
+      <div><span style="color:var(--outline)">ENTRY</span><br>$${p.entry_low?.toFixed(2)} - $${p.entry_high?.toFixed(2)}</div>
       <div><span style="color:var(--outline)">TARGET</span><br><span style="color:#66bb6a">$${p.target_price?.toFixed(2)}</span> (+${p.expected_move_pct?.toFixed(1)}%)</div>
       <div><span style="color:var(--outline)">STOP</span><br><span style="color:#ef5350">$${p.stop_loss?.toFixed(2)}</span></div>
+      <div><span style="color:var(--outline)">R:R</span><br>${p.best_rr_ratio > 0 ? '1:' + p.best_rr_ratio : '-'}</div>
       <div><span style="color:var(--outline)">TIMEFRAME</span><br>${p.timeframe || '1-3 days'}</div>
     </div>
     <div style="font-size:11px;color:var(--outline);margin-bottom:4px">Patterns: ${patterns}</div>
@@ -3420,22 +3448,62 @@ async function loadPredictions() {
     if (data.scan_summary) sumEl.textContent = data.scan_summary;
     else if (data.count > 0) sumEl.textContent = `${data.count} predictions active`;
 
-    const preds = data.predictions || [];
-    const ready = preds.filter(p => p.stage === 'launch_zone' || p.stage === 'pre_breakout');
-    const building = preds.filter(p => p.stage === 'accumulation');
-    const early = preds.filter(p => p.stage === 'early_accumulation');
+    // Render funnel breakdown
+    const funnel = data.scan_funnel || {};
+    const funnelEl = $('intel-funnel');
+    const chipsEl = $('funnel-chips');
+    const barEl = $('funnel-bar');
+    if (funnel && Object.keys(funnel).length > 0) {
+      funnelEl.style.display = '';
+      const colors = {'S&P 500':'#42a5f5','NASDAQ 100':'#ab47bc','Russell 2000':'#66bb6a','Top Volume':'#ffa726','Leveraged ETFs':'#ef5350','Futures/Sector ETFs':'#26c6da','Discovery':'#ffee58'};
+      const total = Object.values(funnel).reduce((a,b) => a+b, 0);
+      let chips = '', bars = '';
+      for (const [src, cnt] of Object.entries(funnel)) {
+        const c = colors[src] || '#78909c';
+        chips += `<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:10px;background:${c}22;color:${c};border:1px solid ${c}44;white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:${c};display:inline-block"></span>${src}: ${cnt.toLocaleString()}</span> `;
+        const pct = total > 0 ? (cnt / total * 100) : 0;
+        bars += `<div style="width:${pct}%;background:${c}" title="${src}: ${cnt}"></div>`;
+      }
+      chipsEl.innerHTML = chips;
+      barEl.innerHTML = bars;
+    }
 
-    $('ready-count').textContent = ready.length;
-    $('building-count').textContent = building.length;
-    $('early-count').textContent = early.length;
-
-    $('pred-ready').innerHTML = ready.length ? ready.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No stocks in launch zone — run a scan</div>';
-    $('pred-building').innerHTML = building.length ? building.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No stocks building up yet</div>';
-    $('pred-early').innerHTML = early.length ? early.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No early accumulation detected</div>';
+    window._allPredictions = data.predictions || [];
+    renderFilteredPredictions();
   } catch (e) {
     console.error('loadPredictions error:', e);
   }
 }
+
+function renderFilteredPredictions() {
+  const mode = ($('rr-mode-select') || {}).value || 'all';
+  let preds = window._allPredictions || [];
+
+  // Apply R:R filter
+  if (mode === 'positive_ev') {
+    preds = preds.filter(p => p.expected_value > 0);
+  } else if (mode === 'pre_spike') {
+    preds = preds.filter(p => p.best_rr_mode === 'pre_spike' || (p.rr_setups || []).some(s => s.mode === 'pre_spike'));
+  } else if (mode === 'standard') {
+    preds = preds.filter(p => p.best_rr_ratio >= 3.0 || (p.rr_setups || []).some(s => s.rr_ratio >= 3.0));
+  } else if (mode === 'conservative') {
+    preds = preds.filter(p => p.best_rr_ratio >= 2.0);
+  }
+
+  const ready = preds.filter(p => p.stage === 'launch_zone' || p.stage === 'pre_breakout');
+  const building = preds.filter(p => p.stage === 'accumulation');
+  const early = preds.filter(p => p.stage === 'early_accumulation');
+
+  $('ready-count').textContent = ready.length;
+  $('building-count').textContent = building.length;
+  $('early-count').textContent = early.length;
+
+  $('pred-ready').innerHTML = ready.length ? ready.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No stocks in launch zone -- run a scan</div>';
+  $('pred-building').innerHTML = building.length ? building.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No stocks building up yet</div>';
+  $('pred-early').innerHTML = early.length ? early.map(renderPredictionCard).join('') : '<div style="text-align:center;padding:24px;color:var(--outline);font-size:12px">No early accumulation detected</div>';
+}
+
+function filterByRRMode() { renderFilteredPredictions(); }
 
 async function runPredictionScan(btn) {
   if (btn) btnLoading(btn, 'predictions');

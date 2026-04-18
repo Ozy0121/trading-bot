@@ -216,7 +216,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Options Trading | v1.0 | 0/? | Not started | - |
 | 4. Position Sizing & Allocation | v1.0 | 0/? | Not started | - |
 | 5. Dashboard + Predictions + AI Analyst | v1.0 | 0/? | Not started | - |
-| 6. Score Recalibration | v2.0 | 0/2 | Planning complete | - |
+| 6. Score Recalibration | v2.0 | 2/2 | Complete | 2026-04-08 |
 | 7. Expanded Scanner | v2.0 | 0/? | Not started | - |
 | 8. Multi-Source News | v2.0 | 0/? | Not started | - |
 | 9. Overnight Scanner | v2.0 | 0/? | Not started | - |

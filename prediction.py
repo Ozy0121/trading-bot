@@ -91,6 +91,36 @@ MIN_HISTORICAL_ACCURACY = 0.50  # lowered from 0.60 — let confidence scoring h
 # ATR-based stop loss
 STOP_ATR_MULTIPLIER = 1.5  # stop = entry - 1.5 * ATR
 
+# ── Risk-reward ratio modes ─────────────────────────────────────────────────
+# Each mode defines stop-loss tightness and target multiplier.
+# risk_pct: max stop distance as % below entry
+# reward_ratio: target = risk_pct * reward_ratio above entry
+# min_confidence: minimum confidence to use this mode
+
+RR_MODES = {
+    "conservative": {  # 1:2
+        "label": "Conservative 1:2",
+        "risk_pct": 2.0,
+        "reward_ratio": 2.0,
+        "min_confidence": 5,
+        "badge": None,
+    },
+    "standard": {  # 1:3
+        "label": "Standard 1:3",
+        "risk_pct": 2.0,
+        "reward_ratio": 3.0,
+        "min_confidence": 6,
+        "badge": None,
+    },
+    "pre_spike": {  # 1:5 — the pre-spike mode
+        "label": "Pre-Spike 1:5",
+        "risk_pct": 1.0,
+        "reward_ratio": 5.0,
+        "min_confidence": 7,
+        "badge": "HIGH R:R",
+    },
+}
+
 # Fair Value Gaps
 FVG_MAX_AGE_BARS = 20       # ignore FVGs older than this
 FVG_PROXIMITY_PCT = 2.0     # price must be within 2% of FVG midpoint
@@ -144,6 +174,12 @@ class Prediction:
     patterns: list[PatternResult] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     timeframe: str = "1-3 days"
+    # Risk-reward fields
+    rr_setups: list[dict] = field(default_factory=list)
+    best_rr_mode: str = ""          # "conservative", "standard", "pre_spike"
+    best_rr_ratio: float = 0.0      # e.g. 3.0 for 1:3
+    expected_value: float = 0.0     # (win_rate * avg_win) - (loss_rate * avg_loss) per $100
+    rr_badge: str = ""              # "HIGH R:R" for 1:5 setups
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -804,6 +840,100 @@ STAGE_TIMEFRAME = {
 }
 
 
+# ── Risk-reward computation ──────────────────────────────────────────────────
+
+def _compute_risk_reward(
+    current_price: float,
+    current_atr: float,
+    confidence: int,
+    historical_accuracy: float,
+    historical_samples: int,
+) -> tuple[list[dict], str, float, float, str]:
+    """
+    Compute risk-reward setups for all applicable modes.
+
+    Returns:
+        rr_setups: list of dicts with mode details
+        best_mode: key of the best mode
+        best_ratio: the R:R ratio of the best mode
+        expected_value: EV per $100 risked for the best mode
+        badge: "HIGH R:R" for pre_spike setups, "" otherwise
+    """
+    rr_setups: list[dict] = []
+
+    # Win rate: use historical accuracy if available, else estimate from confidence
+    if historical_samples >= HIST_MIN_SAMPLES and historical_accuracy > 0:
+        win_rate = historical_accuracy
+    else:
+        # Estimate: confidence/10 scaled to 30-70% range
+        win_rate = 0.30 + (confidence / 10.0) * 0.40
+
+    for mode_key, mode in RR_MODES.items():
+        if confidence < mode["min_confidence"]:
+            continue
+
+        risk_pct = mode["risk_pct"]
+        reward_ratio = mode["reward_ratio"]
+        target_pct = risk_pct * reward_ratio
+
+        # ATR-based adjustment: if ATR suggests tighter stop is reasonable
+        atr_pct = (current_atr / current_price) * 100
+        # Use the tighter of mode risk_pct or 1.5x ATR
+        effective_risk_pct = min(risk_pct, atr_pct * 1.5)
+        effective_risk_pct = max(0.5, effective_risk_pct)  # floor at 0.5%
+
+        effective_target_pct = effective_risk_pct * reward_ratio
+
+        stop = round(current_price * (1 - effective_risk_pct / 100), 2)
+        target = round(current_price * (1 + effective_target_pct / 100), 2)
+
+        # Expected value per $100 risked
+        risk_per_share = current_price - stop
+        reward_per_share = target - current_price
+        if risk_per_share > 0:
+            ev = (win_rate * reward_per_share) - ((1 - win_rate) * risk_per_share)
+            ev_per_100 = round((ev / risk_per_share) * 100, 2)
+        else:
+            ev_per_100 = 0.0
+
+        # Breakeven win rate for this R:R
+        breakeven_wr = 1 / (1 + reward_ratio)
+
+        setup = {
+            "mode": mode_key,
+            "label": mode["label"],
+            "risk_pct": round(effective_risk_pct, 2),
+            "target_pct": round(effective_target_pct, 2),
+            "stop_price": stop,
+            "target_price": target,
+            "rr_ratio": round(reward_ratio, 1),
+            "win_rate": round(win_rate, 3),
+            "expected_value": ev_per_100,
+            "breakeven_wr": round(breakeven_wr, 3),
+            "positive_ev": ev_per_100 > 0,
+            "badge": mode["badge"] or "",
+        }
+        rr_setups.append(setup)
+
+    if not rr_setups:
+        return [], "", 0.0, 0.0, ""
+
+    # Best mode: highest positive EV, preferring higher R:R on tie
+    positive_ev_setups = [s for s in rr_setups if s["positive_ev"]]
+    if positive_ev_setups:
+        best = max(positive_ev_setups, key=lambda s: (s["expected_value"], s["rr_ratio"]))
+    else:
+        best = max(rr_setups, key=lambda s: s["expected_value"])
+
+    return (
+        rr_setups,
+        best["mode"],
+        best["rr_ratio"],
+        best["expected_value"],
+        best["badge"],
+    )
+
+
 # ── Main prediction function ─────────────────────────────────────────────────
 
 def predict(
@@ -944,6 +1074,24 @@ def predict(
     if historical_samples >= HIST_MIN_SAMPLES:
         reasons.append(f"Historical accuracy: {historical_accuracy:.0%} over {historical_samples} similar setups")
 
+    # Compute risk-reward setups
+    rr_setups, best_rr_mode, best_rr_ratio, ev, rr_badge = _compute_risk_reward(
+        current_price, current_atr, confidence, historical_accuracy, historical_samples,
+    )
+
+    # Override stop/target with best R:R setup if available
+    if rr_setups and best_rr_mode:
+        best_setup = next((s for s in rr_setups if s["mode"] == best_rr_mode), None)
+        if best_setup:
+            stop_loss = best_setup["stop_price"]
+            target_price = best_setup["target_price"]
+            reasons.append(
+                f"R:R {best_setup['label']}: risk {best_setup['risk_pct']:.1f}% "
+                f"to gain {best_setup['target_pct']:.1f}% "
+                f"(EV ${ev:+.2f}/trade, {best_setup['win_rate']:.0%} win rate, "
+                f"breakeven at {best_setup['breakeven_wr']:.0%})"
+            )
+
     return Prediction(
         symbol=symbol,
         predicted_spike=True,
@@ -959,6 +1107,11 @@ def predict(
         patterns=patterns,
         reasons=reasons,
         timeframe=STAGE_TIMEFRAME.get(stage, "1-3 days"),
+        rr_setups=rr_setups,
+        best_rr_mode=best_rr_mode,
+        best_rr_ratio=best_rr_ratio,
+        expected_value=ev,
+        rr_badge=rr_badge,
     )
 
 
