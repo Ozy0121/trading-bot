@@ -108,6 +108,11 @@ from overnight_scanner import start_scheduler as start_overnight_scheduler
 start_overnight_scheduler()
 log.info("[server] Overnight scanner scheduler started")
 
+# ── Start expanded scanner overnight daemon (Phase 7) ───────────────────
+from expanded_scanner import start_overnight_daemon
+start_overnight_daemon(trading_client)
+log.info("[server] Expanded scanner daemon started")
+
 # ── Start stop-loss protection monitor ──────────────────────────────────────
 start_protection_monitor(trading_client, interval=60)
 log.info("[server] Stop-loss protection monitor started (checks every 60s)")

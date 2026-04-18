@@ -21,6 +21,8 @@ Routes:
   POST   /api/sell_all              — sell ALL positions + stop bot
   POST   /api/config/exits          — update stop-loss and take-profit percentages
   POST   /api/stop                  — check bracket protection or stop bot
+  GET    /api/expanded-scan         — expanded scanner results + funnel
+  POST   /api/expanded-scan/run     — trigger manual expanded scan
 """
 
 import json
@@ -762,6 +764,39 @@ def api_overnight_accuracy():
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)})
+
+
+@app.route("/api/expanded-scan")
+def api_expanded_scan():
+    """Return the latest expanded scanner results and funnel stats."""
+    snap = shared_state.snapshot()
+    return jsonify({
+        "results": snap.get("expanded_scan_results", []),
+        "scan_time": snap.get("expanded_scan_time"),
+        "status": snap.get("expanded_scan_status", "idle"),
+        "funnel": snap.get("expanded_scan_funnel", {}),
+    })
+
+
+@app.route("/api/expanded-scan/run", methods=["POST"])
+def api_expanded_scan_run():
+    """Trigger an expanded scan manually (D-07)."""
+    snap = shared_state.snapshot()
+    if snap.get("expanded_scan_status") == "running":
+        return jsonify({"ok": False, "message": "Scan already running."})
+
+    def _do():
+        try:
+            from expanded_scanner import trigger_manual_scan
+            progress.track("expanded_scan", total=0, current=0, label="Running expanded scan...")
+            trigger_manual_scan()
+            progress.complete("expanded_scan", message="Expanded scan complete")
+        except Exception as exc:
+            log.error("[dashboard] Expanded scan failed: %s", exc, exc_info=True)
+            progress.fail("expanded_scan", message=str(exc))
+
+    threading.Thread(target=_do, daemon=True, name="manual-expanded-scan").start()
+    return jsonify({"ok": True, "message": "Expanded scan started."})
 
 
 @app.route("/api/intelligence")

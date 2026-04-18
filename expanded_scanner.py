@@ -397,3 +397,103 @@ def trigger_manual_scan() -> None:
     except Exception as exc:
         log.error("[expanded] Manual scan failed: %s", exc, exc_info=True)
         shared_state.update(expanded_scan_status="error")
+
+
+# ── Overnight daemon ──────────────────────────────────────────────────────────
+
+
+def _get_market_close_today(trading_client) -> datetime | None:
+    """Get today's market close time as a UTC-aware datetime, or None if closed."""
+    try:
+        from alpaca.trading.requests import GetCalendarRequest
+        import zoneinfo
+
+        today = date.today()
+        cal = trading_client.get_calendar(
+            GetCalendarRequest(start=today, end=today)
+        )
+        if not cal:
+            return None  # holiday or weekend
+
+        close_time = cal[0].close
+        eastern = zoneinfo.ZoneInfo("America/New_York")
+        close_dt = datetime.combine(today, close_time, tzinfo=eastern)
+        return close_dt.astimezone(timezone.utc)
+    except Exception as exc:
+        log.warning("[expanded] Failed to get market close time: %s", exc)
+        return None
+
+
+def _overnight_daemon_loop(trading_client) -> None:
+    """Infinite loop that triggers expanded scan after market close each day."""
+    while True:
+        try:
+            close_utc = _get_market_close_today(trading_client)
+
+            if close_utc is None:
+                # Holiday or weekend — check again in 1 hour
+                log.debug("[expanded] No market close today, sleeping 1 hour")
+                time.sleep(3600)
+                continue
+
+            delay_minutes = getattr(config, "EXPANDED_SCAN_DELAY_MINUTES", 15)
+            scan_start = close_utc + timedelta(minutes=delay_minutes)
+            now = datetime.now(timezone.utc)
+
+            if now > scan_start + timedelta(hours=4):
+                # Too late today — sleep until midnight and retry
+                log.debug("[expanded] Past scan window, sleeping until midnight")
+                tomorrow = datetime.combine(
+                    date.today() + timedelta(days=1),
+                    datetime.min.time(),
+                    tzinfo=timezone.utc,
+                )
+                sleep_secs = max(60, (tomorrow - now).total_seconds())
+                time.sleep(sleep_secs)
+                continue
+
+            if now < scan_start:
+                # Wait until scan start time
+                wait_secs = (scan_start - now).total_seconds()
+                log.info("[expanded] Waiting %.0f seconds until scan start", wait_secs)
+                time.sleep(max(1, wait_secs))
+
+            # Run the scan
+            log.info("[expanded] Overnight scan starting...")
+            shared_state.update(expanded_scan_status="running")
+            try:
+                timeout = getattr(config, "EXPANDED_SCAN_TIMEOUT", 7200)
+                results = run_expanded_pipeline(timeout_seconds=timeout)
+                log.info("[expanded] Overnight scan complete: %d survivors", len(results))
+            except Exception as exc:
+                log.error("[expanded] Overnight scan failed: %s", exc, exc_info=True)
+                shared_state.update(expanded_scan_status="error")
+
+            # Sleep until next day (rough: 20 hours from now)
+            time.sleep(20 * 3600)
+
+        except Exception as exc:
+            log.error("[expanded] Daemon loop error: %s", exc, exc_info=True)
+            time.sleep(3600)  # retry in 1 hour
+
+
+def start_overnight_daemon(trading_client) -> None:
+    """Start the overnight scanner daemon thread.
+
+    Also loads any cached results from disk on startup.
+    """
+    cached = load_overnight_results()
+    if cached:
+        shared_state.update(
+            expanded_scan_results=cached[:100],
+            expanded_scan_status="cached",
+        )
+        log.info("[expanded] Loaded %d cached results from disk", len(cached))
+
+    threading.Thread(
+        target=_overnight_daemon_loop,
+        args=(trading_client,),
+        daemon=True,
+        name="expanded-scanner-daemon",
+    ).start()
+    log.info("[expanded] Overnight scanner daemon started")

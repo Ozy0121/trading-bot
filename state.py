@@ -118,6 +118,12 @@ _state = {
     "scan_universe_size":        0,      # total stocks in expanded universe
     "scan_summary":              "",     # "Scanned 2,400 → 200 passed → Top 30"
     "heatmap_data":              [],     # market heatmap data [{symbol, price, change_pct, market_cap}]
+
+    # ── Expanded scanner (Phase 7) ──────────────────────────────────────
+    "expanded_scan_results":  [],     # list of quant-scored survivor dicts
+    "expanded_scan_time":     None,   # ISO timestamp of last expanded scan
+    "expanded_scan_status":   "idle", # idle | running | complete | error
+    "expanded_scan_funnel":   {},     # {universe: N, t1: N, t2: N, t3: N, survivors: N}
 }
 
 
