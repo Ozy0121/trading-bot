@@ -53,6 +53,14 @@ class Executor(BaseAgent):
             verdict.stop_loss, verdict.take_profit,
         )}
 
+    def _summarize_output(self) -> str:
+        r = self.last_output.get("result")
+        if not r:
+            return "No data yet"
+        if r.success:
+            return f"Filled {r.qty} {r.symbol} @ ${r.fill_price:.2f}"
+        return f"{r.status}: {r.message}"
+
     def _place_bracket_order(self, symbol: str, qty: int,
                              entry_price: float, stop_loss: float,
                              take_profit: float) -> ExecutionResult:

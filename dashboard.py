@@ -88,6 +88,9 @@ def api_stream():
             while True:
                 snap = shared_state.snapshot()
                 snap["_progress"] = progress.snapshot()
+                snap["_scan_logs"] = progress.get_logs()
+                if _coordinator:
+                    snap["_agents"] = _coordinator.get_agents_status()
                 yield f"data: {_snap_json(snap)}\n\n"
                 time.sleep(1)
         except GeneratorExit:
@@ -699,20 +702,22 @@ def api_predictions_run():
             from expanded_scanner import load_overnight_results, run_expanded_pipeline
 
             progress.track("predictions", total=0, current=0, label="Loading quant-filtered stocks...")
+            progress.push_log("predictions", "Starting prediction scan...")
 
             survivors = load_overnight_results()
             if survivors:
                 universe = [s["symbol"] for s in survivors if "symbol" in s]
-                log.info("[dashboard] Using %d expanded scanner survivors for predictions", len(universe))
+                progress.push_log("predictions", f"Using {len(universe)} expanded scanner survivors")
             else:
                 progress.track("predictions", total=0, current=0, label="Running quant filter on 2,500+ stocks...")
+                progress.push_log("predictions", "No cached results — running quant filter on 2,500+ stocks...")
                 scored = run_expanded_pipeline()
                 universe = [s["symbol"] for s in scored if "symbol" in s]
-                log.info("[dashboard] Quant filter produced %d survivors", len(universe))
+                progress.push_log("predictions", f"Quant filter produced {len(universe)} survivors")
 
             if not universe:
                 universe = get_full_universe(include_discovery=True)
-                log.warning("[dashboard] No survivors — falling back to full universe (%d)", len(universe))
+                progress.push_log("predictions", f"No survivors — falling back to full universe ({len(universe)})", "warning")
 
             funnel = get_funnel_stats()
             progress.track("predictions", total=len(universe), current=0,
@@ -812,6 +817,16 @@ def api_expanded_scan_run():
 
     threading.Thread(target=_do, daemon=True, name="manual-expanded-scan").start()
     return jsonify({"ok": True, "message": "Expanded scan started."})
+
+
+@app.route("/api/scan-logs", methods=["GET", "DELETE"])
+def api_scan_logs():
+    """Return or clear the scanner log buffer."""
+    if request.method == "DELETE":
+        progress.clear_logs()
+        return jsonify({"ok": True})
+    since = float(request.args.get("since", 0))
+    return jsonify(progress.get_logs(since))
 
 
 @app.route("/api/intelligence")

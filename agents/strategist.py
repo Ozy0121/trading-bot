@@ -103,6 +103,13 @@ class Strategist(BaseAgent):
 
         return {"decision": decision}
 
+    def _summarize_output(self) -> str:
+        d = self.last_output.get("decision")
+        if not d:
+            return "No data yet"
+        sym = d.symbol or "—"
+        return f"Decision: {d.action} {sym} (confidence {d.confidence}/10)"
+
     def _call_ai(
         self,
         candidates: list[QuantOutput],

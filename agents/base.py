@@ -204,9 +204,17 @@ class BaseAgent:
 
     def to_status_dict(self) -> dict:
         """Return agent status for the dashboard API."""
+        summary = self._summarize_output()
         return {
             "name": self.name,
             "status": self.status,
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "last_error": self.last_error,
+            "summary": summary,
         }
+
+    def _summarize_output(self) -> str:
+        """Generate a short human-readable summary of last output."""
+        if not self.last_output:
+            return "No data yet"
+        return "Last run complete"

@@ -52,6 +52,13 @@ class QuantAnalyst(BaseAgent):
         outputs.sort(key=lambda o: o.composite_score, reverse=True)
         return {"outputs": outputs}
 
+    def _summarize_output(self) -> str:
+        outputs = self.last_output.get("outputs", [])
+        if not outputs:
+            return "No data yet"
+        top = outputs[0]
+        return f"Analyzed {len(outputs)} symbols — top: {top.symbol} ({top.composite_score:.0f})"
+
     def _fetch_bars(self, symbols: list[str]) -> dict[str, pd.DataFrame]:
         """Fetch OHLCV bars for all symbols. Uses yfinance via scanner."""
         result = {}

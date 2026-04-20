@@ -84,6 +84,13 @@ class NewsAnalyst(BaseAgent):
 
         return {"outputs": outputs}
 
+    def _summarize_output(self) -> str:
+        outputs = self.last_output.get("outputs", [])
+        if not outputs:
+            return "No data yet"
+        flags = sum(1 for o in outputs if o.risk_flags)
+        return f"Scanned news for {len(outputs)} symbols — {flags} with risk flags"
+
     def _fetch_news(self, symbols: list[str]) -> dict[str, list[dict]]:
         """Fetch news headlines for each symbol."""
         result = {}

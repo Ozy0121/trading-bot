@@ -1137,6 +1137,10 @@
     <span class="material-symbols-outlined">neurology</span>
     <span class="sidebar-label">INTEL</span>
   </button>
+  <button class="sidebar-btn" id="tab-btn-agents" onclick="switchTab('agents')">
+    <span class="material-symbols-outlined">group</span>
+    <span class="sidebar-label">AGENTS</span>
+  </button>
   <div class="sidebar-spacer"></div>
   <button class="sidebar-btn" style="opacity:0.5;cursor:default">
     <span class="material-symbols-outlined">settings</span>
@@ -1583,6 +1587,20 @@
     </div>
   </div>
 
+  <!-- Scanner Live Log -->
+  <div class="chart-card" style="margin-bottom:14px">
+    <div class="chart-card-header">
+      <span class="chart-title">SCANNER LOG</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="scan-log-status" style="font-size:11px;color:var(--outline)">idle</span>
+        <button class="tb-btn" onclick="clearScanLog()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">delete_sweep</span> CLEAR</button>
+      </div>
+    </div>
+    <div id="scan-log-window" style="height:240px;overflow-y:auto;background:var(--surface);border-radius:6px;padding:8px 12px;font-family:'JetBrains Mono','Fira Code',monospace;font-size:11px;line-height:1.7;color:var(--on-surface-variant)">
+      <div style="color:var(--outline);font-style:italic">Waiting for scan activity...</div>
+    </div>
+  </div>
+
   <!-- Market heatmap -->
   <div class="chart-card" style="margin-bottom:14px">
     <div class="chart-card-header">
@@ -1609,6 +1627,30 @@
 
 </div>
 </div><!-- /tab-intelligence -->
+
+<!-- Agents tab -->
+<div class="tab-pane" id="tab-agents">
+<div class="page">
+
+  <!-- Pipeline status banner -->
+  <div class="chart-card" style="margin-bottom:14px;padding:12px 16px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span class="chart-title">AGENT PIPELINE</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="agent-cycle-count" style="font-size:11px;color:var(--outline)">0 cycles</span>
+        <span id="agent-last-cycle" style="font-size:11px;color:var(--outline)"></span>
+      </div>
+    </div>
+    <div id="agent-pipeline-flow" style="display:flex;align-items:center;gap:4px;margin-top:10px;flex-wrap:wrap;font-size:11px">
+    </div>
+  </div>
+
+  <!-- Agent windows grid -->
+  <div id="agent-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:14px">
+  </div>
+
+</div>
+</div><!-- /tab-agents -->
 
 <!-- Orders tab -->
 <div class="tab-pane" id="tab-orders">
@@ -2351,6 +2393,8 @@ function connectSSE() {
     try {
       const data = JSON.parse(e.data);
       handleProgress(data._progress || {});
+      renderScanLogs(data._scan_logs || []);
+      renderAgents(data._agents || []);
       refresh(data);
     } catch(err) {
       console.error('SSE parse error', err);
@@ -2781,7 +2825,7 @@ loadStartScreen();
 // ═══════════════════════════════════════════════════════════════════════════
 
 function switchTab(name) {
-  ['overview','positions','orders','performance','intelligence'].forEach(t => {
+  ['overview','positions','orders','performance','intelligence','agents'].forEach(t => {
     const pane = $('tab-' + t);
     const btn  = $('tab-btn-' + t);
     if (pane) pane.classList.toggle('active', t === name);
@@ -4150,6 +4194,100 @@ function handleProgress(ops) {
 function btnLoading(btn, opId) {
   btn.classList.add('btn-loading');
   btn.setAttribute('data-op', opId);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Scanner Live Log
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _lastScanLogCount = 0;
+
+function renderScanLogs(logs) {
+  const win = $('scan-log-window');
+  const status = $('scan-log-status');
+  if (!win || !logs) return;
+  if (logs.length === _lastScanLogCount) return;
+  _lastScanLogCount = logs.length;
+
+  if (logs.length === 0) {
+    win.innerHTML = '<div style="color:var(--outline);font-style:italic">Waiting for scan activity...</div>';
+    if (status) status.textContent = 'idle';
+    return;
+  }
+
+  const levelColor = {info: 'var(--on-surface-variant)', warning: 'var(--warning)', error: 'var(--error)'};
+  const html = logs.map(l => {
+    const t = new Date(l.ts * 1000).toLocaleTimeString();
+    const c = levelColor[l.level] || levelColor.info;
+    return `<div style="color:${c}"><span style="color:var(--outline);margin-right:8px">${t}</span>[${l.source}] ${l.message}</div>`;
+  }).join('');
+  win.innerHTML = html;
+  win.scrollTop = win.scrollHeight;
+  if (status) status.textContent = `${logs.length} lines`;
+}
+
+function clearScanLog() {
+  fetch('/api/scan-logs?clear=1', {method: 'DELETE'}).catch(() => {});
+  const win = $('scan-log-window');
+  if (win) win.innerHTML = '<div style="color:var(--outline);font-style:italic">Waiting for scan activity...</div>';
+  _lastScanLogCount = 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Agents Tab
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _agentOrder = ['QuantAnalyst', 'NewsAnalyst', 'RiskManager', 'Strategist', 'Executor', 'Auditor'];
+const _agentIcons = {
+  QuantAnalyst: 'query_stats', NewsAnalyst: 'newspaper', RiskManager: 'shield',
+  Strategist: 'psychology', Executor: 'bolt', Auditor: 'fact_check'
+};
+
+function renderAgents(data) {
+  const flow = $('agent-pipeline-flow');
+  const grid = $('agent-grid');
+  if (!flow || !grid || !data) return;
+
+  const agents = data.agents || [];
+  const pipeline = data.pipeline || {};
+  if (agents.length === 0) return;
+
+  const cycleEl = $('agent-cycle-count');
+  const lastEl = $('agent-last-cycle');
+  if (cycleEl) cycleEl.textContent = (pipeline.cycle_count || 0) + ' cycles';
+  if (lastEl && pipeline.last_cycle) lastEl.textContent = 'Last: ' + new Date(pipeline.last_cycle).toLocaleTimeString();
+
+  const byName = {};
+  agents.forEach(a => byName[a.name] = a);
+
+  const statusColor = {idle: 'var(--outline)', running: 'var(--primary)', error: 'var(--error)', done: 'var(--success)'};
+  const statusDot = s => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusColor[s] || statusColor.idle}"></span>`;
+
+  // Pipeline flow
+  flow.innerHTML = _agentOrder.map((name, i) => {
+    const a = byName[name] || {status: 'idle'};
+    const arrow = i < _agentOrder.length - 1 ? '<span style="color:var(--outline);margin:0 2px">→</span>' : '';
+    const bg = a.status === 'running' ? 'var(--primary-container)' : 'var(--surface-variant)';
+    return `<span style="padding:4px 10px;border-radius:8px;background:${bg};display:inline-flex;align-items:center;gap:4px">${statusDot(a.status)} ${name}</span>${arrow}`;
+  }).join('');
+
+  // Agent cards
+  grid.innerHTML = _agentOrder.map(name => {
+    const a = byName[name] || {status: 'idle', summary: 'No data yet', last_run: null, last_error: null};
+    const icon = _agentIcons[name] || 'smart_toy';
+    const lastRun = a.last_run ? new Date(a.last_run).toLocaleTimeString() : '—';
+    const errorHtml = a.last_error ? `<div style="color:var(--error);font-size:11px;margin-top:6px;word-break:break-word">${a.last_error}</div>` : '';
+    return `<div class="chart-card" style="padding:14px 16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span class="material-symbols-outlined" style="font-size:20px;color:var(--primary)">${icon}</span>
+        <span style="font-weight:600;font-size:13px">${name}</span>
+        <span style="margin-left:auto">${statusDot(a.status)}</span>
+      </div>
+      <div style="font-size:12px;color:var(--on-surface-variant);line-height:1.5">${a.summary || 'No data yet'}</div>
+      <div style="font-size:11px;color:var(--outline);margin-top:6px">Last run: ${lastRun}</div>
+      ${errorHtml}
+    </div>`;
+  }).join('');
 }
 
 function showToast(msg, type = 'success', duration = 3500) {

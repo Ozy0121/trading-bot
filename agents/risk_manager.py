@@ -107,6 +107,14 @@ class RiskManager(BaseAgent):
             max_drawdown=round(self._max_drawdown, 4),
         )}
 
+    def _summarize_output(self) -> str:
+        v = self.last_output.get("verdict")
+        if not v:
+            return "No data yet"
+        if v.approved:
+            return f"Approved: {v.adjusted_qty} shares, ${v.position_size_usd:.0f} size, VaR ${v.var_95:.0f}"
+        return f"Blocked: {v.reason}"
+
     def get_constraints(self) -> RiskConstraints:
         """Return current risk constraints for the Strategist."""
         equity = self._get_equity()

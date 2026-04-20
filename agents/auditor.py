@@ -50,6 +50,12 @@ class Auditor(BaseAgent):
         })
         return {"report": report}
 
+    def _summarize_output(self) -> str:
+        r = self.last_output.get("report")
+        if not r:
+            return f"{len(self._journal)} trades in journal"
+        return f"{r.total_trades} trades, {r.win_rate:.0f}% win rate, P&L ${r.daily_pnl:.2f}"
+
     def record_trade(self, trade: dict) -> None:
         """Record a completed trade to the journal."""
         trade["timestamp"] = datetime.now(timezone.utc).isoformat()

@@ -24,6 +24,37 @@ from dataclasses import dataclass, field, asdict
 _lock = threading.Lock()
 _operations: dict[str, dict] = {}
 
+_log_lock = threading.Lock()
+_scan_logs: list[dict] = []
+_MAX_LOG_LINES = 200
+
+
+def push_log(source: str, message: str, level: str = "info") -> None:
+    """Append a log line to the scanner log buffer for dashboard display."""
+    with _log_lock:
+        _scan_logs.append({
+            "ts": time.time(),
+            "source": source,
+            "message": message,
+            "level": level,
+        })
+        if len(_scan_logs) > _MAX_LOG_LINES:
+            del _scan_logs[:len(_scan_logs) - _MAX_LOG_LINES]
+
+
+def get_logs(since: float = 0) -> list[dict]:
+    """Return log lines newer than `since` timestamp."""
+    with _log_lock:
+        if since <= 0:
+            return list(_scan_logs)
+        return [l for l in _scan_logs if l["ts"] > since]
+
+
+def clear_logs() -> None:
+    """Clear the scanner log buffer."""
+    with _log_lock:
+        _scan_logs.clear()
+
 
 def track(
     op_id: str,

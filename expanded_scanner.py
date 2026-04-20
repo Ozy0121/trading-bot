@@ -30,8 +30,15 @@ from openbb_data import fetch_bulk_bars, fetch_ticker_info
 from quant_factors import compute_quant_score, rank_momentum
 import config
 import state as shared_state
+import progress
 
 log = get_logger()
+
+
+def _scan_log(message: str, level: str = "info") -> None:
+    """Log to both standard logger and dashboard scan log buffer."""
+    getattr(log, level)("[expanded] %s", message)
+    progress.push_log("expanded", message, level)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -122,7 +129,7 @@ def _filter_price_mcap(symbols: list[str], bars_dict: dict[str, pd.DataFrame]) -
 
         survivors.append(sym)
 
-    log.info("[expanded] T1 price+ETF gate: %d -> %d", len(symbols), len(survivors))
+    _scan_log(f"T1 price+ETF gate: {len(symbols)} -> {len(survivors)} ({len(symbols) - len(survivors)} filtered)")
     return survivors
 
 
@@ -144,7 +151,7 @@ def _filter_volume(symbols: list[str], bars_dict: dict[str, pd.DataFrame]) -> li
 
         survivors.append(sym)
 
-    log.info("[expanded] T2 volume gate: %d -> %d", len(symbols), len(survivors))
+    _scan_log(f"T2 volume gate: {len(symbols)} -> {len(survivors)} ({len(symbols) - len(survivors)} filtered)")
     return survivors
 
 
@@ -188,7 +195,7 @@ def _filter_momentum(
                 survivors.append(sym)
                 continue
 
-    log.info("[expanded] T3 momentum gate: %d -> %d", len(symbols), len(survivors))
+    _scan_log(f"T3 momentum gate: {len(symbols)} -> {len(survivors)} ({len(symbols) - len(survivors)} filtered)")
     return survivors
 
 
@@ -262,6 +269,7 @@ def _score_quant_multifactor(
     scored.sort(key=lambda x: x.get("quant_score", 0), reverse=True)
     survivors = scored[:_MAX_SURVIVORS]
 
+    _scan_log(f"T4 quant scoring: {len(symbols)} -> {len(survivors)} survivors (top {_MAX_SURVIVORS})")
     log.info("[expanded] T4 quant scoring: %d -> %d survivors",
              len(symbols), len(survivors))
     return survivors
@@ -279,43 +287,60 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
     default_timeout = getattr(config, "EXPANDED_SCAN_TIMEOUT", 7200)
     deadline = time.time() + (timeout_seconds or default_timeout)
     start_ts = time.time()
+    progress.clear_logs()
 
     # Step 1: Get full universe
     universe = get_full_universe(include_discovery=False)
-    log.info("[expanded] Pipeline starting with %d symbols", len(universe))
+    _scan_log(f"Pipeline starting with {len(universe):,} symbols")
+    progress.track("expanded_scan", total=len(universe), current=0,
+                   label=f"Scanning {len(universe):,} stocks...")
 
     # Step 2: Fetch 5-day bars for initial filtering
+    _scan_log("Fetching 5-day bars for initial filtering...")
     bars_5d = fetch_bulk_bars(universe, period="5d", interval="1d")
+    _scan_log(f"Fetched bars for {len(bars_5d):,}/{len(universe):,} symbols")
 
     # Tier 1: Price + ETF gate
+    _scan_log("Running T1: Price range ($5-$200) + ETF filter...")
     t1 = _filter_price_mcap(universe, bars_5d)
+    progress.track("expanded_scan", current=len(universe) - len(t1),
+                   label=f"T1 complete: {len(t1):,} remain")
 
     # Tier 2: Volume gate
+    _scan_log("Running T2: Volume gate (avg daily >= 500K)...")
     t2 = _filter_volume(t1, bars_5d)
+    progress.track("expanded_scan", current=len(universe) - len(t2),
+                   label=f"T2 complete: {len(t2):,} remain")
 
     # Check deadline after T2
     if time.time() >= deadline:
-        log.warning("[expanded] Deadline reached after T2, saving partial results")
+        _scan_log("Deadline reached after T2, saving partial results", "warning")
         funnel = {"universe": len(universe), "t1": len(t1), "t2": len(t2),
                   "t3": 0, "survivors": 0}
         save_overnight_results([], funnel)
         return []
 
     # Step 3: Fetch 30-day bars for T2 survivors only
+    _scan_log(f"Fetching 30-day bars for {len(t2):,} T2 survivors...")
     bars_30d = fetch_bulk_bars(t2, period="30d", interval="1d")
+    _scan_log(f"Fetched 30-day bars for {len(bars_30d):,}/{len(t2):,} symbols")
 
     # Tier 3: Momentum gate
+    _scan_log("Running T3: Momentum gate (positive return OR unusual volume)...")
     t3 = _filter_momentum(t2, bars_5d, bars_30d)
+    progress.track("expanded_scan", current=len(universe) - len(t3),
+                   label=f"T3 complete: {len(t3):,} remain")
 
     # Check deadline after T3
     if time.time() >= deadline:
-        log.warning("[expanded] Deadline reached after T3, saving partial results")
+        _scan_log("Deadline reached after T3, saving partial results", "warning")
         funnel = {"universe": len(universe), "t1": len(t1), "t2": len(t2),
                   "t3": len(t3), "survivors": 0}
         save_overnight_results([], funnel)
         return []
 
     # Tier 4: Quant multi-factor scoring
+    _scan_log(f"Running T4: Quant multi-factor scoring on {len(t3):,} candidates...")
     survivors = _score_quant_multifactor(t3, bars_30d, deadline)
 
     # Build funnel stats
@@ -339,9 +364,11 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
     )
 
     duration = time.time() - start_ts
-    log.info("[expanded] Pipeline complete: %d survivors in %.1fs", len(survivors), duration)
-    log.info("[expanded] Funnel: %d -> %d -> %d -> %d -> %d",
-             funnel["universe"], funnel["t1"], funnel["t2"], funnel["t3"], funnel["survivors"])
+    _scan_log(f"Pipeline complete: {len(survivors)} survivors in {duration:.1f}s")
+    _scan_log(f"Funnel: {funnel['universe']} -> {funnel['t1']} -> {funnel['t2']} -> {funnel['t3']} -> {funnel['survivors']}")
+    if survivors:
+        top3 = [s["symbol"] for s in survivors[:3]]
+        _scan_log(f"Top picks: {', '.join(top3)}")
 
     return survivors
 
