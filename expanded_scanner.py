@@ -458,13 +458,17 @@ def _overnight_daemon_loop(trading_client) -> None:
                 log.info("[expanded] Waiting %.0f seconds until scan start", wait_secs)
                 time.sleep(max(1, wait_secs))
 
-            # Run the scan
+            # Run quant filter, then overnight predictions on survivors
             log.info("[expanded] Overnight scan starting...")
             shared_state.update(expanded_scan_status="running")
             try:
                 timeout = getattr(config, "EXPANDED_SCAN_TIMEOUT", 7200)
                 results = run_expanded_pipeline(timeout_seconds=timeout)
-                log.info("[expanded] Overnight scan complete: %d survivors", len(results))
+                log.info("[expanded] Quant filter complete: %d survivors — running predictions...", len(results))
+
+                from prediction_scanner import run_overnight_scan
+                run_overnight_scan()
+                log.info("[expanded] Overnight pipeline complete (quant + predictions)")
             except Exception as exc:
                 log.error("[expanded] Overnight scan failed: %s", exc, exc_info=True)
                 shared_state.update(expanded_scan_status="error")

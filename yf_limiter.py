@@ -3,7 +3,7 @@ yf_limiter.py
 -------------
 Global rate limiter for all yfinance API calls across the trading bot.
 
-Problem: scanner.py, prediction.py, backtester.py, overnight_scanner.py, and
+Problem: scanner.py, prediction.py, backtester.py, prediction_scanner.py, and
 stock_universe.py all create ThreadPoolExecutors independently and hit yfinance
 concurrently, causing "Too Many Requests" (429) errors.
 
@@ -44,8 +44,8 @@ T = TypeVar("T")
 
 # ── Token bucket rate limiter ───────────────────────────────────────────────
 
-_RATE_LIMIT = 2.0          # max requests per second (global)
-_BUCKET_SIZE = 4            # burst capacity
+_RATE_LIMIT = 5.0          # max requests per second (global)
+_BUCKET_SIZE = 8            # burst capacity
 _tokens = float(_BUCKET_SIZE)
 _last_refill = time.monotonic()
 _limiter_lock = threading.Lock()

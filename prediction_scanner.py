@@ -1,17 +1,11 @@
 """
-overnight_scanner.py
---------------------
-After-market scanner that runs at 4PM ET daily to find tomorrow's pre-spike picks.
+prediction_scanner.py
+---------------------
+Runs pattern-based predictions on quant-filtered stock survivors.
 
-Scans the full universe for:
-  - Stocks in accumulation phase that could spike tomorrow
-  - Stocks with after-hours catalysts (earnings beats, analyst upgrades)
-  - Stocks where the pre-spike setup just completed today
-  - Ranks by: probability of spike x expected move size
-
-Generates "TOMORROW'S PRE-SPIKE PICKS" with entry, stop-loss, and targets.
-Saves predictions to disk so they're available when the bot starts in the morning.
-Tracks prediction accuracy over time.
+Takes ~50 stocks from the expanded scanner's quant pipeline and analyzes each
+for entry setups using pattern signals (Keltner squeeze, OBV/ADL divergence).
+Classifies picks by urgency tier, saves to disk, and tracks accuracy next morning.
 """
 
 from __future__ import annotations
@@ -57,16 +51,32 @@ def run_overnight_scan(progress_cb: callable | None = None) -> dict:
     from stock_universe import get_full_universe, get_scan_summary
     from prediction import predict_batch
     from openbb_data import fetch_bars
+    from expanded_scanner import load_overnight_results, run_expanded_pipeline
 
     log.info("[overnight] Starting overnight scan...")
     scan_start = datetime.now(timezone.utc)
 
-    # Get full universe
-    universe = get_full_universe(include_discovery=True)
+    # Use expanded scanner survivors if available, otherwise run it first
+    survivors = load_overnight_results()
+    if survivors:
+        universe = [s["symbol"] for s in survivors if "symbol" in s]
+        log.info("[overnight] Using %d expanded scanner survivors", len(universe))
+    else:
+        log.info("[overnight] No expanded scanner results — running quant filter first...")
+        if progress_cb:
+            progress_cb(0, 0, "Running quant filter on 2,500+ stocks...")
+        scored = run_expanded_pipeline()
+        universe = [s["symbol"] for s in scored if "symbol" in s]
+        log.info("[overnight] Quant filter produced %d survivors", len(universe))
+
+    if not universe:
+        universe = get_full_universe(include_discovery=True)
+        log.warning("[overnight] Expanded scanner returned empty — falling back to full universe (%d)", len(universe))
+
     total_scanned = len(universe)
     log.info("[overnight] Scanning %d stocks...", total_scanned)
 
-    # Run predictions on full universe
+    # Run predictions on survivors
     def _relay_progress(cur, tot, lbl=None):
         if progress_cb:
             progress_cb(cur, tot, lbl or f"Analyzing stock {cur}/{tot}...")
@@ -429,14 +439,13 @@ def _schedule_loop():
                 time.sleep(300)
                 continue
 
-            # Overnight scan at 4:05 PM ET
-            if current_time >= scan_time and last_scan_date != today:
-                log.info("[overnight] Triggering scheduled overnight scan")
-                try:
-                    run_overnight_scan()
+            # Overnight scan is now triggered by expanded_scanner daemon
+            # (quant filter → predictions pipeline). Skip standalone trigger.
+            # Mark as done if expanded scanner already ran today.
+            if last_scan_date != today:
+                from expanded_scanner import load_overnight_results
+                if load_overnight_results():
                     last_scan_date = today
-                except Exception as exc:
-                    log.error("[overnight] Scheduled scan failed: %s", exc, exc_info=True)
 
             # Accuracy check at 9:35 AM ET
             if current_time >= accuracy_time and last_accuracy_date != today:

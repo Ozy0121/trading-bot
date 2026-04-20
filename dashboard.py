@@ -696,14 +696,29 @@ def api_predictions_run():
         try:
             from stock_universe import get_full_universe, get_scan_summary, get_funnel_stats
             from prediction import predict_batch
+            from expanded_scanner import load_overnight_results, run_expanded_pipeline
 
-            progress.track("predictions", total=0, current=0, label="Building stock universe...")
-            universe = get_full_universe(include_discovery=True)
+            progress.track("predictions", total=0, current=0, label="Loading quant-filtered stocks...")
+
+            survivors = load_overnight_results()
+            if survivors:
+                universe = [s["symbol"] for s in survivors if "symbol" in s]
+                log.info("[dashboard] Using %d expanded scanner survivors for predictions", len(universe))
+            else:
+                progress.track("predictions", total=0, current=0, label="Running quant filter on 2,500+ stocks...")
+                scored = run_expanded_pipeline()
+                universe = [s["symbol"] for s in scored if "symbol" in s]
+                log.info("[dashboard] Quant filter produced %d survivors", len(universe))
+
+            if not universe:
+                universe = get_full_universe(include_discovery=True)
+                log.warning("[dashboard] No survivors — falling back to full universe (%d)", len(universe))
+
             funnel = get_funnel_stats()
             progress.track("predictions", total=len(universe), current=0,
                            label=f"AI analyzing {len(universe):,} stocks...")
             predictions = predict_batch(universe,
-                                        progress_cb=lambda cur, tot: progress.track("predictions", current=cur, total=tot))
+                                        progress_cb=lambda cur, tot, label="": progress.track("predictions", current=cur, total=tot, label=label or f"AI analyzing {tot:,} stocks..."))
 
             pred_dicts = [p.to_dict() for p in predictions[:30]]
             shared_state.update(
@@ -725,7 +740,7 @@ def api_predictions_run():
 @app.route("/api/overnight")
 def api_overnight():
     """Return the latest overnight predictions and accuracy stats."""
-    from overnight_scanner import get_latest_predictions, get_accuracy_summary
+    from prediction_scanner import get_latest_predictions, get_accuracy_summary
     preds = get_latest_predictions()
     accuracy = get_accuracy_summary()
     return jsonify({
@@ -739,7 +754,7 @@ def api_overnight_run():
     """Trigger an overnight scan manually."""
     def _do():
         try:
-            from overnight_scanner import run_overnight_scan
+            from prediction_scanner import run_overnight_scan
             progress.track("overnight", total=0, current=0, label="Running overnight analysis...")
             result = run_overnight_scan(
                 progress_cb=lambda cur, tot, lbl=None: progress.track("overnight", current=cur, total=tot,
@@ -758,7 +773,7 @@ def api_overnight_run():
 @app.route("/api/overnight/accuracy")
 def api_overnight_accuracy():
     """Check and return prediction accuracy."""
-    from overnight_scanner import check_prediction_accuracy
+    from prediction_scanner import check_prediction_accuracy
     try:
         result = check_prediction_accuracy()
         return jsonify(result)
@@ -902,7 +917,7 @@ def api_predictions_auto_trade():
 
     def _do():
         try:
-            from overnight_scanner import get_latest_predictions
+            from prediction_scanner import get_latest_predictions
             from bot import place_limit_buy
             from safety import check_pdt_allows_buy, calculate_safe_qty, get_dynamic_fraction
 

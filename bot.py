@@ -343,7 +343,7 @@ def _get_prediction_candidate() -> dict | None:
     Returns a dict shaped like a scanner result, or None.
     """
     try:
-        from overnight_scanner import get_latest_predictions
+        from prediction_scanner import get_latest_predictions
         from openbb_data import fetch_bars
 
         preds = get_latest_predictions()

@@ -104,7 +104,7 @@ dashboard.set_coordinator(coordinator)
 bot.set_coordinator(coordinator)
 
 # ── Start overnight scanner scheduler ────────────────────────────────────────
-from overnight_scanner import start_scheduler as start_overnight_scheduler
+from prediction_scanner import start_scheduler as start_overnight_scheduler
 start_overnight_scheduler()
 log.info("[server] Overnight scanner scheduler started")
 

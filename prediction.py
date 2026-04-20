@@ -1115,80 +1115,91 @@ def predict(
     )
 
 
-_bad_symbols: set[str] = set()  # symbols that failed data fetch — skip for the day
-_bad_symbols_date: date | None = None
-
-
 def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None = None,
                    progress_cb: callable | None = None) -> list[Prediction]:
     """
     Run predictions on a batch of symbols. Returns only stocks with valid predictions,
     sorted by confidence descending.
+
+    Uses fetch_bulk_bars to grab bars in chunks of 500 symbols at once via
+    yf.download (single HTTP call per chunk), then runs predictions from cache.
+    This avoids the per-symbol rate-limit bottleneck that made 2000+ stock scans
+    fail silently.
     """
-    global _bad_symbols, _bad_symbols_date
     from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    # Reset bad symbols cache daily
-    today = date.today()
-    if _bad_symbols_date != today:
-        _bad_symbols = set()
-        _bad_symbols_date = today
-
-    # Filter out known bad symbols
-    valid_symbols = [s for s in symbols if s not in _bad_symbols]
-    if len(valid_symbols) < len(symbols):
-        log.debug("[prediction] Skipping %d known bad symbols", len(symbols) - len(valid_symbols))
+    from openbb_data import fetch_bulk_bars
+    import time as _time
 
     predictions: list[Prediction] = []
+    total = len(symbols)
 
     # Fetch SPY data once for all relative-strength checks
     spy_df = get_spy_history(period="10d", interval="1d")
 
-    def _predict_one(sym: str) -> Prediction | None:
-        if bars_cache and sym in bars_cache:
-            df = bars_cache[sym]
-        else:
+    # ── Phase 1: Bulk-fetch all bars upfront ──────────────────────────────────
+    all_bars: dict[str, pd.DataFrame] = {}
+    if bars_cache:
+        all_bars.update(bars_cache)
+
+    symbols_to_fetch = [s for s in symbols if s not in all_bars]
+
+    if symbols_to_fetch:
+        BULK_CHUNK = 500
+        for chunk_start in range(0, len(symbols_to_fetch), BULK_CHUNK):
+            chunk = symbols_to_fetch[chunk_start:chunk_start + BULK_CHUNK]
+            chunk_num = chunk_start // BULK_CHUNK + 1
+            total_chunks = (len(symbols_to_fetch) + BULK_CHUNK - 1) // BULK_CHUNK
+            log.info("[prediction] Fetching bars chunk %d/%d (%d symbols)...",
+                     chunk_num, total_chunks, len(chunk))
+            if progress_cb:
+                progress_cb(chunk_start, total,
+                            f"Downloading bars {chunk_start+1}-{min(chunk_start+len(chunk), len(symbols_to_fetch))}/{len(symbols_to_fetch)}...")
+
             try:
-                df = fetch_bars(sym, period="60d", interval="1d")
-                if df is None or df.empty:
-                    _bad_symbols.add(sym)
-                    return None
-                # fetch_bars already returns lowercase columns, sorted index
-                df = df[["open", "high", "low", "close", "volume"]].copy()
-            except Exception:
-                _bad_symbols.add(sym)
-                return None
+                chunk_bars = fetch_bulk_bars(chunk, period="60d", interval="1d")
+                all_bars.update(chunk_bars)
+            except Exception as exc:
+                log.warning("[prediction] Bulk fetch failed for chunk %d: %s", chunk_num, exc)
+
+            if chunk_start + BULK_CHUNK < len(symbols_to_fetch):
+                _time.sleep(3)
+
+        log.info("[prediction] Bars fetched: %d/%d symbols have data",
+                 len(all_bars), total)
+
+    # ── Phase 2: Run predictions from cached bars ─────────────────────────────
+    def _predict_one(sym: str) -> Prediction | None:
+        df = all_bars.get(sym)
+        if df is None or df.empty:
+            return None
+        df = df[["open", "high", "low", "close", "volume"]].copy()
         return predict(sym, df, spy_df=spy_df)
 
-    # Process in batches of 50 with pauses to avoid Yahoo rate limits
-    import time as _time
-    BATCH_SIZE = 50
     done_count = 0
-    total = len(valid_symbols)
-    for batch_start in range(0, total, BATCH_SIZE):
-        batch = valid_symbols[batch_start:batch_start + BATCH_SIZE]
-        with ThreadPoolExecutor(max_workers=4) as executor:
+    PRED_BATCH = 200
+    for batch_start in range(0, total, PRED_BATCH):
+        batch = symbols[batch_start:batch_start + PRED_BATCH]
+        with ThreadPoolExecutor(max_workers=8) as executor:
             future_to_sym = {executor.submit(_predict_one, sym): sym for sym in batch}
             for future in as_completed(future_to_sym):
                 sym = future_to_sym[future]
                 done_count += 1
                 if progress_cb:
-                    progress_cb(done_count, total)
+                    progress_cb(done_count, total,
+                                f"Analyzing {sym} ({done_count}/{total})...")
                 try:
                     result = future.result()
                     if result is not None:
                         predictions.append(result)
                 except Exception as exc:
                     log.debug("[prediction] %s failed: %s", sym, exc)
-        if batch_start + BATCH_SIZE < total:
-            _time.sleep(2)  # 2s pause between batches
 
     # Sort by confidence descending, then by historical accuracy
     predictions.sort(key=lambda p: (p.confidence, p.historical_accuracy), reverse=True)
 
     log.info(
-        "[prediction] Batch complete: %d symbols scanned, %d predictions generated",
-        len(symbols), len(predictions),
+        "[prediction] Batch complete: %d symbols scanned, %d had bars, %d predictions generated",
+        total, len(all_bars), len(predictions),
     )
 
     return predictions

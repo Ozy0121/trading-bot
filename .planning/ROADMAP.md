@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### v2.0 Intelligence Suite (Phases 6-11)
 
 - [ ] **Phase 6: Score Recalibration** - Letter grades, hover breakdowns, and config-driven grade thresholds for conviction scores
-- [ ] **Phase 7: Expanded Scanner** - S&P 500 + NASDAQ 100 universe with hard pre-filters and two-tier scan architecture
+- [x] **Phase 7: Expanded Scanner** - S&P 500 + NASDAQ 100 universe with hard pre-filters and two-tier scan architecture
 - [ ] **Phase 8: Multi-Source News** - Finnhub, RSS feeds, SEC EDGAR, FRED calendar aggregated with deduplication and per-source caching
 - [ ] **Phase 9: Overnight Scanner** - Post-market daemon that generates Tomorrow's Game Plan with approve/reject UI and morning pre-queue
 - [ ] **Phase 10: Intelligence Tab** - Market overview dashboard with index charts, VIX gauge, sector heatmap, breadth indicators, and AI brief
@@ -142,7 +142,7 @@ Plans:
 **UI hint**: yes
 
 ### Phase 7: Expanded Scanner
-**Goal**: The scanner discovers high-conviction candidates from a universe of 500+ stocks (S&P 500, NASDAQ 100, top volume, unusual volume) using a two-tier architecture that pre-filters before deep scoring
+**Goal**: The scanner discovers high-conviction candidates from a universe of 2,500+ stocks using a four-tier cascading pipeline (price/mcap, volume, momentum, quant scoring) that culls to ~50 survivors, ranked by multi-factor quant model
 **Depends on**: Phase 6
 **Requirements**: UNIV-01, UNIV-02, UNIV-03, UNIV-04, UNIV-05
 **Success Criteria** (what must be TRUE):
@@ -151,7 +151,10 @@ Plans:
   3. Hard pre-filters reject stocks outside $5-MAX_POSITION_VALUE price range, below 500K daily volume, below $100M market cap, off NYSE/NASDAQ, or that are ETFs/preferred shares — before any scoring runs
   4. Bulk yf.download() pre-filter culls the full universe to ~50 survivors, then existing conviction scoring runs only on survivors
   5. The expanded universe scan runs only during the overnight window — the live 60-second bot loop continues using the existing curated watchlist
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [x] 07-01-PLAN.md — Factor scoring modules (SMC + multi-factor quant)
+- [ ] 07-02-PLAN.md — Four-tier pipeline, overnight daemon, integration hooks
 
 ### Phase 8: Multi-Source News
 **Goal**: News from multiple sources (Finnhub, RSS feeds, SEC EDGAR, FRED) is aggregated, deduplicated, and cached with per-source TTLs, giving the bot and user broader market awareness
@@ -217,7 +220,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 4. Position Sizing & Allocation | v1.0 | 0/? | Not started | - |
 | 5. Dashboard + Predictions + AI Analyst | v1.0 | 0/? | Not started | - |
 | 6. Score Recalibration | v2.0 | 2/2 | Complete | 2026-04-08 |
-| 7. Expanded Scanner | v2.0 | 0/? | Not started | - |
+| 7. Expanded Scanner | v2.0 | 2/2 | Complete | 2026-04-19 |
 | 8. Multi-Source News | v2.0 | 0/? | Not started | - |
 | 9. Overnight Scanner | v2.0 | 0/? | Not started | - |
 | 10. Intelligence Tab | v2.0 | 0/? | Not started | - |
