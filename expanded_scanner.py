@@ -34,6 +34,17 @@ import progress
 
 log = get_logger()
 
+_cancel_requested = threading.Event()
+
+
+def cancel_scan() -> None:
+    """Request cancellation of the running expanded scan."""
+    _cancel_requested.set()
+
+
+def _cancelled() -> bool:
+    return _cancel_requested.is_set()
+
 
 def _scan_log(message: str, level: str = "info") -> None:
     """Log to both standard logger and dashboard scan log buffer."""
@@ -214,12 +225,13 @@ def _score_quant_multifactor(
     rank_data = {sym: bars_dict[sym] for sym in symbols if sym in bars_dict}
     momentum_ranks = rank_momentum(rank_data)
 
-    # Second pass: compute quant scores (checking deadline)
+    # Second pass: compute quant scores (checking deadline + cancel)
     scored: list[dict] = []
-    for sym in symbols:
-        if time.time() >= deadline:
-            log.warning("[expanded] T4 deadline reached after scoring %d/%d symbols",
-                        len(scored), len(symbols))
+    for i, sym in enumerate(symbols):
+        if _cancelled() or time.time() >= deadline:
+            reason = "cancelled" if _cancelled() else "deadline"
+            log.warning("[expanded] T4 %s after scoring %d/%d symbols",
+                        reason, len(scored), len(symbols))
             break
 
         df = bars_dict.get(sym)
@@ -231,6 +243,10 @@ def _score_quant_multifactor(
             scored.append(result)
         except Exception as exc:
             log.debug("[expanded] T4 scoring failed for %s: %s", sym, exc)
+
+        if i % 20 == 0:
+            progress.track("expanded_scan", current=i, total=len(symbols),
+                           label=f"T4 scoring: {i:,}/{len(symbols):,}")
 
     # ETF double-check via ticker info for survivors
     # Only check a manageable number in parallel
@@ -284,10 +300,15 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
     Returns list of up to 50 survivor dicts with quant_score and factor
     breakdown. Saves results to JSON and updates shared state.
     """
+    _cancel_requested.clear()
     default_timeout = getattr(config, "EXPANDED_SCAN_TIMEOUT", 7200)
     deadline = time.time() + (timeout_seconds or default_timeout)
     start_ts = time.time()
     progress.clear_logs()
+
+    # Step 0: Get buying power for affordability filter
+    snap = shared_state.snapshot()
+    buying_power = float(snap.get("buying_power", 0) or snap.get("cash", 0) or 0)
 
     # Step 1: Get full universe
     universe = get_full_universe(include_discovery=False)
@@ -295,29 +316,63 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
     progress.track("expanded_scan", total=len(universe), current=0,
                    label=f"Scanning {len(universe):,} stocks...")
 
+    if _cancelled():
+        _scan_log("Scan cancelled by user", "warning")
+        progress.fail("expanded_scan", message="Cancelled")
+        return []
+
     # Step 2: Fetch 5-day bars for initial filtering
     _scan_log("Fetching 5-day bars for initial filtering...")
     bars_5d = fetch_bulk_bars(universe, period="5d", interval="1d")
     _scan_log(f"Fetched bars for {len(bars_5d):,}/{len(universe):,} symbols")
 
+    if _cancelled():
+        _scan_log("Scan cancelled by user", "warning")
+        progress.fail("expanded_scan", message="Cancelled")
+        return []
+
+    # T0: Buying power filter — drop stocks we can't afford
+    if buying_power > 0:
+        _scan_log(f"Running T0: Buying power filter (${buying_power:,.0f})...")
+        pre_count = len(universe)
+        affordable = []
+        for sym in universe:
+            df = bars_5d.get(sym)
+            if df is None or df.empty:
+                continue
+            last_close = float(df["close"].iloc[-1])
+            if last_close <= buying_power:
+                affordable.append(sym)
+        _scan_log(f"T0 affordability: {pre_count:,} -> {len(affordable):,} ({pre_count - len(affordable):,} too expensive)")
+        universe = affordable
+        progress.track("expanded_scan", total=len(universe), current=0,
+                       label=f"T0 done: {len(universe):,} affordable stocks")
+
     # Tier 1: Price + ETF gate
     _scan_log("Running T1: Price range ($5-$200) + ETF filter...")
     t1 = _filter_price_mcap(universe, bars_5d)
     progress.track("expanded_scan", current=len(universe) - len(t1),
-                   label=f"T1 complete: {len(t1):,} remain")
+                   label=f"T1 complete: {len(t1):,} remain ({len(universe) - len(t1):,} filtered)")
+
+    if _cancelled():
+        _scan_log("Scan cancelled by user", "warning")
+        progress.fail("expanded_scan", message="Cancelled")
+        return []
 
     # Tier 2: Volume gate
     _scan_log("Running T2: Volume gate (avg daily >= 500K)...")
     t2 = _filter_volume(t1, bars_5d)
     progress.track("expanded_scan", current=len(universe) - len(t2),
-                   label=f"T2 complete: {len(t2):,} remain")
+                   label=f"T2 complete: {len(t2):,} remain ({len(t1) - len(t2):,} filtered)")
 
     # Check deadline after T2
-    if time.time() >= deadline:
-        _scan_log("Deadline reached after T2, saving partial results", "warning")
-        funnel = {"universe": len(universe), "t1": len(t1), "t2": len(t2),
-                  "t3": 0, "survivors": 0}
+    if _cancelled() or time.time() >= deadline:
+        reason = "Cancelled" if _cancelled() else "Deadline reached after T2"
+        _scan_log(f"{reason}, saving partial results", "warning")
+        funnel = {"universe": len(universe), "t0_affordable": len(universe),
+                  "t1": len(t1), "t2": len(t2), "t3": 0, "survivors": 0}
         save_overnight_results([], funnel)
+        progress.fail("expanded_scan", message=reason)
         return []
 
     # Step 3: Fetch 30-day bars for T2 survivors only
@@ -325,18 +380,25 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
     bars_30d = fetch_bulk_bars(t2, period="30d", interval="1d")
     _scan_log(f"Fetched 30-day bars for {len(bars_30d):,}/{len(t2):,} symbols")
 
+    if _cancelled():
+        _scan_log("Scan cancelled by user", "warning")
+        progress.fail("expanded_scan", message="Cancelled")
+        return []
+
     # Tier 3: Momentum gate
     _scan_log("Running T3: Momentum gate (positive return OR unusual volume)...")
     t3 = _filter_momentum(t2, bars_5d, bars_30d)
     progress.track("expanded_scan", current=len(universe) - len(t3),
-                   label=f"T3 complete: {len(t3):,} remain")
+                   label=f"T3 complete: {len(t3):,} remain ({len(t2) - len(t3):,} filtered)")
 
     # Check deadline after T3
-    if time.time() >= deadline:
-        _scan_log("Deadline reached after T3, saving partial results", "warning")
-        funnel = {"universe": len(universe), "t1": len(t1), "t2": len(t2),
-                  "t3": len(t3), "survivors": 0}
+    if _cancelled() or time.time() >= deadline:
+        reason = "Cancelled" if _cancelled() else "Deadline reached after T3"
+        _scan_log(f"{reason}, saving partial results", "warning")
+        funnel = {"universe": len(universe), "t0_affordable": len(universe),
+                  "t1": len(t1), "t2": len(t2), "t3": len(t3), "survivors": 0}
         save_overnight_results([], funnel)
+        progress.fail("expanded_scan", message=reason)
         return []
 
     # Tier 4: Quant multi-factor scoring

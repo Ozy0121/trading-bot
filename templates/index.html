@@ -1645,6 +1645,22 @@
     </div>
   </div>
 
+  <!-- Pixel art office visualization -->
+  <div class="chart-card" style="margin-bottom:14px;padding:0;overflow:hidden;position:relative">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 6px">
+      <span class="chart-title">OFFICE VIEW</span>
+      <span id="office-status" style="font-size:11px;color:var(--outline)">connecting...</span>
+    </div>
+    <iframe id="office-iframe"
+            src="http://localhost:3000"
+            style="width:100%;height:420px;border:none;border-radius:0 0 8px 8px;background:#1a1a2e"
+            sandbox="allow-scripts allow-same-origin"
+            loading="lazy"
+            onload="document.getElementById('office-status').textContent='connected'"
+            onerror="document.getElementById('office-status').textContent='offline — start claude-office frontend'">
+    </iframe>
+  </div>
+
   <!-- Agent windows grid -->
   <div id="agent-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:14px">
   </div>
@@ -1861,6 +1877,7 @@
   <div class="loading-top-row">
     <div class="spinner-ring"></div>
     <div class="loading-label" id="loading-label">Loading...</div>
+    <button id="scan-cancel-btn" onclick="cancelScan()" style="background:var(--error-container);border:1px solid var(--error);color:var(--on-error-container);cursor:pointer;font-size:11px;padding:2px 10px;border-radius:4px;display:none" title="Cancel scan">CANCEL</button>
     <button onclick="this.closest('#loading-overlay').classList.remove('active')" style="background:none;border:none;color:var(--on-surface-variant);cursor:pointer;font-size:16px;padding:0 2px;line-height:1" title="Dismiss">&times;</button>
   </div>
   <div class="progress-wrap"><div class="progress-bar" id="progress-bar"></div></div>
@@ -4173,22 +4190,34 @@ function handleProgress(ops) {
     if (btn) btn.classList.remove('btn-loading');
   });
 
+  const cancelBtn = $('scan-cancel-btn');
+
   if (running.length > 0) {
-    // Show overlay with first running operation
     const op = running[0];
     overlay.classList.add('active');
     label.textContent = op.label || 'Processing...';
     if (op.total > 0) {
       bar.style.width = op.pct + '%';
-      ptext.textContent = op.current + ' / ' + op.total + ' (' + op.pct + '%)';
+      ptext.textContent = op.current.toLocaleString() + ' / ' + op.total.toLocaleString() + ' stocks (' + op.pct + '%)';
     } else {
       bar.style.width = '0%';
-      ptext.textContent = '';
+      ptext.textContent = op.label || '';
     }
+    if (cancelBtn) cancelBtn.style.display = op.id.includes('scan') ? 'inline-block' : 'none';
   } else {
     overlay.classList.remove('active');
     bar.style.width = '0%';
+    if (cancelBtn) cancelBtn.style.display = 'none';
   }
+}
+
+function cancelScan() {
+  fetch('/api/expanded-scan/cancel', {method:'POST'})
+    .then(r => r.json())
+    .then(d => { if (d.ok) showToast('Scan cancellation requested', 'info'); })
+    .catch(() => showToast('Failed to cancel scan', 'error'));
+  const btn = $('scan-cancel-btn');
+  if (btn) btn.style.display = 'none';
 }
 
 function btnLoading(btn, opId) {

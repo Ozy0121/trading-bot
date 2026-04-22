@@ -103,6 +103,61 @@ coordinator = AgentCoordinator(
 dashboard.set_coordinator(coordinator)
 bot.set_coordinator(coordinator)
 
+# ── Launch claude-office backend + frontend for pixel art visualization ────
+import subprocess
+import atexit
+
+_office_procs = []
+
+def _start_office():
+    office_dir = os.path.join(os.path.expanduser("~"), "claude-office")
+    backend_dir = os.path.join(office_dir, "backend")
+    frontend_dir = os.path.join(office_dir, "frontend")
+
+    if not os.path.isdir(backend_dir) or not os.path.isdir(frontend_dir):
+        log.warning("[server] claude-office not found at %s — skipping pixel art", office_dir)
+        return
+
+    try:
+        bp = subprocess.Popen(
+            ["uv", "run", "uvicorn", "app.main:app", "--port", "8000"],
+            cwd=backend_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _office_procs.append(bp)
+        log.info("[server] Claude Office backend started (pid %d, port 8000)", bp.pid)
+    except Exception as exc:
+        log.warning("[server] Failed to start claude-office backend: %s", exc)
+
+    try:
+        fp = subprocess.Popen(
+            ["npm", "run", "dev"],
+            cwd=frontend_dir,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            shell=True,
+        )
+        _office_procs.append(fp)
+        log.info("[server] Claude Office frontend started (pid %d, port 3000)", fp.pid)
+    except Exception as exc:
+        log.warning("[server] Failed to start claude-office frontend: %s", exc)
+
+def _stop_office():
+    for p in _office_procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+
+atexit.register(_stop_office)
+_start_office()
+
+# ── Connect claude-office pixel art bridge ─────────────────────────────────
+import office_bridge
+office_bridge.connect(agent_bus)
+log.info("[server] Claude Office bridge connected")
+
 # ── Start overnight scanner scheduler ────────────────────────────────────────
 from prediction_scanner import start_scheduler as start_overnight_scheduler
 start_overnight_scheduler()

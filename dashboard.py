@@ -819,6 +819,15 @@ def api_expanded_scan_run():
     return jsonify({"ok": True, "message": "Expanded scan started."})
 
 
+@app.route("/api/expanded-scan/cancel", methods=["POST"])
+def api_expanded_scan_cancel():
+    """Cancel a running expanded scan."""
+    from expanded_scanner import cancel_scan
+    cancel_scan()
+    progress.fail("expanded_scan", message="Scan cancelled by user")
+    return jsonify({"ok": True, "message": "Cancel requested."})
+
+
 @app.route("/api/scan-logs", methods=["GET", "DELETE"])
 def api_scan_logs():
     """Return or clear the scanner log buffer."""

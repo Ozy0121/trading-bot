@@ -280,7 +280,7 @@ def fetch_ticker_info(symbol: str) -> dict:
             log.debug("[openbb_data] %s info via yfinance", symbol)
             return info
     except Exception as exc:
-        log.info("[openbb_data] %s yfinance info failed (%s), trying FMP", symbol, exc)
+        log.debug("[openbb_data] %s yfinance info failed (%s), trying FMP", symbol, exc)
 
     # ── Fallback: FMP ────────────────────────────────────────────────────────
     if not FMP_API_KEY:
@@ -301,7 +301,7 @@ def fetch_ticker_info(symbol: str) -> dict:
                 "description":   profile.get("description", ""),
                 "country":       profile.get("country", ""),
             }
-            log.info("[openbb_data] %s info via FMP fallback", symbol)
+            log.debug("[openbb_data] %s info via FMP fallback", symbol)
             return normalized
     except Exception as exc:
         log.warning("[openbb_data] %s FMP info fallback failed: %s", symbol, exc)
