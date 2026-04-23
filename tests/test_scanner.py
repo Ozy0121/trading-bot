@@ -527,24 +527,15 @@ def test_sector_scoring():
     _fetch_sector_scores() returns dict with all 11 ETF keys and scores
     between 0 and 10.
     """
-    # Build a mock multi-ticker yf.download return value
-    # Returns a multi-level column DataFrame: (ETF, OHLCV)
     dates = pd.date_range("2025-01-01", periods=5, freq="B")
-    arrays = [
-        [etf for etf in SECTOR_ETFS for _ in ["Close"]],
-        ["Close"] * len(SECTOR_ETFS),
-    ]
-    idx = pd.MultiIndex.from_arrays(arrays)
-
-    # Give each ETF a unique close so rankings are distinct
-    data = {
-        (etf, "Close"): [100.0 + i * (j + 1) for i in range(5)]
+    mock_bulk = {
+        etf: pd.DataFrame({
+            "close": [100.0 + i * (j + 1) for i in range(5)]
+        }, index=dates)
         for j, etf in enumerate(SECTOR_ETFS)
     }
-    mock_df = pd.DataFrame(data, index=dates)
-    mock_df.columns = pd.MultiIndex.from_tuples(mock_df.columns)
 
-    with patch("scanner.yf.download", return_value=mock_df):
+    with patch("scanner.fetch_bulk_bars", return_value=mock_bulk):
         scores = _fetch_sector_scores()
 
     assert isinstance(scores, dict), f"Expected dict, got {type(scores)}"
@@ -556,8 +547,8 @@ def test_sector_scoring():
 
 
 def test_sector_scoring_fallback():
-    """_fetch_sector_scores() returns 5.0 for all ETFs when yf.download fails."""
-    with patch("scanner.yf.download", side_effect=Exception("network error")):
+    """_fetch_sector_scores() returns 5.0 for all ETFs when fetch_bulk_bars fails."""
+    with patch("scanner.fetch_bulk_bars", side_effect=Exception("network error")):
         scores = _fetch_sector_scores()
 
     assert isinstance(scores, dict)

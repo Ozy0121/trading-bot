@@ -13,6 +13,8 @@ Fill in your API keys in .env.paper and .env.live before running.
 import sys
 import os
 
+os.environ.setdefault("PYTHONUTF8", "1")
+
 # ── Determine mode from command-line argument ────────────────────────────────
 mode = sys.argv[1].lower() if len(sys.argv) > 1 else "paper"
 

@@ -446,7 +446,7 @@ def save_overnight_results(results: list[dict], scan_meta: dict) -> None:
         "results": results,
         "scan_time": datetime.now(timezone.utc).isoformat(),
         "expires_at": time.time() + _RESULTS_TTL_HOURS * 3600,
-        **scan_meta,
+        "funnel": scan_meta,
     }
 
     try:

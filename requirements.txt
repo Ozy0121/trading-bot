@@ -22,5 +22,14 @@ lxml>=4.9.0
 # Anthropic SDK for multi-agent Claude orchestration
 anthropic>=0.40.0
 
+# Web dashboard
+flask>=3.0.0
+
+# HTTP requests for external APIs
+requests>=2.31.0
+
+# Yahoo Finance market data
+yfinance>=0.2.36
+
 # Unified data layer (currently broken on Python 3.14, using direct yfinance+FMP)
-openbb>=4.5.0
+# openbb>=4.5.0
