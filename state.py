@@ -132,6 +132,9 @@ def update(**kwargs) -> None:
         for k, v in kwargs.items():
             if k in _state:
                 _state[k] = v
+            else:
+                import logging
+                logging.getLogger(__name__).warning("[state] Unknown key ignored: %s", k)
 
 
 def push_history(time: str, price: float, short_sma: float, long_sma: float,

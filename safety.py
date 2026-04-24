@@ -481,7 +481,7 @@ def calculate_safe_qty(price: float, equity: float,
     Return the maximum number of whole shares we can buy.
     fraction: override for dynamic position sizing (defaults to config.MAX_POSITION_FRACTION)
     """
-    if price <= 0:
+    if price <= 0 or equity <= 0:
         return 0
     if fraction is None:
         fraction = config.MAX_POSITION_FRACTION

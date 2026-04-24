@@ -107,7 +107,6 @@ LOSING_STREAK_SIZE_FACTOR = _float("LOSING_STREAK_SIZE_FACTOR", 0.5)
 DASHBOARD_PORT = _int("DASHBOARD_PORT", 5000)
 
 # ── Expanded overnight scanner (Phase 7) ─────────────────────────────────
-EXPANDED_SCAN_BATCH_SIZE     = _int("EXPANDED_SCAN_BATCH_SIZE", 150)
 EXPANDED_SCAN_WORKERS        = _int("EXPANDED_SCAN_WORKERS", 10)
 EXPANDED_SCAN_TIMEOUT        = _int("EXPANDED_SCAN_TIMEOUT", 7200)    # 2 hours in seconds (D-06)
 EXPANDED_SCAN_DELAY_MINUTES  = _int("EXPANDED_SCAN_DELAY_MINUTES", 15)  # minutes after close (D-05)

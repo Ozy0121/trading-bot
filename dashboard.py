@@ -937,13 +937,13 @@ def api_predictions_auto_trade():
     if body.get("confirm") != "YES":
         abort(400, "Confirmation required.")
 
-    max_orders = body.get("max_orders", 1)  # default: 1 order at a time (PDT safe)
+    max_orders = min(int(body.get("max_orders", 1)), 3)  # hard cap at 3 (PDT limit)
 
     def _do():
         try:
             from prediction_scanner import get_latest_predictions
             from bot import place_limit_buy
-            from safety import check_pdt_allows_buy, calculate_safe_qty, get_dynamic_fraction
+            from safety import check_pdt_allows_buy, calculate_safe_qty, get_dynamic_fraction, get_pdt_info
 
             preds = get_latest_predictions()
             if not preds:
@@ -956,25 +956,32 @@ def api_predictions_auto_trade():
             snap = shared_state.snapshot()
             consecutive_losses = snap.get("consecutive_losses", 0)
 
-            # Check PDT
-            if not check_pdt_allows_buy(_trading_client):
+            # Check PDT before starting
+            pdt = get_pdt_info(_trading_client)
+            if pdt["applies"] and pdt["remaining"] <= 0:
                 log.warning("[auto-trade] PDT limit reached — cannot place orders")
                 return
+
+            # Cap orders to PDT remaining trades
+            effective_max = min(max_orders, pdt["remaining"]) if pdt["applies"] else max_orders
 
             # Get top picks (launch_zone and pre_breakout only)
             ready = preds.get("ready_tomorrow", [])
             if not ready:
-                # Fall back to all predictions with high confidence
                 ready = [p for p in preds.get("all_predictions", [])
                          if p.get("confidence", 0) >= 8
                          and p.get("stage") in ("launch_zone", "pre_breakout")]
 
             placed = 0
-            for p in ready[:max_orders]:
+            for p in ready[:effective_max]:
                 sym = p["symbol"]
-                entry_price = p["entry_high"]     # limit at top of entry zone
-                stop_loss = p["stop_loss"]
-                target = p["target_price"]
+                entry_price = p.get("entry_high", 0)
+                stop_loss = p.get("stop_loss", 0)
+                target = p.get("target_price", 0)
+
+                if not entry_price or not stop_loss or not target:
+                    log.warning("[auto-trade] Skipping %s — missing price data", sym)
+                    continue
 
                 log.info("[auto-trade] Placing GTC limit order: %s @ $%.2f "
                          "(SL=$%.2f TP=$%.2f conf=%d stage=%s)",
@@ -989,7 +996,7 @@ def api_predictions_auto_trade():
                 if ok:
                     placed += 1
 
-            log.info("[auto-trade] Placed %d/%d orders", placed, min(len(ready), max_orders))
+            log.info("[auto-trade] Placed %d/%d orders", placed, min(len(ready), effective_max))
         except Exception as exc:
             log.error("[auto-trade] Failed: %s", exc, exc_info=True)
 

@@ -26,3 +26,6 @@ env/
 
 # Data
 data/
+
+# Generated output
+graphify-out/
