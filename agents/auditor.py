@@ -23,7 +23,8 @@ log = get_logger()
 _DEFAULT_JOURNAL_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "data", "trade_journal.json"
 )
-_AUDITOR_MODEL = os.getenv("AUDITOR_MODEL", "claude-opus-4-6")
+import config
+_AUDITOR_MODEL = config.AUDITOR_MODEL
 
 
 class Auditor(BaseAgent):

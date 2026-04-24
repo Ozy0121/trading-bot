@@ -2378,6 +2378,12 @@ function setText(id, val) {
 function setHtml(id, val) {
   const el = $(id); if (el) el.innerHTML = val;
 }
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
 function flash(id, cls) {
   const el = $(id); if (!el) return;
   el.classList.remove('flash-green','flash-red');
@@ -2662,8 +2668,8 @@ function refresh(d) {
         const color = stageColors[stage] || 'var(--outline)';
         setupHtml = `<td style="text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:2px;background:${color}22;color:${color};font-weight:600">${label}</span></td>`;
       }
-      return `<tr class="watchlist-row${isActive}" onclick="switchChartSymbol('${r.symbol}', this)">
-        <td class="wl-symbol">${r.symbol}</td>
+      return `<tr class="watchlist-row${isActive}" onclick="switchChartSymbol('${esc(r.symbol)}', this)">
+        <td class="wl-symbol">${esc(r.symbol)}</td>
         <td>$${(r.price||0).toFixed(2)}</td>
         <td class="${chgCls}">${(r.change_pct||0)>=0?'+':''}${(r.change_pct||0).toFixed(2)}%</td>
         <td style="text-align:center"><span class="signal-pill signal-${r.signal}">${r.signal}</span></td>
@@ -2686,9 +2692,9 @@ function refresh(d) {
         const cls = ['BUY','SELL','PDT_HOLD'].includes(e.event)
           ? 'log-evt-' + e.event : 'log-evt-other';
         return `<div class="log-item">
-          <span class="log-time">${e.time}</span>
-          <span class="log-evt ${cls}">${e.event}</span>
-          <span class="log-detail">${e.detail}</span>
+          <span class="log-time">${esc(e.time)}</span>
+          <span class="log-evt ${cls}">${esc(e.event)}</span>
+          <span class="log-detail">${esc(e.detail)}</span>
         </div>`;
       }).join(''));
     }
@@ -2703,8 +2709,8 @@ function refresh(d) {
     } else {
       setHtml('news-list', news.map(n => `
         <div class="news-item">
-          <a href="${n.link}" target="_blank" rel="noopener">${n.title}</a>
-          <div class="news-date">${n.date}</div>
+          <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a>
+          <div class="news-date">${esc(n.date)}</div>
         </div>`).join(''));
     }
   }
@@ -3475,9 +3481,9 @@ function renderPredictionCard(p) {
     accumulation: 'ACCUMULATION',
     early_accumulation: 'EARLY',
   };
-  const stageLabel = stageLabels[p.stage] || p.stage;
-  const patterns = (p.patterns || []).filter(pt => pt.detected).map(pt => pt.name.replace(/_/g,' ')).join(', ');
-  const reasons = (p.reasons || []).map(r => `<div style="font-size:11px;color:var(--on-surface-variant);padding:2px 0">• ${r}</div>`).join('');
+  const stageLabel = stageLabels[p.stage] || esc(p.stage);
+  const patterns = (p.patterns || []).filter(pt => pt.detected).map(pt => esc(pt.name.replace(/_/g,' '))).join(', ');
+  const reasons = (p.reasons || []).map(r => `<div style="font-size:11px;color:var(--on-surface-variant);padding:2px 0">• ${esc(r)}</div>`).join('');
   const accPct = p.historical_accuracy > 0 ? (p.historical_accuracy * 100).toFixed(0) + '%' : '—';
   const samples = p.historical_samples || 0;
 
@@ -3488,10 +3494,10 @@ function renderPredictionCard(p) {
     ? `<span style="font-size:10px;color:${p.expected_value > 0 ? '#66bb6a' : '#ef5350'}">EV $${p.expected_value > 0 ? '+' : ''}${p.expected_value?.toFixed(2)}</span>`
     : '';
 
-  return `<div class="chart-card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer${p.rr_badge ? ';border-left:3px solid #ffd744' : ''}" onclick="openChart('${p.symbol}')">
+  return `<div class="chart-card" style="padding:10px 12px;margin-bottom:8px;cursor:pointer${p.rr_badge ? ';border-left:3px solid #ffd744' : ''}" onclick="openChart('${esc(p.symbol)}')">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span style="font-weight:700;font-size:14px;color:var(--on-surface)">${p.symbol}</span>
+        <span style="font-weight:700;font-size:14px;color:var(--on-surface)">${esc(p.symbol)}</span>
         <span style="font-size:10px;padding:2px 6px;border-radius:2px;background:${confColor}22;color:${confColor};font-weight:600">${stageLabel}</span>
         ${rrRatio} ${rrBadge}
       </div>

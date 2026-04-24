@@ -24,9 +24,10 @@ from logger_setup import get_logger
 
 log = get_logger()
 
+import config
 _CONVICTION_THRESHOLD = float(os.getenv("CONVICTION_THRESHOLD", "5.8")) * 10
 _MIN_CONFIDENCE = 8
-_MODEL = os.getenv("STRATEGIST_MODEL", "claude-sonnet-4-6")
+_MODEL = config.STRATEGIST_MODEL
 
 
 class Strategist(BaseAgent):
