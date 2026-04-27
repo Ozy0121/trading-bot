@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 Phase: 07 (expanded-scanner) — COMPLETE
 Plan: 2 of 2
 Status: Phase 07 complete, ready for Phase 08
-Last activity: 2026-04-19 -- Phase 07 verified complete (2/2 plans, 16 tests green)
+Last activity: 2026-04-26 -- Completed quick task 260426-kqf: Calibrate prediction.py pattern weights using backtest results
 
 Progress: [██████████] 100%
 
@@ -80,6 +80,7 @@ None yet.
 | 260328-jal | Redesign dashboard UI with premium fintech glassmorphism dark earthy theme | 2026-03-28 | b1c55ee | [260328-jal](./quick/260328-jal-redesign-dashboard-ui-with-premium-finte/) |
 | 260401-bpu | Recalibrate conviction scoring | 2026-04-01 | 6aedc04 | [260401-bpu](./quick/260401-bpu-recalibrate-conviction-scoring-fix-compr/) |
 | 260402-e9l | Fix stop-without-liquidate and wire up agent coordinator | 2026-04-02 | c7660c6 | [260402-e9l](./quick/260402-e9l-fix-stop-without-liquidate-and-wire-up-a/) |
+| 260426-kqf | Calibrate prediction.py pattern weights using backtest results | 2026-04-26 | 2f4466e | [260426-kqf](./quick/260426-kqf-calibrate-prediction-py-pattern-weights-/) |
 
 ### Blockers/Concerns
 
