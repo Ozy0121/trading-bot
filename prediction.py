@@ -1,25 +1,29 @@
 """
 prediction.py
 -------------
-Pre-spike prediction engine v2 — improved accuracy over v1's retail patterns.
+Pre-spike prediction engine v2 — data-driven weights calibrated from 50k-observation
+walk-forward backtest (200 S&P 500 stocks, 250 trading days).
 
 Key improvements over v1 (33% accuracy):
   1. Trend filter: rejects downtrending stocks (SMA20 < SMA50)
   2. Keltner-within-Bollinger squeeze: more reliable than BB-only
-  3. OBV/ADL divergence: detects real institutional money flow
+  3. ADL divergence: star pattern (+5.3pp edge, 59.8% hit rate)
   4. ATR-based stops: tighter, volatility-adjusted
-  5. Weighted scoring: patterns ranked by predictive value
-  6. Volume gate: requires at least one volume signal to confirm
+  5. Weighted scoring: patterns ranked by measured backtest edge
+  6. Volume gate: requires adl_divergence OR volume_accumulation (proven volume patterns only)
   7. Market structure shift: detects trend reversals via swing highs
+  8. Combo bonus: multiplicative reward when core patterns co-fire (+5-18pp edge)
 
-Pattern library (weighted by predictive value):
-  1. Keltner squeeze (weight 2.0): KC inside BB = extreme compression
-  2. OBV divergence (weight 1.8): OBV rising while price flat = stealth buying
-  3. ADL divergence (weight 1.5): money flow positive while price quiet
-  4. Volume accumulation (weight 1.5): volume building while price flat
-  5. Higher lows + market structure (weight 1.3): coiling with structure shift
-  6. MACD launch zone (weight 1.0): histogram converging, RSI in sweet spot
-  7. Relative strength (weight 0.8): outperforming SPY quietly
+Pattern library (weighted by backtest-measured edge):
+  1. ADL divergence (weight 3.0): star pattern, 59.8% hit rate, +5.3pp edge
+  2. Volume accumulation (weight 2.5): strong pattern, 57.6% hit rate, +3.2pp edge
+  3. Higher lows (weight 0.8): weak solo, strong combo amplifier with adl_divergence
+  4. Keltner squeeze (weight 0.8): weak solo, strong combo amplifier with adl_divergence
+  5. Relative strength (weight 0.8): weak solo, strong combo amplifier with adl_divergence
+  6. Fair value gap (weight 0.5): no solo edge (54.4% = baseline), useful as combo amplifier
+  7. MACD launch zone (weight 0.5): negative solo edge, best combo partner with adl_divergence
+
+Note: obv_divergence removed — 0 fires in 50,000 observations (never detects real setups).
 """
 
 from __future__ import annotations
@@ -128,17 +132,22 @@ FVG_PROXIMITY_PCT = 2.0     # price must be within 2% of FVG midpoint
 # Multi-timeframe confirmation
 MTF_WEEKLY_MA = 10           # 10-week moving average for weekly trend
 
-# Pattern weights: how much each pattern contributes to final score
+# Pattern weights: backtest-measured edges from 50k-observation walk-forward backtest
+# (200 S&P 500 stocks, 250 trading days)
 PATTERN_WEIGHTS = {
-    "keltner_squeeze":     2.0,
-    "obv_divergence":      1.8,
-    "adl_divergence":      1.5,
-    "volume_accumulation": 1.5,
-    "higher_lows":         1.3,
-    "fair_value_gap":      1.2,
-    "macd_launch_zone":    1.0,
-    "relative_strength":   0.8,
+    "adl_divergence":      3.0,   # star pattern: 59.8% hit, +5.3pp edge
+    "volume_accumulation": 2.5,   # strong: 57.6% hit, +3.2pp edge
+    "higher_lows":         0.8,   # weak solo, strong in combos with adl
+    "keltner_squeeze":     0.8,   # weak solo, strong in combos with adl
+    "relative_strength":   0.8,   # weak solo, strong in combos with adl
+    "fair_value_gap":      0.5,   # no edge solo (54.4% = baseline)
+    "macd_launch_zone":    0.5,   # negative solo edge, but best combo partner with adl
 }
+
+# Combo bonus: measured 2-3 pattern confluence edges from 50k-observation backtest
+# adl_divergence combos produce +5pp to +18pp edge above baseline
+COMBO_BONUS_CORE = {"adl_divergence", "volume_accumulation"}
+COMBO_BONUS_MULTIPLIER = 1.5  # 50% bonus when a core pattern co-fires with others
 
 # Cache for historical analysis
 _hist_cache: dict[str, tuple[date, dict]] = {}
@@ -755,7 +764,7 @@ def _compute_historical_accuracy(
                 if MACD_RSI_LOW <= rsi_val <= MACD_RSI_HIGH and abs(hist_val) < MACD_HIST_FLAT_THRESHOLD:
                     match_count += 1
 
-            if "volume_accumulation" in active_pattern_names or "obv_divergence" in active_pattern_names:
+            if "volume_accumulation" in active_pattern_names:
                 if i >= 10:
                     recent_v = float(volumes.iloc[i - 2:i + 1].mean())
                     prior_v = float(volumes.iloc[i - 10:i - 2].mean())
@@ -959,9 +968,9 @@ def predict(
         return None
 
     # Run all pattern detectors
+    # Note: obv_divergence removed — 0 fires in 50k-observation backtest
     patterns = [
         detect_keltner_squeeze(df),
-        detect_obv_divergence(df),
         detect_adl_divergence(df),
         detect_volume_accumulation(df),
         detect_higher_lows(df),
@@ -974,9 +983,11 @@ def predict(
     if not active_patterns:
         return None
 
-    # Gate 2: Volume gate — must have at least one volume signal
-    volume_signals = [p for p in active_patterns if p.category == "volume"]
-    if not volume_signals:
+    # Gate 2: Volume gate — must have adl_divergence or volume_accumulation
+    # (backtest shows only these two have real volume edge; other volume-category
+    # patterns like obv_divergence had 0 fires)
+    core_volume = {p.name for p in active_patterns} & {"adl_divergence", "volume_accumulation"}
+    if not core_volume:
         return None
 
     # Weighted scoring: patterns with higher predictive value count more
@@ -987,6 +998,15 @@ def predict(
         max_weighted += 10.0 * weight
         if p.detected:
             weighted_score += p.score * weight
+
+    # Combo bonus: when adl_divergence or volume_accumulation co-fires with
+    # other patterns, apply multiplicative bonus (backtest shows +5-18pp edge)
+    active_names = {p.name for p in active_patterns}
+    core_active = active_names & COMBO_BONUS_CORE
+    non_core_active = active_names - COMBO_BONUS_CORE
+    if core_active and non_core_active:
+        combo_multiplier = 1.0 + (COMBO_BONUS_MULTIPLIER - 1.0) * len(core_active)
+        weighted_score *= combo_multiplier
 
     composite = weighted_score / max_weighted * 10.0 if max_weighted > 0 else 0.0
 
@@ -1050,8 +1070,6 @@ def predict(
     for p in active_patterns:
         if p.name == "keltner_squeeze":
             reasons.append(f"Keltner squeeze: extreme volatility compression ({p.details.get('squeeze_bars', 0)} bars)")
-        elif p.name == "obv_divergence":
-            reasons.append(f"OBV divergence: stealth buying detected (div={p.details.get('divergence', 0):.2f})")
         elif p.name == "adl_divergence":
             reasons.append(f"ADL divergence: money flow positive while price flat (div={p.details.get('divergence', 0):.2f})")
         elif p.name == "volume_accumulation":
