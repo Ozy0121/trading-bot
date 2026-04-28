@@ -3,13 +3,7 @@ openbb_data.py
 --------------
 Unified data abstraction layer for all market data fetching.
 
-Uses yfinance as the default free provider with FMP (Financial Modeling Prep)
-as an automatic fallback on rate-limit or any other errors.
-
-IMPORTANT: OpenBB Platform 4.7.1 is installed but broken on Python 3.14
-(ImportError on obb.equity). This module works WITHOUT OpenBB using direct
-yfinance + FMP calls, structured so OpenBB can be plugged in as a provider
-backend later when Python 3.14 support lands.
+Provider priority: Polygon.io (paid) → yfinance (free) → FMP (free fallback).
 
 Usage:
     from openbb_data import fetch_bars, fetch_quote, fetch_ticker_info, fetch_bulk_bars
@@ -23,6 +17,8 @@ Usage:
 from __future__ import annotations
 
 import os
+import time
+from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
@@ -35,9 +31,11 @@ log = get_logger()
 
 # ── Config ───────────────────────────────────────────────────────────────────
 
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
+POLYGON_BASE_URL = "https://api.polygon.io"
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 FMP_BASE_URL = "https://financialmodelingprep.com"
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 15
 
 # ── Period / interval mappings ────────────────────────────────────────────────
 
@@ -79,6 +77,163 @@ def _period_to_days(period: str) -> int:
         except ValueError:
             pass
     return 60  # sensible fallback
+
+
+# ── Polygon.io interval mapping ──────────────────────────────────────────────
+
+_INTERVAL_MAP_POLYGON: dict[str, tuple[int, str]] = {
+    "1m":  (1, "minute"),
+    "5m":  (5, "minute"),
+    "15m": (15, "minute"),
+    "30m": (30, "minute"),
+    "60m": (1, "hour"),
+    "1h":  (1, "hour"),
+    "1d":  (1, "day"),
+}
+
+
+def _polygon_get(endpoint: str, params: dict | None = None) -> dict | None:
+    if not POLYGON_API_KEY:
+        return None
+    params = {**(params or {}), "apiKey": POLYGON_API_KEY}
+    url = f"{POLYGON_BASE_URL}{endpoint}"
+    try:
+        resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:
+        log.debug("[openbb_data] Polygon request failed (%s): %s", endpoint, exc)
+        return None
+
+
+def _polygon_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.DataFrame | None:
+    """Fetch bars for a single symbol from Polygon.io."""
+    multiplier, timespan = _INTERVAL_MAP_POLYGON.get(interval, (1, "day"))
+    days = _period_to_days(period)
+    date_to = datetime.now().strftime("%Y-%m-%d")
+    date_from = (datetime.now() - timedelta(days=days + 5)).strftime("%Y-%m-%d")
+
+    data = _polygon_get(
+        f"/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{date_from}/{date_to}",
+        {"adjusted": "true", "sort": "asc", "limit": 50000},
+    )
+    if not data or data.get("resultsCount", 0) == 0:
+        return None
+
+    results = data.get("results", [])
+    if not results:
+        return None
+
+    df = pd.DataFrame(results)
+    df = df.rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume", "t": "timestamp"})
+    df.index = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_localize(None)
+    df = df[["open", "high", "low", "close", "volume"]].copy()
+    df = df.sort_index()
+    return df
+
+
+def _polygon_grouped_daily(date_str: str) -> dict[str, dict] | None:
+    """Fetch grouped daily bars for ALL US stocks on a single date."""
+    data = _polygon_get(
+        f"/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
+        {"adjusted": "true"},
+    )
+    if not data or data.get("resultsCount", 0) == 0:
+        return None
+
+    result = {}
+    for bar in data.get("results", []):
+        sym = bar.get("T", "")
+        if sym:
+            result[sym] = {
+                "open": bar["o"], "high": bar["h"], "low": bar["l"],
+                "close": bar["c"], "volume": bar["v"],
+                "timestamp": bar["t"],
+            }
+    return result
+
+
+def _polygon_bulk_bars(symbols: list[str], period: str = "5d", progress_cb=None) -> dict[str, pd.DataFrame]:
+    """
+    Fetch bars for many symbols via Polygon.
+
+    Strategy: grouped daily (1 call/day) for short periods with many symbols,
+    per-ticker aggregates for longer periods or fewer symbols.
+    """
+    days = _period_to_days(period)
+
+    # For periods > 10 days or small symbol lists, use per-ticker endpoint
+    if days > 10 or len(symbols) < 50:
+        return _polygon_bulk_per_ticker(symbols, period, progress_cb)
+
+    # Grouped daily: 1 API call per trading day, returns ALL tickers
+    return _polygon_bulk_grouped(symbols, period, progress_cb)
+
+
+def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=None) -> dict[str, pd.DataFrame]:
+    """Grouped daily: best for short periods with large symbol lists."""
+    days = _period_to_days(period)
+    per_sym: dict[str, list[dict]] = {s: [] for s in symbols}
+
+    trading_days_needed = days + 2
+    dates = []
+    for i in range(trading_days_needed + 5):
+        d = datetime.now() - timedelta(days=i)
+        if d.weekday() < 5:
+            dates.append(d.strftime("%Y-%m-%d"))
+        if len(dates) >= trading_days_needed:
+            break
+
+    if progress_cb:
+        progress_cb(0, len(symbols), f"Fetching {len(dates)} days from Polygon...")
+
+    for date_idx, date_str in enumerate(reversed(dates)):
+        grouped = _polygon_grouped_daily(date_str)
+        if not grouped:
+            continue
+        for sym in symbols:
+            if sym in grouped:
+                per_sym[sym].append(grouped[sym])
+        if progress_cb and date_idx % 2 == 0:
+            progress_cb(0, len(symbols), f"Polygon: fetched {date_idx + 1}/{len(dates)} days...")
+
+    result: dict[str, pd.DataFrame] = {}
+    for sym, bars in per_sym.items():
+        if not bars:
+            continue
+        df = pd.DataFrame(bars)
+        df.index = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_localize(None)
+        df = df[["open", "high", "low", "close", "volume"]].copy()
+        df = df.sort_index()
+        if len(df) >= 1:
+            result[sym] = df
+
+    if progress_cb:
+        progress_cb(len(symbols), len(symbols), f"Polygon: got bars for {len(result):,}/{len(symbols):,} symbols")
+
+    log.info("[openbb_data] Polygon grouped daily: %d/%d symbols across %d days", len(result), len(symbols), len(dates))
+    return result
+
+
+def _polygon_bulk_per_ticker(symbols: list[str], period: str = "30d", progress_cb=None) -> dict[str, pd.DataFrame]:
+    """Per-ticker aggregates: best for longer periods or smaller symbol lists."""
+    result: dict[str, pd.DataFrame] = {}
+
+    if progress_cb:
+        progress_cb(0, len(symbols), f"Polygon: fetching {period} bars for {len(symbols):,} symbols...")
+
+    for i, sym in enumerate(symbols):
+        df = _polygon_bars(sym, period=period, interval="1d")
+        if df is not None:
+            result[sym] = df
+        if progress_cb and i % 50 == 0 and i > 0:
+            progress_cb(i, len(symbols), f"Polygon: {i:,}/{len(symbols):,} symbols...")
+
+    if progress_cb:
+        progress_cb(len(symbols), len(symbols), f"Polygon: got {period} bars for {len(result):,}/{len(symbols):,} symbols")
+
+    log.info("[openbb_data] Polygon per-ticker: %d/%d symbols (%s)", len(result), len(symbols), period)
+    return result
 
 
 # ── FMP helper ────────────────────────────────────────────────────────────────
@@ -170,13 +325,21 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
     """
     Fetch OHLCV bars for a symbol.
 
-    Primary: yfinance via rate_limited_yf (token bucket rate limiter).
-    Fallback: FMP REST API if yfinance raises any exception.
-
+    Priority: Polygon.io → yfinance → FMP.
     Returns a DataFrame with lowercase columns [open, high, low, close, volume]
-    and a DatetimeIndex, sorted ascending. Returns None if both providers fail.
+    and a DatetimeIndex, sorted ascending. Returns None if all providers fail.
     """
-    # ── Primary: yfinance ────────────────────────────────────────────────────
+    # ── Primary: Polygon.io ─────────────────────────────────────────────────
+    if POLYGON_API_KEY:
+        try:
+            df = _polygon_bars(symbol, period=period, interval=interval)
+            if df is not None and not df.empty:
+                log.debug("[openbb_data] %s bars via Polygon (period=%s)", symbol, period)
+                return df
+        except Exception as exc:
+            log.debug("[openbb_data] %s Polygon failed (%s), trying yfinance", symbol, exc)
+
+    # ── Fallback 1: yfinance ────────────────────────────────────────────────
     try:
         df = rate_limited_yf(
             lambda: yf.Ticker(symbol).history(period=period, interval=interval)
@@ -189,7 +352,7 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
     except Exception as exc:
         log.info("[openbb_data] %s yfinance failed (%s), trying FMP fallback", symbol, exc)
 
-    # ── Fallback: FMP ────────────────────────────────────────────────────────
+    # ── Fallback 2: FMP ─────────────────────────────────────────────────────
     if not FMP_API_KEY:
         log.debug("[openbb_data] %s: no FMP_API_KEY, skipping fallback", symbol)
         return None
@@ -221,7 +384,7 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
     except Exception as exc:
         log.warning("[openbb_data] %s FMP fallback failed: %s", symbol, exc)
 
-    log.warning("[openbb_data] %s: both providers failed for bars", symbol)
+    log.warning("[openbb_data] %s: all providers failed for bars", symbol)
     return None
 
 
@@ -229,12 +392,22 @@ def fetch_quote(symbol: str) -> float | None:
     """
     Get the latest price for a symbol.
 
-    Primary: yfinance 1-day 1-minute history, take last close.
-    Fallback: FMP /api/v3/quote-short/{symbol}.
-
+    Priority: Polygon.io → yfinance → FMP.
     Returns None on failure.
     """
-    # ── Primary: yfinance ────────────────────────────────────────────────────
+    # ── Primary: Polygon.io ─────────────────────────────────────────────────
+    if POLYGON_API_KEY:
+        try:
+            data = _polygon_get(f"/v2/last/trade/{symbol}")
+            if data and "results" in data:
+                price = float(data["results"].get("p", 0))
+                if price > 0:
+                    log.debug("[openbb_data] %s quote via Polygon: %.4f", symbol, price)
+                    return price
+        except Exception as exc:
+            log.debug("[openbb_data] %s Polygon quote failed (%s), trying yfinance", symbol, exc)
+
+    # ── Fallback 1: yfinance ────────────────────────────────────────────────
     try:
         df = rate_limited_yf(
             lambda: yf.Ticker(symbol).history(period="1d", interval="1m")
@@ -247,7 +420,7 @@ def fetch_quote(symbol: str) -> float | None:
     except Exception as exc:
         log.info("[openbb_data] %s yfinance quote failed (%s), trying FMP", symbol, exc)
 
-    # ── Fallback: FMP ────────────────────────────────────────────────────────
+    # ── Fallback 2: FMP ─────────────────────────────────────────────────────
     if not FMP_API_KEY:
         return None
 
@@ -268,12 +441,30 @@ def fetch_ticker_info(symbol: str) -> dict:
     """
     Get ticker metadata (sector, marketCap, etc.).
 
-    Primary: yfinance Ticker.info via rate_limited_yf.
-    Fallback: FMP /api/v3/profile/{symbol}.
-
+    Priority: Polygon.io → yfinance → FMP.
     Returns empty dict on failure.
     """
-    # ── Primary: yfinance ────────────────────────────────────────────────────
+    # ── Primary: Polygon.io ─────────────────────────────────────────────────
+    if POLYGON_API_KEY:
+        try:
+            data = _polygon_get(f"/v3/reference/tickers/{symbol}")
+            if data and "results" in data:
+                r = data["results"]
+                info = {
+                    "sector":    r.get("sic_description", ""),
+                    "industry":  r.get("sic_description", ""),
+                    "marketCap": r.get("market_cap", 0),
+                    "longName":  r.get("name", ""),
+                    "exchange":  r.get("primary_exchange", ""),
+                    "locale":    r.get("locale", ""),
+                }
+                if info.get("longName"):
+                    log.debug("[openbb_data] %s info via Polygon", symbol)
+                    return info
+        except Exception as exc:
+            log.debug("[openbb_data] %s Polygon info failed (%s), trying yfinance", symbol, exc)
+
+    # ── Fallback 1: yfinance ────────────────────────────────────────────────
     try:
         info = rate_limited_yf(lambda: yf.Ticker(symbol).info)
         if isinstance(info, dict) and info:
@@ -313,13 +504,12 @@ def fetch_bulk_bars(
     symbols: list[str],
     period: str = "5d",
     interval: str = "1d",
+    progress_cb: callable | None = None,
 ) -> dict[str, pd.DataFrame]:
     """
     Fetch OHLCV bars for multiple symbols at once.
 
-    Primary: yfinance bulk download (yf.download) via rate_limited_yf.
-    Fallback: loop through symbols individually using fetch_bars.
-
+    Priority: Polygon grouped daily (all symbols in ~5 API calls) → yfinance → individual fallback.
     Returns dict mapping symbol -> DataFrame (lowercase columns, DatetimeIndex).
     Missing symbols are omitted from the result.
     """
@@ -328,7 +518,61 @@ def fetch_bulk_bars(
     if not symbols:
         return result
 
-    # ── Primary: yfinance bulk download ─────────────────────────────────────
+    # ── Primary: Polygon grouped daily ──────────────────────────────────────
+    if POLYGON_API_KEY and interval in ("1d", "daily"):
+        try:
+            result = _polygon_bulk_bars(symbols, period=period, progress_cb=progress_cb)
+            if result:
+                return result
+        except Exception as exc:
+            log.info("[openbb_data] Polygon bulk_bars failed (%s), falling back to yfinance", exc)
+
+    # ── Fallback 1: yfinance bulk download (batched) ────────────────────────
+    batch_size = 100
+    if len(symbols) > batch_size:
+        batches = [symbols[i:i+batch_size] for i in range(0, len(symbols), batch_size)]
+        for batch_idx, batch in enumerate(batches):
+            if progress_cb:
+                done = batch_idx * batch_size
+                progress_cb(done, len(symbols), f"Fetching bars: {done:,}/{len(symbols):,} symbols...")
+            batch_result = _yf_bulk_batch(batch, period=period, interval=interval)
+            result.update(batch_result)
+            if batch_idx < len(batches) - 1:
+                time.sleep(2.0)
+        if progress_cb:
+            progress_cb(len(symbols), len(symbols), f"Fetched bars for {len(result):,}/{len(symbols):,} symbols")
+        return result
+
+    result = _yf_bulk_batch(symbols, period=period, interval=interval)
+    if result:
+        return result
+
+    # ── Fallback 2: individual fetch_bars calls ─────────────────────────────
+    log.info("[openbb_data] bulk_bars: fetching %d symbols individually via fallback", len(symbols))
+    consecutive_failures = 0
+    for i, sym in enumerate(symbols):
+        if i > 0 and i % 10 == 0:
+            time.sleep(1.0)
+        try:
+            df = fetch_bars(sym, period=period, interval=interval)
+            if df is not None:
+                result[sym] = df
+                consecutive_failures = 0
+            else:
+                consecutive_failures += 1
+        except Exception:
+            consecutive_failures += 1
+        if consecutive_failures >= 20:
+            log.warning("[openbb_data] bulk_bars fallback: %d consecutive failures, skipping remaining %d symbols",
+                        consecutive_failures, len(symbols) - i - 1)
+            break
+
+    return result
+
+
+def _yf_bulk_batch(symbols: list[str], period: str = "5d", interval: str = "1d") -> dict[str, pd.DataFrame]:
+    """Fetch a single batch of symbols via yf.download."""
+    result: dict[str, pd.DataFrame] = {}
     try:
         raw = rate_limited_yf(
             lambda: yf.download(
@@ -338,19 +582,17 @@ def fetch_bulk_bars(
                 group_by="ticker",
                 auto_adjust=True,
                 progress=False,
-                threads=True,
+                threads=False,
             )
         )
 
         if raw is not None and not raw.empty:
             if len(symbols) == 1:
-                # Single symbol: yf.download returns flat columns
                 sym = symbols[0]
                 df = _normalize_df(raw)
                 if df is not None:
                     result[sym] = df
             else:
-                # Multi symbol: yf.download returns multi-level columns
                 for sym in symbols:
                     try:
                         if sym in raw.columns.get_level_values(0):
@@ -364,15 +606,7 @@ def fetch_bulk_bars(
             if result:
                 log.debug("[openbb_data] bulk_bars via yfinance: %d/%d symbols",
                           len(result), len(symbols))
-                return result
     except Exception as exc:
-        log.info("[openbb_data] bulk_bars yfinance failed (%s), falling back individually", exc)
-
-    # ── Fallback: individual fetch_bars calls ────────────────────────────────
-    log.info("[openbb_data] bulk_bars: fetching %d symbols individually via fallback", len(symbols))
-    for sym in symbols:
-        df = fetch_bars(sym, period=period, interval=interval)
-        if df is not None:
-            result[sym] = df
+        log.info("[openbb_data] bulk_bars yfinance failed (%s)", exc)
 
     return result

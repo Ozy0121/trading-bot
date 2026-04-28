@@ -247,6 +247,7 @@ def _score_quant_multifactor(
         if i % 20 == 0:
             progress.track("expanded_scan", current=i, total=len(symbols),
                            label=f"T4 scoring: {i:,}/{len(symbols):,}")
+            _scan_log(f"T4 scoring: {i:,}/{len(symbols):,} stocks analyzed ({len(scored):,} scored)")
 
     # ETF double-check via ticker info for survivors
     # Only check a manageable number in parallel
@@ -323,7 +324,13 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
 
     # Step 2: Fetch 5-day bars for initial filtering
     _scan_log("Fetching 5-day bars for initial filtering...")
-    bars_5d = fetch_bulk_bars(universe, period="5d", interval="1d")
+
+    def _bar_progress(cur, tot, lbl=None):
+        if lbl:
+            _scan_log(lbl)
+        progress.track("expanded_scan", current=cur, total=tot, label=lbl or f"Fetching bars: {cur:,}/{tot:,}")
+
+    bars_5d = fetch_bulk_bars(universe, period="5d", interval="1d", progress_cb=_bar_progress)
     _scan_log(f"Fetched bars for {len(bars_5d):,}/{len(universe):,} symbols")
 
     if _cancelled():
@@ -377,7 +384,7 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
 
     # Step 3: Fetch 30-day bars for T2 survivors only
     _scan_log(f"Fetching 30-day bars for {len(t2):,} T2 survivors...")
-    bars_30d = fetch_bulk_bars(t2, period="30d", interval="1d")
+    bars_30d = fetch_bulk_bars(t2, period="30d", interval="1d", progress_cb=_bar_progress)
     _scan_log(f"Fetched 30-day bars for {len(bars_30d):,}/{len(t2):,} symbols")
 
     if _cancelled():

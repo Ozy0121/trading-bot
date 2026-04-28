@@ -120,14 +120,19 @@ class QuantAnalyst(BaseAgent):
         sharpe = self._calc_sharpe(closes)
         sortino = self._calc_sortino(closes)
 
+        # ── Trend strength & alignment ─────────────────────────────────
+        adx = self._calc_adx(highs, lows, closes)
+        sma_50 = float(closes.rolling(50).mean().iloc[-1]) if len(closes) >= 50 else long_sma
+        trend_alignment = self._calc_trend_alignment(short_sma, long_sma, sma_50, rsi_val, macd_hist_val)
+
         # ── Scoring ─────────────────────────────────────────────────────
-        tech_score = self._compute_technical_score(rsi_val, macd_hist_val, short_sma, long_sma, stoch_rsi, pct_b)
+        tech_score = self._compute_technical_score(rsi_val, macd_hist_val, short_sma, long_sma, stoch_rsi, pct_b, adx)
         vol_score = min(vol_ratio / 2.0, 1.0) * 10.0
         sent_score = get_sentiment_score(symbol)
         sector_score = 5.0  # default; coordinator can override from sector scan
 
         composite = (tech_score * 0.40 + vol_score * 0.20 +
-                     sent_score * 0.20 + sector_score * 0.20)
+                     sent_score * 0.20 + sector_score * 0.20) * 10
 
         return QuantOutput(
             symbol=symbol, composite_score=round(composite, 2),
@@ -147,6 +152,8 @@ class QuantAnalyst(BaseAgent):
             sector_score=round(sector_score, 2),
             sentiment_score=round(sent_score, 2),
             technical_score=round(tech_score, 2),
+            adx=round(adx, 2),
+            trend_alignment=trend_alignment,
         )
 
     # ── New indicator calculations ──────────────────────────────────────────
@@ -293,17 +300,66 @@ class QuantAnalyst(BaseAgent):
             return 0.0
         return (mean_ret / down_std) * np.sqrt(252)
 
+    def _calc_adx(self, highs: pd.Series, lows: pd.Series,
+                  closes: pd.Series, period: int = 14) -> float:
+        """Average Directional Index — measures trend strength (0-100)."""
+        if len(closes) < period * 2:
+            return 0.0
+        plus_dm = highs.diff()
+        minus_dm = -lows.diff()
+        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+
+        prev_close = closes.shift(1)
+        tr = pd.concat([
+            highs - lows,
+            (highs - prev_close).abs(),
+            (lows - prev_close).abs(),
+        ], axis=1).max(axis=1)
+
+        atr_s = tr.rolling(period).mean()
+        plus_di = 100 * (plus_dm.rolling(period).mean() / atr_s.replace(0, np.nan))
+        minus_di = 100 * (minus_dm.rolling(period).mean() / atr_s.replace(0, np.nan))
+        dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan))
+        adx = dx.rolling(period).mean()
+        val = adx.dropna()
+        return float(val.iloc[-1]) if len(val) > 0 else 0.0
+
+    def _calc_trend_alignment(self, sma9: float, sma21: float, sma50: float,
+                               rsi: float, macd_hist: float) -> str:
+        """Multi-timeframe trend alignment: aligned/conflicting/neutral."""
+        bullish_signals = 0
+        bearish_signals = 0
+        if sma9 > sma21:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
+        if sma21 > sma50:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
+        if macd_hist > 0:
+            bullish_signals += 1
+        else:
+            bearish_signals += 1
+        if bullish_signals >= 3:
+            return "aligned"
+        if bearish_signals >= 3:
+            return "conflicting"
+        return "neutral"
+
     def _compute_technical_score(self, rsi: float, macd_hist: float,
                                  short_sma: float, long_sma: float,
-                                 stoch_rsi: float, pct_b: float) -> float:
+                                 stoch_rsi: float, pct_b: float,
+                                 adx: float = 0.0) -> float:
         """Compute a 0-10 technical score from multiple indicators."""
         score = 0.0
 
         # RSI in buy zone (30-50) = best, (20-30 or 50-65) = ok
         if 30 <= rsi <= 50:
-            score += 3.0
+            score += 2.5
         elif 20 <= rsi < 30 or 50 < rsi <= 65:
-            score += 1.5
+            score += 1.0
 
         # MACD histogram positive = bullish
         if macd_hist > 0:
@@ -313,7 +369,15 @@ class QuantAnalyst(BaseAgent):
 
         # SMA crossover (short above long = bullish)
         if short_sma > long_sma:
-            score += 2.0
+            score += 1.5
+
+        # ADX trend strength bonus (>25 = trending, >40 = strong trend)
+        if adx >= 40:
+            score += 1.5
+        elif adx >= 25:
+            score += 1.0
+        elif adx >= 15:
+            score += 0.3
 
         # Stochastic RSI in oversold zone (< 0.2) = potential bounce
         if stoch_rsi < 0.2:
@@ -323,7 +387,7 @@ class QuantAnalyst(BaseAgent):
 
         # Bollinger %B near lower band = potential bounce
         if pct_b < 0.2:
-            score += 1.5
+            score += 1.0
         elif pct_b < 0.4:
             score += 0.5
 

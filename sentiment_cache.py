@@ -25,8 +25,12 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
+import os
+
 import config
 from logger_setup import get_logger
+
+POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
 
 try:
     import yfinance as yf
@@ -159,14 +163,17 @@ def get_earnings_penalty(symbol: str) -> float:
 
 def _fetch_sentiment(symbol: str) -> float:
     """
-    Fetch headlines via Alpaca (primary) then Yahoo RSS (fallback).
+    Fetch headlines via Polygon (primary) → Alpaca → Yahoo RSS (fallback).
     Score them and return a 0.0-10.0 float. Returns 5.0 if both fail.
     Applies D-07 trending topic amplification for stocks with >= 8 articles.
     """
-    headlines = _fetch_alpaca_news(symbol)
+    headlines = _fetch_polygon_news(symbol)
 
     if headlines is None:
-        log.info("[sentiment_cache] Alpaca news unavailable for %s, trying Yahoo RSS", symbol)
+        headlines = _fetch_alpaca_news(symbol)
+
+    if headlines is None:
+        log.info("[sentiment_cache] Polygon/Alpaca news unavailable for %s, trying Yahoo RSS", symbol)
         headlines = _fetch_yahoo_rss(symbol)
 
     if not headlines:
@@ -190,6 +197,28 @@ def _fetch_sentiment(symbol: str) -> float:
         base_score = amplified
 
     return base_score
+
+
+def _fetch_polygon_news(symbol: str) -> list[str] | None:
+    """Fetch recent news headlines from Polygon.io."""
+    if not POLYGON_API_KEY:
+        return None
+    try:
+        resp = requests.get(
+            f"https://api.polygon.io/v2/reference/news",
+            params={"ticker": symbol, "limit": 10, "order": "desc",
+                    "sort": "published_utc", "apiKey": POLYGON_API_KEY},
+            timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get("results", [])
+        headlines = [r["title"] for r in results if r.get("title")]
+        log.debug("[sentiment_cache] Polygon returned %d headlines for %s", len(headlines), symbol)
+        return headlines if headlines else None
+    except Exception as exc:
+        log.debug("[sentiment_cache] Polygon news failed for %s: %s", symbol, exc)
+        return None
 
 
 def _fetch_alpaca_news(symbol: str) -> list[str] | None:

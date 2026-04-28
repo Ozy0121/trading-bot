@@ -144,7 +144,7 @@ class TestPipeline:
         bars = _make_bars_dict(test_symbols, n=30, base_volume=800_000)
         monkeypatch.setattr(
             "expanded_scanner.fetch_bulk_bars",
-            lambda syms, period="5d", interval="1d": {
+            lambda syms, period="5d", interval="1d", progress_cb=None: {
                 s: bars[s] for s in syms if s in bars
             },
         )

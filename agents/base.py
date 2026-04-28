@@ -51,6 +51,8 @@ class QuantOutput:
     sector_score: float          # 0-10
     sentiment_score: float       # 0-10
     technical_score: float       # 0-10
+    adx: float = 0.0            # Average Directional Index (0-100, >25 = trending)
+    trend_alignment: str = ""   # "aligned" / "conflicting" / "neutral"
 
 
 @dataclass

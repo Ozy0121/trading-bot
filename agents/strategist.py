@@ -155,8 +155,35 @@ class Strategist(BaseAgent):
     ) -> str:
         """Build the prompt for the AI to analyze candidates."""
         parts = [
-            "You are a swing trading strategist for a small $500 account "
-            "with PDT restrictions.",
+            "You are an expert swing trading strategist for a small $500 account "
+            "with PDT restrictions (max 3 round-trip trades per 5 business days). "
+            "Every trade must be high-conviction because you have limited entries.",
+            "",
+            "## Your Analysis Framework",
+            "",
+            "**Technical Analysis (from indicators below):**",
+            "- Multi-timeframe alignment: SMA9 > SMA21 > SMA50 = strong uptrend",
+            "- ADX > 25 = trending market (good for momentum); ADX < 20 = choppy (avoid)",
+            "- RSI 30-50 = ideal buy zone; RSI > 70 = overbought risk",
+            "- MACD histogram positive + rising = bullish momentum confirmation",
+            "- Stochastic RSI < 0.2 = oversold bounce potential",
+            "- Volume ratio > 1.5x = institutional interest",
+            "- Bollinger %B < 0.2 = near lower band (mean reversion setup)",
+            "",
+            "**Risk Assessment:**",
+            "- Beta > 1.5 = high volatility, size down; Beta < 0.8 = low vol, may underperform",
+            "- ATR determines stop-loss distance: stop = entry - 1.5*ATR",
+            "- Sharpe > 1.0 = good risk-adjusted returns; < 0 = losing proposition",
+            "- P(3%+ in 3d) > 30% = historically volatile enough for swing profits",
+            "",
+            "**Entry Quality Checklist (need 4+ of 6 for BUY):**",
+            "1. Trend aligned (SMA stack or recovery confirmed)",
+            "2. Momentum confirming (MACD bullish, RSI not overbought)",
+            "3. Volume confirming (ratio > 1.3x average)",
+            "4. Volatility sufficient (ATR supports 3%+ move potential)",
+            "5. Risk/reward favorable (target > 2x stop distance)",
+            "6. No adverse news or earnings within 3 days",
+            "",
             "Analyze these candidates and decide: BUY one, or WAIT.",
             "Only recommend BUY if confidence is 8+ out of 10.",
             "",
@@ -182,22 +209,31 @@ class Strategist(BaseAgent):
                 f"--- {c.symbol} (score: {c.composite_score:.1f}/100) ---"
             )
             parts.append(
-                f"RSI: {c.rsi}, MACD: {c.macd_signal}, ATR: {c.atr}, "
-                f"Beta: {c.beta}"
+                f"Trend: {c.trend_alignment} | ADX: {c.adx:.0f} "
+                f"({'trending' if c.adx >= 25 else 'weak/choppy'})"
             )
             parts.append(
-                f"Stoch RSI: {c.stochastic_rsi}, "
-                f"Volume Ratio: {c.volume_ratio}x"
+                f"RSI: {c.rsi:.1f}, MACD: {c.macd_signal} (hist={c.macd_hist:.4f}), "
+                f"Stoch RSI: {c.stochastic_rsi:.2f}"
+            )
+            parts.append(
+                f"SMA: 9d={c.short_sma:.2f}, 21d={c.long_sma:.2f} | "
+                f"BB %B: {c.bollinger_pct_b:.2f}"
+            )
+            parts.append(
+                f"ATR: {c.atr:.4f}, Beta: {c.beta:.2f}, "
+                f"Volume: {c.volume_ratio:.1f}x avg"
             )
             parts.append(
                 f"20d Vol: {c.volatility_20d:.2%}, "
                 f"P(3%+ in 3d): {c.probability_3pct_3d:.1%}"
             )
             parts.append(
-                f"EV: {c.expected_value:.4f}, Sharpe: {c.sharpe_ratio:.2f}"
+                f"EV: {c.expected_value:.4f}, Sharpe: {c.sharpe_ratio:.2f}, "
+                f"Sortino: {c.sortino_ratio:.2f}"
             )
             parts.append(
-                f"SMA: short={c.short_sma:.2f} long={c.long_sma:.2f}"
+                f"MFI: {c.money_flow_index:.0f}, VWAP: {c.vwap:.2f}"
             )
             if news:
                 parts.append(
