@@ -78,6 +78,9 @@ _state = {
     # ── Bracket order info (per symbol) ──────────────────────────────────────
     "bracket_info": {},  # {symbol: {stop_loss_price, take_profit_price, status}}
 
+    # ── Protection monitor status (from safety.py) ──────────────────────────
+    "protection_status": {},  # {all_protected, unprotected, renewed, checked_at}
+
     # ── Bot status ────────────────────────────────────────────────────────────
     "status":               "idle",
     "paper_trading":        True,

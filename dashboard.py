@@ -1034,6 +1034,25 @@ def api_backtest_run():
     return jsonify({"ok": True, "message": "Backtest started — this takes a few minutes."})
 
 
+@app.route("/api/health")
+def api_health():
+    """System health: API call counts, cache hit rates, last refresh times."""
+    from openbb_data import get_api_stats
+    stats = get_api_stats()
+    total_polygon = stats.get("polygon_calls", 0) + stats.get("polygon_cache_hits", 0)
+    cache_rate = (stats["polygon_cache_hits"] / total_polygon * 100) if total_polygon > 0 else 0.0
+    return jsonify({
+        "polygon_api_calls": stats.get("polygon_calls", 0),
+        "polygon_cache_hits": stats.get("polygon_cache_hits", 0),
+        "polygon_cache_rate_pct": round(cache_rate, 1),
+        "yfinance_calls": stats.get("yfinance_calls", 0),
+        "fmp_calls": stats.get("fmp_calls", 0),
+        "last_polygon_refresh": stats.get("last_polygon_refresh"),
+        "last_yfinance_call": stats.get("last_yfinance_call"),
+        "last_fmp_call": stats.get("last_fmp_call"),
+    })
+
+
 def run(port: int = 5000):
     log.info("[dashboard] http://localhost:%d", port)
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)

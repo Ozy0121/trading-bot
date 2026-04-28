@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -36,6 +37,62 @@ POLYGON_BASE_URL = "https://api.polygon.io"
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 FMP_BASE_URL = "https://financialmodelingprep.com"
 REQUEST_TIMEOUT = 15
+
+# ── Polygon grouped daily cache ──────────────────────────────────────────────
+# Prevents re-fetching the same data hundreds of times per scan cycle.
+# Refresh: 5 min during market hours (9:30-16:00 ET), 30 min otherwise.
+
+_grouped_cache: dict[str, dict[str, dict]] = {}  # date_str -> {sym: bar_dict}
+_grouped_cache_ts: float = 0.0
+_grouped_cache_lock = threading.Lock()
+_MARKET_HOURS_TTL = 300    # 5 minutes
+_AFTER_HOURS_TTL = 1800    # 30 minutes
+
+# ── API call tracking ────────────────────────────────────────────────────────
+
+_api_stats_lock = threading.Lock()
+_api_stats = {
+    "polygon_calls": 0,
+    "polygon_cache_hits": 0,
+    "yfinance_calls": 0,
+    "fmp_calls": 0,
+    "last_polygon_refresh": None,
+    "last_yfinance_call": None,
+    "last_fmp_call": None,
+}
+
+
+def get_api_stats() -> dict:
+    with _api_stats_lock:
+        return dict(_api_stats)
+
+
+def _track_api_call(provider: str):
+    with _api_stats_lock:
+        _api_stats[f"{provider}_calls"] += 1
+        _api_stats[f"last_{provider}_call"] = datetime.now().isoformat()
+
+
+def _track_cache_hit():
+    with _api_stats_lock:
+        _api_stats["polygon_cache_hits"] += 1
+
+
+def _is_market_hours() -> bool:
+    try:
+        import zoneinfo
+        now_et = datetime.now(zoneinfo.ZoneInfo("America/New_York"))
+        if now_et.weekday() >= 5:
+            return False
+        hour = now_et.hour
+        minute = now_et.minute
+        return (hour > 9 or (hour == 9 and minute >= 30)) and hour < 16
+    except Exception:
+        return False
+
+
+def _grouped_cache_ttl() -> int:
+    return _MARKET_HOURS_TTL if _is_market_hours() else _AFTER_HOURS_TTL
 
 # ── Period / interval mappings ────────────────────────────────────────────────
 
@@ -99,8 +156,14 @@ def _polygon_get(endpoint: str, params: dict | None = None) -> dict | None:
     url = f"{POLYGON_BASE_URL}{endpoint}"
     try:
         resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        if resp.status_code == 429:
+            log.warning("[openbb_data] Polygon rate limited on %s", endpoint)
+            return None
         resp.raise_for_status()
         return resp.json()
+    except requests.exceptions.HTTPError as exc:
+        log.debug("[openbb_data] Polygon HTTP error (%s): %s", endpoint, exc)
+        return None
     except Exception as exc:
         log.debug("[openbb_data] Polygon request failed (%s): %s", endpoint, exc)
         return None
@@ -133,7 +196,17 @@ def _polygon_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.
 
 
 def _polygon_grouped_daily(date_str: str) -> dict[str, dict] | None:
-    """Fetch grouped daily bars for ALL US stocks on a single date."""
+    """Fetch grouped daily bars for ALL US stocks on a single date.
+
+    Results are cached per date_str; repeated calls for the same date
+    within the TTL window return instantly from cache.
+    """
+    with _grouped_cache_lock:
+        if date_str in _grouped_cache:
+            _track_cache_hit()
+            return _grouped_cache[date_str]
+
+    _track_api_call("polygon")
     data = _polygon_get(
         f"/v2/aggs/grouped/locale/us/market/stocks/{date_str}",
         {"adjusted": "true"},
@@ -150,6 +223,10 @@ def _polygon_grouped_daily(date_str: str) -> dict[str, dict] | None:
                 "close": bar["c"], "volume": bar["v"],
                 "timestamp": bar["t"],
             }
+
+    with _grouped_cache_lock:
+        _grouped_cache[date_str] = result
+
     return result
 
 
@@ -171,7 +248,20 @@ def _polygon_bulk_bars(symbols: list[str], period: str = "5d", progress_cb=None)
 
 
 def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=None) -> dict[str, pd.DataFrame]:
-    """Grouped daily: best for short periods with large symbol lists."""
+    """Grouped daily: best for short periods with large symbol lists.
+
+    Uses a TTL-based cache so repeated calls (e.g. inside a scan loop)
+    return instantly without hitting the API again.
+    """
+    global _grouped_cache_ts
+
+    now = time.time()
+    ttl = _grouped_cache_ttl()
+
+    with _grouped_cache_lock:
+        cache_age = now - _grouped_cache_ts
+        cache_valid = _grouped_cache_ts > 0 and cache_age < ttl
+
     days = _period_to_days(period)
     per_sym: dict[str, list[dict]] = {s: [] for s in symbols}
 
@@ -184,18 +274,33 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
         if len(dates) >= trading_days_needed:
             break
 
-    if progress_cb:
-        progress_cb(0, len(symbols), f"Fetching {len(dates)} days from Polygon...")
+    if cache_valid:
+        for date_str in reversed(dates):
+            with _grouped_cache_lock:
+                grouped = _grouped_cache.get(date_str)
+            if not grouped:
+                continue
+            for sym in symbols:
+                if sym in grouped:
+                    per_sym[sym].append(grouped[sym])
+    else:
+        if progress_cb:
+            progress_cb(0, len(symbols), f"Fetching {len(dates)} days from Polygon...")
 
-    for date_idx, date_str in enumerate(reversed(dates)):
-        grouped = _polygon_grouped_daily(date_str)
-        if not grouped:
-            continue
-        for sym in symbols:
-            if sym in grouped:
-                per_sym[sym].append(grouped[sym])
-        if progress_cb and date_idx % 2 == 0:
-            progress_cb(0, len(symbols), f"Polygon: fetched {date_idx + 1}/{len(dates)} days...")
+        for date_idx, date_str in enumerate(reversed(dates)):
+            grouped = _polygon_grouped_daily(date_str)
+            if not grouped:
+                continue
+            for sym in symbols:
+                if sym in grouped:
+                    per_sym[sym].append(grouped[sym])
+            if progress_cb and date_idx % 2 == 0:
+                progress_cb(0, len(symbols), f"Polygon: fetched {date_idx + 1}/{len(dates)} days...")
+
+        with _grouped_cache_lock:
+            _grouped_cache_ts = time.time()
+            with _api_stats_lock:
+                _api_stats["last_polygon_refresh"] = datetime.now().isoformat()
 
     result: dict[str, pd.DataFrame] = {}
     for sym, bars in per_sym.items():
@@ -211,7 +316,21 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
     if progress_cb:
         progress_cb(len(symbols), len(symbols), f"Polygon: got bars for {len(result):,}/{len(symbols):,} symbols")
 
-    log.info("[openbb_data] Polygon grouped daily: %d/%d symbols across %d days", len(result), len(symbols), len(dates))
+    missing = [s for s in symbols if s not in result]
+    next_refresh_min = max(1, (ttl - int(now - _grouped_cache_ts)) // 60)
+
+    if cache_valid:
+        log.debug("[openbb_data] Polygon data served from cache (%d/%d symbols)", len(result), len(symbols))
+    else:
+        log.info("[openbb_data] Polygon grouped daily: %d/%d symbols across %d days",
+                 len(result), len(symbols), len(dates))
+
+    if missing and len(missing) <= 20:
+        log.info("[openbb_data] Missing symbols (%d): %s", len(missing), ", ".join(missing[:20]))
+    elif missing:
+        log.info("[openbb_data] Missing %d symbols (first 10): %s", len(missing), ", ".join(missing[:10]))
+
+    log.info("[openbb_data] Polygon data cached — next refresh in %d minutes", next_refresh_min)
     return result
 
 
@@ -247,6 +366,7 @@ def _fmp_get(endpoint: str, params: dict) -> dict | list | None:
     if not FMP_API_KEY:
         return None
 
+    _track_api_call("fmp")
     params = {**params, "apikey": FMP_API_KEY}
     url = f"{FMP_BASE_URL}{endpoint}"
 
@@ -573,6 +693,7 @@ def fetch_bulk_bars(
 def _yf_bulk_batch(symbols: list[str], period: str = "5d", interval: str = "1d") -> dict[str, pd.DataFrame]:
     """Fetch a single batch of symbols via yf.download."""
     result: dict[str, pd.DataFrame] = {}
+    _track_api_call("yfinance")
     try:
         raw = rate_limited_yf(
             lambda: yf.download(

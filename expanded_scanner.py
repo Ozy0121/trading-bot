@@ -227,6 +227,10 @@ def _score_quant_multifactor(
 
     # Second pass: compute quant scores (checking deadline + cancel)
     scored: list[dict] = []
+    skipped: list[str] = []
+    t4_start = time.time()
+    PER_STOCK_TIMEOUT = 5.0
+
     for i, sym in enumerate(symbols):
         if _cancelled() or time.time() >= deadline:
             reason = "cancelled" if _cancelled() else "deadline"
@@ -239,15 +243,27 @@ def _score_quant_multifactor(
             continue
 
         try:
+            stock_start = time.time()
             result = compute_quant_score(sym, df, momentum_ranks.get(sym, 0.5))
+            elapsed = time.time() - stock_start
+            if elapsed > PER_STOCK_TIMEOUT:
+                log.warning("[expanded] T4 slow stock: %s took %.1fs", sym, elapsed)
             scored.append(result)
         except Exception as exc:
+            skipped.append(sym)
             log.debug("[expanded] T4 scoring failed for %s: %s", sym, exc)
 
-        if i % 20 == 0:
+        if i % 20 == 0 and i > 0:
+            elapsed_total = time.time() - t4_start
+            rate = i / elapsed_total if elapsed_total > 0 else 1
+            remaining = (len(symbols) - i) / rate if rate > 0 else 0
+            eta_str = f"~{int(remaining)}s remaining" if remaining < 3600 else f"~{remaining/60:.0f}m remaining"
             progress.track("expanded_scan", current=i, total=len(symbols),
-                           label=f"T4 scoring: {i:,}/{len(symbols):,}")
-            _scan_log(f"T4 scoring: {i:,}/{len(symbols):,} stocks analyzed ({len(scored):,} scored)")
+                           label=f"T4 scoring: {i:,}/{len(symbols):,} ({eta_str})")
+            _scan_log(f"T4 scoring: {i:,}/{len(symbols):,} stocks analyzed ({len(scored):,} scored, {eta_str})")
+
+    if skipped:
+        log.info("[expanded] T4 skipped %d stocks: %s", len(skipped), ", ".join(skipped[:15]))
 
     # ETF double-check via ticker info for survivors
     # Only check a manageable number in parallel
@@ -382,9 +398,21 @@ def run_expanded_pipeline(timeout_seconds: int | None = None) -> list[dict]:
         progress.fail("expanded_scan", message=reason)
         return []
 
-    # Step 3: Fetch 30-day bars for T2 survivors only
+    # Step 3: Fetch 30-day bars for T2 survivors only (batched to avoid stalls)
     _scan_log(f"Fetching 30-day bars for {len(t2):,} T2 survivors...")
-    bars_30d = fetch_bulk_bars(t2, period="30d", interval="1d", progress_cb=_bar_progress)
+    bars_30d: dict[str, pd.DataFrame] = {}
+    BATCH_30D = 200
+    for batch_start in range(0, len(t2), BATCH_30D):
+        if _cancelled() or time.time() >= deadline:
+            _scan_log("Cancelled/deadline during 30d fetch", "warning")
+            break
+        batch = t2[batch_start:batch_start + BATCH_30D]
+        try:
+            batch_bars = fetch_bulk_bars(batch, period="30d", interval="1d", progress_cb=_bar_progress)
+            bars_30d.update(batch_bars)
+        except Exception as exc:
+            _scan_log(f"30d batch failed at {batch_start}: {exc} — continuing with partial data", "warning")
+        _scan_log(f"30d bars: {len(bars_30d):,}/{len(t2):,} symbols fetched so far")
     _scan_log(f"Fetched 30-day bars for {len(bars_30d):,}/{len(t2):,} symbols")
 
     if _cancelled():

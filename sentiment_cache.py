@@ -311,14 +311,30 @@ def _score_headlines(headlines: list[str]) -> float:
     return round(max(0.0, min(10.0, score)), 2)
 
 
+_earnings_fetch_delay = 0.3  # seconds between individual yfinance earnings calls
+_last_earnings_fetch_ts: float = 0.0
+_earnings_fetch_lock_rate = threading.Lock()
+
+
 def _fetch_earnings_date(symbol: str) -> date | None:
     """
     Fetch the next earnings date for the symbol using yfinance.
     Returns date or None if unavailable.
+
+    Rate-limited: adds a delay between calls to avoid 429 responses.
+    Cached for 24h via the caller (get_earnings_penalty).
     """
+    global _last_earnings_fetch_ts
+
     if yf is None:
         log.debug("[sentiment_cache] yfinance not available, skipping earnings for %s", symbol)
         return None
+
+    with _earnings_fetch_lock_rate:
+        elapsed = time.time() - _last_earnings_fetch_ts
+        if elapsed < _earnings_fetch_delay:
+            time.sleep(_earnings_fetch_delay - elapsed)
+        _last_earnings_fetch_ts = time.time()
 
     try:
         ticker = yf.Ticker(symbol)
@@ -330,13 +346,18 @@ def _fetch_earnings_date(symbol: str) -> date | None:
         if not earnings_list:
             return None
 
-        # May be a list of dates — take the first upcoming one
         for entry in earnings_list:
             if isinstance(entry, datetime):
                 return entry.date()
             if isinstance(entry, date):
                 return entry
 
+        return None
+    except requests.exceptions.HTTPError as exc:
+        if "429" in str(exc) or "Too Many Requests" in str(exc):
+            log.warning("[sentiment_cache] Earnings rate limited for %s — skipping", symbol)
+        else:
+            log.warning("[sentiment_cache] Earnings fetch failed for %s: %s", symbol, exc)
         return None
     except Exception as exc:
         log.warning("[sentiment_cache] Earnings fetch failed for %s: %s", symbol, exc)
