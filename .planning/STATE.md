@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 Phase: 07 (expanded-scanner) — COMPLETE
 Plan: 2 of 2
 Status: Phase 07 complete, ready for Phase 08
-Last activity: 2026-04-26 -- Completed quick task 260426-kqf: Calibrate prediction.py pattern weights using backtest results
+Last activity: 2026-05-04 -- Completed quick task 260504-m3s: Improve prediction engine v4 win rate (51%→77%)
 
 Progress: [██████████] 100%
 
@@ -81,6 +81,7 @@ None yet.
 | 260401-bpu | Recalibrate conviction scoring | 2026-04-01 | 6aedc04 | [260401-bpu](./quick/260401-bpu-recalibrate-conviction-scoring-fix-compr/) |
 | 260402-e9l | Fix stop-without-liquidate and wire up agent coordinator | 2026-04-02 | c7660c6 | [260402-e9l](./quick/260402-e9l-fix-stop-without-liquidate-and-wire-up-a/) |
 | 260426-kqf | Calibrate prediction.py pattern weights using backtest results | 2026-04-26 | 2f4466e | [260426-kqf](./quick/260426-kqf-calibrate-prediction-py-pattern-weights-/) |
+| 260504-m3s | Improve prediction engine v4 win rate: smart exit, volume spike, consec_down relaxation | 2026-05-04 | pending | [260504-m3s](./quick/260504-m3s-improve-prediction-engine-v4-win-rate-sm/) |
 
 ### Blockers/Concerns
 
