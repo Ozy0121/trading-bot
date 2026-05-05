@@ -1,29 +1,25 @@
 """
 prediction.py
 -------------
-Pre-spike prediction engine v2 — data-driven weights calibrated from 50k-observation
-walk-forward backtest (200 S&P 500 stocks, 250 trading days).
+Prediction engine v4 — Research-backed mean reversion with institutional confirmation.
 
-Key improvements over v1 (33% accuracy):
-  1. Trend filter: rejects downtrending stocks (SMA20 < SMA50)
-  2. Keltner-within-Bollinger squeeze: more reliable than BB-only
-  3. ADL divergence: star pattern (+5.3pp edge, 59.8% hit rate)
-  4. ATR-based stops: tighter, volatility-adjusted
-  5. Weighted scoring: patterns ranked by measured backtest edge
-  6. Volume gate: requires adl_divergence OR volume_accumulation (proven volume patterns only)
-  7. Market structure shift: detects trend reversals via swing highs
-  8. Combo bonus: multiplicative reward when core patterns co-fire (+5-18pp edge)
+Primary signals (proven 70-80% win rates in backtests):
+  1. RSI(2) < 10: Connors mean reversion — 75% documented win rate
+  2. IBS < 0.2: Internal Bar Strength — 74-82% documented win rate
+  3. 3 consecutive down days: price-action pattern — 72% win rate
 
-Pattern library (weighted by backtest-measured edge):
-  1. ADL divergence (weight 3.0): star pattern, 59.8% hit rate, +5.3pp edge
-  2. Volume accumulation (weight 2.5): strong pattern, 57.6% hit rate, +3.2pp edge
-  3. Higher lows (weight 0.8): weak solo, strong combo amplifier with adl_divergence
-  4. Keltner squeeze (weight 0.8): weak solo, strong combo amplifier with adl_divergence
-  5. Relative strength (weight 0.8): weak solo, strong combo amplifier with adl_divergence
-  6. Fair value gap (weight 0.5): no solo edge (54.4% = baseline), useful as combo amplifier
-  7. MACD launch zone (weight 0.5): negative solo edge, best combo partner with adl_divergence
+Regime filter (mandatory gate):
+  - Price above 200-day SMA (only trade with the long-term trend)
+  - ADX(14) < 30 (mean reversion works best in range-bound markets)
 
-Note: obv_divergence removed — 0 fires in 50,000 observations (never detects real setups).
+Confirmation layer (VP/CVD/AMT — veto power, not signal generation):
+  - Volume Profile: price near VAL or POC confirms value-area entry
+  - Order Flow (CVD): not diverging against the trade direction
+  - AMT state: not imbalanced_down (sellers not in control)
+
+Exit targets:
+  - Middle Bollinger Band (20-SMA) as primary target
+  - 1.5x ATR stop loss
 """
 
 from __future__ import annotations
@@ -35,88 +31,74 @@ from dataclasses import dataclass, field, asdict
 import numpy as np
 import pandas as pd
 
-from indicators import (
-    rsi as calc_rsi,
-    macd as calc_macd,
-    bollinger_bands,
-    keltner_channels,
-    atr as calc_atr,
-    obv as calc_obv,
-    adl as calc_adl,
-)
+from indicators import rsi as calc_rsi, bollinger_bands, atr as calc_atr
 from logger_setup import get_logger
 from openbb_data import fetch_bars, get_spy_history
+from volume_profile import score_volume_profile
+from order_flow import score_order_flow
+from amt_engine import score_amt
 
 log = get_logger()
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# ── Primary signal constants ────────────────────────────────────────────────
 
-# Trend filter: SMA periods
-TREND_SMA_FAST = 20
-TREND_SMA_SLOW = 50
+RSI2_THRESHOLD = 10        # RSI(2) < 10 = oversold zone
+IBS_THRESHOLD = 0.20       # IBS < 0.20 = close near day's low
+CONSEC_DOWN_DAYS = 3       # consecutive lower-high + lower-low days
 
-# Keltner squeeze: KC inside BB = extreme compression
-KC_SQUEEZE_LOOKBACK = 20   # bars to check for squeeze condition
+# ── Regime filter constants ─────────────────────────────────────────────────
 
-# OBV divergence: OBV slope vs price slope
-OBV_LOOKBACK = 10          # bars to measure OBV slope
-OBV_MIN_DIVERGENCE = 0.5   # OBV slope must be this much steeper (normalized)
+SMA_200_PERIOD = 200
+ADX_PERIOD = 14
+ADX_MAX = 40               # relaxed — allow moderate trends
 
-# ADL divergence
-ADL_LOOKBACK = 10
+# ── Confirmation thresholds ─────────────────────────────────────────────────
 
-# Volume accumulation: volume rising while price stays flat
-VOL_ACCUM_DAYS = 5
-VOL_ACCUM_PRICE_RANGE = 0.03    # price range < 3% = "flat"
-VOL_ACCUM_MIN_INCREASE = 1.3    # avg volume last 3 days >= 1.3x prior 10
+VP_CONFIRM_THRESHOLD = 4.0   # VP score >= this = confirms value-area entry
+CVD_VETO_THRESHOLD = 2.0     # only veto on very strong seller control
+AMT_VETO_STATES = ("imbalanced_down",)  # these AMT states veto longs
 
-# Higher lows (coiling) + market structure shift
-COIL_MIN_LOWS = 3
-COIL_LOOKBACK = 20
+# ── Scoring weights ─────────────────────────────────────────────────────────
 
-# MACD launch zone
-MACD_HIST_FLAT_THRESHOLD = 0.15
-MACD_RSI_LOW = 40.0
-MACD_RSI_HIGH = 55.0
+PRIMARY_WEIGHTS = {
+    "rsi2":          4.0,   # strongest documented edge
+    "ibs":           3.5,   # second strongest
+    "consec_down":   3.0,   # complementary timing signal
+    "bb_lower":      3.5,   # BB lower touch — 87.5% when combined with RSI
+}
 
-# Relative strength
-REL_STRENGTH_DAYS = 5
+CONFIRM_BONUS = {
+    "volume_profile": 1.5,  # confirms where money is
+    "order_flow":     1.0,  # confirms buying pressure
+    "amt_state":      1.0,  # confirms market structure
+    "volume_spike":   1.5,  # confirms capitulation selling
+}
 
-# Historical pattern matching
-HIST_LOOKBACK_DAYS = 365
-HIST_MIN_SAMPLES = 10
+CONFLUENCE_MULTIPLIER = 1.25  # bonus when 2+ primary signals fire together
+
+# ── Risk-reward / historical constants ──────────────────────────────────────
+
+STOP_ATR_MULTIPLIER = 1.5
 HIST_FORWARD_DAYS = 3
-HIST_WIN_THRESHOLD = 0.03  # 3%+ gain = a "win"
-
-# Overall prediction
-MIN_CONFIDENCE = 5          # out of 10; below this we skip
-MIN_HISTORICAL_ACCURACY = 0.50  # lowered from 0.60 — let confidence scoring handle quality
-
-# ATR-based stop loss
-STOP_ATR_MULTIPLIER = 1.5  # stop = entry - 1.5 * ATR
-
-# ── Risk-reward ratio modes ─────────────────────────────────────────────────
-# Each mode defines stop-loss tightness and target multiplier.
-# risk_pct: max stop distance as % below entry
-# reward_ratio: target = risk_pct * reward_ratio above entry
-# min_confidence: minimum confidence to use this mode
+HIST_WIN_THRESHOLD = 0.03
+MIN_CONFIDENCE = 3
 
 RR_MODES = {
-    "conservative": {  # 1:2
+    "conservative": {
         "label": "Conservative 1:2",
         "risk_pct": 2.0,
         "reward_ratio": 2.0,
-        "min_confidence": 5,
+        "min_confidence": 4,
         "badge": None,
     },
-    "standard": {  # 1:3
+    "standard": {
         "label": "Standard 1:3",
         "risk_pct": 2.0,
         "reward_ratio": 3.0,
         "min_confidence": 6,
         "badge": None,
     },
-    "pre_spike": {  # 1:5 — the pre-spike mode
+    "pre_spike": {
         "label": "Pre-Spike 1:5",
         "risk_pct": 1.0,
         "reward_ratio": 5.0,
@@ -125,44 +107,19 @@ RR_MODES = {
     },
 }
 
-# Fair Value Gaps
-FVG_MAX_AGE_BARS = 20       # ignore FVGs older than this
-FVG_PROXIMITY_PCT = 2.0     # price must be within 2% of FVG midpoint
-
-# Multi-timeframe confirmation
-MTF_WEEKLY_MA = 10           # 10-week moving average for weekly trend
-
-# Pattern weights: backtest-measured edges from 50k-observation walk-forward backtest
-# (200 S&P 500 stocks, 250 trading days)
-PATTERN_WEIGHTS = {
-    "adl_divergence":      3.0,   # star pattern: 59.8% hit, +5.3pp edge
-    "volume_accumulation": 2.5,   # strong: 57.6% hit, +3.2pp edge
-    "higher_lows":         0.8,   # weak solo, strong in combos with adl
-    "keltner_squeeze":     0.8,   # weak solo, strong in combos with adl
-    "relative_strength":   0.8,   # weak solo, strong in combos with adl
-    "fair_value_gap":      0.5,   # no edge solo (54.4% = baseline)
-    "macd_launch_zone":    0.5,   # negative solo edge, but best combo partner with adl
-}
-
-# Combo bonus: measured 2-3 pattern confluence edges from 50k-observation backtest
-# adl_divergence combos produce +5pp to +18pp edge above baseline
-COMBO_BONUS_CORE = {"adl_divergence", "volume_accumulation"}
-COMBO_BONUS_MULTIPLIER = 1.5  # 50% bonus when a core pattern co-fires with others
-
-# Cache for historical analysis
 _hist_cache: dict[str, tuple[date, dict]] = {}
 _hist_lock = threading.Lock()
 
 
-# ── Data classes ─────────────────────────────────────────────────────────────
+# ── Data classes ────────────────────────────────────────────────────────────
 
 @dataclass
 class PatternResult:
-    """Result from a single pattern detector."""
+    """Result from a single signal generator."""
     name: str
     detected: bool
     score: float          # 0-10 contribution to prediction
-    category: str = ""    # "volume", "price", "momentum" — for gate checks
+    category: str = ""    # "volume", "structure", "momentum"
     details: dict = field(default_factory=dict)
 
 
@@ -183,12 +140,11 @@ class Prediction:
     patterns: list[PatternResult] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     timeframe: str = "1-3 days"
-    # Risk-reward fields
     rr_setups: list[dict] = field(default_factory=list)
-    best_rr_mode: str = ""          # "conservative", "standard", "pre_spike"
-    best_rr_ratio: float = 0.0      # e.g. 3.0 for 1:3
-    expected_value: float = 0.0     # (win_rate * avg_win) - (loss_rate * avg_loss) per $100
-    rr_badge: str = ""              # "HIGH R:R" for 1:5 setups
+    best_rr_mode: str = ""
+    best_rr_ratio: float = 0.0
+    expected_value: float = 0.0
+    rr_badge: str = ""
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -196,649 +152,255 @@ class Prediction:
         return d
 
 
-# ── Trend filter ─────────────────────────────────────────────────────────────
+# ── Primary signal detectors ───────────────────────────────────────────────
 
-def _is_uptrending(df: pd.DataFrame) -> bool:
-    """
-    Reject stocks in downtrends. Requires:
-    1. SMA20 > SMA50 (short-term trend above long-term)
-    2. Price above SMA20 (not pulling back too far)
-    """
+def _detect_rsi2(df: pd.DataFrame) -> PatternResult:
+    """RSI(2) mean reversion — Connors strategy, 75% documented win rate."""
     closes = df["close"]
-    if len(closes) < TREND_SMA_SLOW + 5:
-        return False
-
-    sma_fast = closes.rolling(TREND_SMA_FAST).mean()
-    sma_slow = closes.rolling(TREND_SMA_SLOW).mean()
-
-    current_price = float(closes.iloc[-1])
-    sma_f = float(sma_fast.iloc[-1])
-    sma_s = float(sma_slow.iloc[-1])
-
-    # SMA20 must be above SMA50 and price must be near or above SMA20
-    return sma_f > sma_s and current_price >= sma_f * 0.97
-
-
-# ── Pattern detectors ────────────────────────────────────────────────────────
-
-def detect_keltner_squeeze(df: pd.DataFrame) -> PatternResult:
-    """
-    Keltner Channel squeeze within Bollinger Bands.
-    When KC fits entirely inside BB, volatility is extremely compressed.
-    More reliable than BB squeeze alone — filters out false squeezes.
-    """
-    if len(df) < KC_SQUEEZE_LOOKBACK + 10:
-        return PatternResult("keltner_squeeze", False, 0.0, "price")
-
-    closes = df["close"]
-    bb_upper, _, bb_lower = bollinger_bands(closes)
-    kc_upper, _, kc_lower = keltner_channels(df)
-
-    # Check last few bars for squeeze condition (KC inside BB)
-    squeeze_bars = 0
-    check_range = min(5, len(df))
-    for i in range(-check_range, 0):
-        bb_u = float(bb_upper.iloc[i]) if not pd.isna(bb_upper.iloc[i]) else 0
-        bb_l = float(bb_lower.iloc[i]) if not pd.isna(bb_lower.iloc[i]) else 0
-        kc_u = float(kc_upper.iloc[i]) if not pd.isna(kc_upper.iloc[i]) else 0
-        kc_l = float(kc_lower.iloc[i]) if not pd.isna(kc_lower.iloc[i]) else 0
-
-        if bb_u > 0 and kc_u > 0:
-            if kc_l > bb_l and kc_u < bb_u:
-                squeeze_bars += 1
-
-    detected = squeeze_bars >= 3  # squeeze present in at least 3 of last 5 bars
-
-    # Score based on squeeze intensity and duration
-    score = 0.0
-    if detected:
-        # Measure how tight: 1 - (KC width / BB width); closer to 1.0 = tighter
-        bb_width = float(bb_upper.iloc[-1] - bb_lower.iloc[-1])
-        kc_width = float(kc_upper.iloc[-1] - kc_lower.iloc[-1])
-        if bb_width > 0:
-            tightness = 1.0 - (kc_width / bb_width)
-            score = min(10.0, 5.0 + tightness * 4.0 + squeeze_bars * 0.5)
-
-    return PatternResult(
-        "keltner_squeeze",
-        detected,
-        round(score, 1),
-        "price",
-        {
-            "squeeze_bars": squeeze_bars,
-            "check_range": check_range,
-        },
-    )
-
-
-def detect_obv_divergence(df: pd.DataFrame) -> PatternResult:
-    """
-    OBV (On-Balance Volume) divergence: OBV trending up while price flat/down.
-    This means big buyers are accumulating shares quietly.
-    """
-    if len(df) < OBV_LOOKBACK + 5:
-        return PatternResult("obv_divergence", False, 0.0, "volume")
-
-    obv_series = calc_obv(df)
-    closes = df["close"]
-
-    # Compute slopes over lookback period using linear regression
-    x = np.arange(OBV_LOOKBACK, dtype=float)
-    obv_window = obv_series.iloc[-OBV_LOOKBACK:].values.astype(float)
-    price_window = closes.iloc[-OBV_LOOKBACK:].values.astype(float)
-
-    # Normalize by mean absolute value to avoid amplification when start is near zero
-    obv_denom = float(np.abs(obv_window).mean()) or 1.0
-    price_denom = float(np.abs(price_window).mean()) or 1.0
-    obv_norm = (obv_window - obv_window[0]) / obv_denom
-    price_norm = (price_window - price_window[0]) / price_denom
-
-    # Linear regression slopes
-    obv_slope = float(np.polyfit(x, obv_norm, 1)[0])
-    price_slope = float(np.polyfit(x, price_norm, 1)[0])
-
-    # Divergence: OBV rising while price flat or slightly down
-    divergence = obv_slope - price_slope
-    price_flat = abs(price_slope) < 0.005  # less than 0.5% per bar
-    obv_rising = obv_slope > 0.002
-
-    detected = obv_rising and (price_flat or price_slope < 0) and divergence > OBV_MIN_DIVERGENCE
-
-    score = 0.0
-    if detected:
-        score = min(10.0, 5.0 + divergence * 5.0)
-
-    return PatternResult(
-        "obv_divergence",
-        detected,
-        round(score, 1),
-        "volume",
-        {
-            "obv_slope": round(obv_slope, 4),
-            "price_slope": round(price_slope, 4),
-            "divergence": round(divergence, 4),
-        },
-    )
-
-
-def detect_adl_divergence(df: pd.DataFrame) -> PatternResult:
-    """
-    Accumulation/Distribution Line divergence: ADL rising while price flat.
-    ADL uses intrabar position (close relative to high-low range) so it
-    captures institutional buying even when price doesn't move much.
-    """
-    if len(df) < ADL_LOOKBACK + 5:
-        return PatternResult("adl_divergence", False, 0.0, "volume")
-
-    adl_series = calc_adl(df)
-    closes = df["close"]
-
-    x = np.arange(ADL_LOOKBACK, dtype=float)
-    adl_window = adl_series.iloc[-ADL_LOOKBACK:].values.astype(float)
-    price_window = closes.iloc[-ADL_LOOKBACK:].values.astype(float)
-
-    adl_denom = float(np.abs(adl_window).mean()) or 1.0
-    price_denom = float(np.abs(price_window).mean()) or 1.0
-    adl_norm = (adl_window - adl_window[0]) / adl_denom
-    price_norm = (price_window - price_window[0]) / price_denom
-
-    adl_slope = float(np.polyfit(x, adl_norm, 1)[0])
-    price_slope = float(np.polyfit(x, price_norm, 1)[0])
-
-    divergence = adl_slope - price_slope
-    price_flat = abs(price_slope) < 0.005
-    adl_rising = adl_slope > 0.002
-
-    detected = adl_rising and (price_flat or price_slope < 0) and divergence > 0.3
-
-    score = 0.0
-    if detected:
-        score = min(10.0, 5.0 + divergence * 4.0)
-
-    return PatternResult(
-        "adl_divergence",
-        detected,
-        round(score, 1),
-        "volume",
-        {
-            "adl_slope": round(adl_slope, 4),
-            "price_slope": round(price_slope, 4),
-            "divergence": round(divergence, 4),
-        },
-    )
-
-
-def detect_volume_accumulation(df: pd.DataFrame) -> PatternResult:
-    """
-    Volume building over 3-5 days while price stays flat.
-    Big players quietly buying before a move.
-    """
-    if len(df) < VOL_ACCUM_DAYS + 10:
-        return PatternResult("volume_accumulation", False, 0.0, "volume")
-
-    closes = df["close"].iloc[-(VOL_ACCUM_DAYS + 10):]
-    volumes = df["volume"].iloc[-(VOL_ACCUM_DAYS + 10):]
-
-    recent_closes = closes.iloc[-VOL_ACCUM_DAYS:]
-    price_range = (float(recent_closes.max()) - float(recent_closes.min())) / float(recent_closes.mean())
-    price_flat = price_range < VOL_ACCUM_PRICE_RANGE
-
-    recent_vol = float(volumes.iloc[-3:].mean())
-    prior_vol = float(volumes.iloc[-13:-3].mean()) if len(volumes) >= 13 else float(volumes.mean())
-    vol_increase = recent_vol / prior_vol if prior_vol > 0 else 1.0
-
-    last_5_vols = volumes.iloc[-VOL_ACCUM_DAYS:]
-    vol_trending_up = 0
-    for i in range(1, len(last_5_vols)):
-        if float(last_5_vols.iloc[i]) > float(last_5_vols.iloc[i - 1]):
-            vol_trending_up += 1
-    vol_trend_pct = vol_trending_up / max(1, len(last_5_vols) - 1)
-
-    detected = price_flat and vol_increase >= VOL_ACCUM_MIN_INCREASE
-
-    score = 0.0
-    if detected:
-        score = min(10.0, 5.0 + (vol_increase - 1.0) * 5.0 + vol_trend_pct * 3.0)
-
-    return PatternResult(
-        "volume_accumulation",
-        detected,
-        round(score, 1),
-        "volume",
-        {
-            "price_range_pct": round(price_range * 100, 2),
-            "price_flat": price_flat,
-            "vol_increase_ratio": round(vol_increase, 2),
-            "vol_trend_pct": round(vol_trend_pct * 100, 1),
-        },
-    )
-
-
-def detect_higher_lows(df: pd.DataFrame) -> PatternResult:
-    """
-    Price making higher lows — coiling for breakout.
-    Enhanced with market structure shift detection: if the most recent
-    swing high is broken, it confirms the trend reversal.
-    """
-    if len(df) < COIL_LOOKBACK + 2:
-        return PatternResult("higher_lows", False, 0.0, "price")
-
-    lows = df["low"].iloc[-COIL_LOOKBACK:]
-    highs = df["high"].iloc[-COIL_LOOKBACK:]
-
-    # Find swing lows
-    swing_lows = []
-    for i in range(1, len(lows) - 1):
-        if float(lows.iloc[i]) < float(lows.iloc[i - 1]) and float(lows.iloc[i]) < float(lows.iloc[i + 1]):
-            swing_lows.append(float(lows.iloc[i]))
-
-    if len(swing_lows) < COIL_MIN_LOWS:
-        return PatternResult("higher_lows", False, 0.0, "price")
-
-    ascending_count = 0
-    for i in range(1, len(swing_lows)):
-        if swing_lows[i] > swing_lows[i - 1]:
-            ascending_count += 1
-    ascending_pct = ascending_count / max(1, len(swing_lows) - 1)
-
-    detected = ascending_pct >= 0.6
-
-    # Market structure shift bonus: check if recent price broke above
-    # the most recent swing high (confirms trend reversal)
-    swing_highs = []
-    for i in range(1, len(highs) - 1):
-        if float(highs.iloc[i]) > float(highs.iloc[i - 1]) and float(highs.iloc[i]) > float(highs.iloc[i + 1]):
-            swing_highs.append(float(highs.iloc[i]))
-
-    mss_bonus = 0.0
-    if swing_highs:
-        last_swing_high = swing_highs[-1]
-        current_close = float(df["close"].iloc[-1])
-        if current_close > last_swing_high:
-            mss_bonus = 2.0  # market structure shift confirmed
-
-    score = 0.0
-    if detected:
-        score = min(10.0, ascending_pct * 8.0 + mss_bonus)
-
-    return PatternResult(
-        "higher_lows",
-        detected,
-        round(score, 1),
-        "price",
-        {
-            "swing_lows_found": len(swing_lows),
-            "ascending_pct": round(ascending_pct * 100, 1),
-            "last_3_lows": [round(l, 4) for l in swing_lows[-3:]],
-            "mss_confirmed": mss_bonus > 0,
-        },
-    )
-
-
-def detect_macd_launch_zone(df: pd.DataFrame) -> PatternResult:
-    """
-    MACD histogram flattening near zero and about to cross while RSI 40-55.
-    """
-    closes = df["close"]
-    if len(closes) < 30:
-        return PatternResult("macd_launch_zone", False, 0.0, "momentum")
-
-    rsi_series = calc_rsi(closes)
-    _, _, hist = calc_macd(closes)
-
-    rsi_val = float(rsi_series.dropna().iloc[-1]) if len(rsi_series.dropna()) > 0 else 50.0
-    hist_vals = hist.dropna()
-    if len(hist_vals) < 5:
-        return PatternResult("macd_launch_zone", False, 0.0, "momentum")
-
-    current_hist = float(hist_vals.iloc[-1])
-    prev_hist = float(hist_vals.iloc[-2])
-
-    # Normalize threshold by price so it works for $5 and $500 stocks alike
-    current_price = float(closes.iloc[-1])
-    hist_threshold = current_price * 0.003 if current_price > 0 else MACD_HIST_FLAT_THRESHOLD
-    hist_flat = abs(current_hist) < hist_threshold
-    hist_improving = current_hist > prev_hist
-
-    last3 = [abs(float(hist_vals.iloc[i])) for i in range(-3, 0)]
-    converging = all(last3[i] >= last3[i + 1] for i in range(len(last3) - 1))
-
-    rsi_in_zone = MACD_RSI_LOW <= rsi_val <= MACD_RSI_HIGH
-
-    detected = (hist_flat or converging) and hist_improving and rsi_in_zone
-
-    score = 0.0
-    if detected:
-        rsi_center_dist = abs(rsi_val - 47.5) / 7.5
-        score = min(10.0, 7.0 + (1.0 - rsi_center_dist) * 3.0)
-        if converging:
-            score = min(10.0, score + 1.0)
-
-    return PatternResult(
-        "macd_launch_zone",
-        detected,
-        round(score, 1),
-        "momentum",
-        {
-            "rsi": round(rsi_val, 1),
-            "macd_hist": round(current_hist, 4),
-            "hist_improving": hist_improving,
-            "hist_converging": converging,
-            "rsi_in_zone": rsi_in_zone,
-        },
-    )
-
-
-def detect_relative_strength(
-    df: pd.DataFrame,
-    sector_etf: str = "SPY",
-    spy_df: pd.DataFrame | None = None,
-) -> PatternResult:
-    """Stock quietly outperforming SPY for 3+ days."""
-    if len(df) < REL_STRENGTH_DAYS + 2:
-        return PatternResult("relative_strength", False, 0.0, "momentum")
-
-    try:
-        spy = spy_df if spy_df is not None else get_spy_history(period="10d", interval="1d")
-        if spy is None or len(spy) < REL_STRENGTH_DAYS:
-            return PatternResult("relative_strength", False, 0.0, "momentum")
-    except Exception:
-        return PatternResult("relative_strength", False, 0.0, "momentum")
-
-    stock_closes = df["close"].iloc[-REL_STRENGTH_DAYS:]
-    spy_closes = spy["close"].iloc[-REL_STRENGTH_DAYS:]
-
-    if len(stock_closes) < REL_STRENGTH_DAYS or len(spy_closes) < REL_STRENGTH_DAYS:
-        return PatternResult("relative_strength", False, 0.0, "momentum")
-
-    stock_returns = stock_closes.pct_change().dropna()
-    spy_returns = spy_closes.pct_change().dropna()
-
-    min_len = min(len(stock_returns), len(spy_returns))
-    if min_len < 3:
-        return PatternResult("relative_strength", False, 0.0, "momentum")
-
-    outperform_days = 0
-    for i in range(min_len):
-        if float(stock_returns.iloc[i]) > float(spy_returns.iloc[i]):
-            outperform_days += 1
-
-    outperform_pct = outperform_days / min_len
-    detected = outperform_days >= 3
-
-    stock_cum = float((1 + stock_returns.iloc[:min_len]).prod() - 1)
-    spy_cum = float((1 + spy_returns.iloc[:min_len]).prod() - 1)
-    relative_return = stock_cum - spy_cum
-
-    score = 0.0
-    if detected:
-        score = min(10.0, 5.0 + outperform_pct * 5.0 + max(0, relative_return) * 50)
-
-    return PatternResult(
-        "relative_strength",
-        detected,
-        round(score, 1),
-        "momentum",
-        {
-            "outperform_days": outperform_days,
-            "total_days": min_len,
-            "stock_return_pct": round(stock_cum * 100, 2),
-            "benchmark_return_pct": round(spy_cum * 100, 2),
-            "relative_return_pct": round(relative_return * 100, 2),
-        },
-    )
-
-
-def detect_fair_value_gap(df: pd.DataFrame) -> PatternResult:
-    """
-    Fair Value Gap (FVG): gap between bar[i-1].high and bar[i+1].low.
-    These imbalanced zones tend to fill (~65% within 5 sessions).
-    Bullish signal when price is near an unfilled bullish FVG.
-    """
-    if len(df) < FVG_MAX_AGE_BARS + 3:
-        return PatternResult("fair_value_gap", False, 0.0, "price")
-
-    current_price = float(df["close"].iloc[-1])
-    recent = df.iloc[-FVG_MAX_AGE_BARS:]
-
-    best_fvg = None
-    best_score = 0.0
-
-    for i in range(1, len(recent) - 1):
-        gap_bottom = float(recent["high"].iloc[i - 1])
-        gap_top = float(recent["low"].iloc[i + 1])
-
-        if gap_top <= gap_bottom:
-            continue  # no gap
-
-        fvg_mid = (gap_top + gap_bottom) / 2
-        fvg_size_pct = (gap_top - gap_bottom) / float(recent["close"].iloc[i]) * 100
-
-        # Check if FVG is still unfilled (price hasn't fully closed the gap)
-        filled = False
-        for j in range(i + 2, len(recent)):
-            if float(recent["low"].iloc[j]) <= gap_bottom:
-                filled = True
-                break
-
-        if filled:
-            continue
-
-        # Proximity: is current price near this FVG?
-        distance_pct = abs(current_price - fvg_mid) / fvg_mid * 100
-        if distance_pct > FVG_PROXIMITY_PCT:
-            continue
-
-        # Check volume on the impulse candle (bar i)
-        avg_vol = float(df["volume"].iloc[-20:].mean())
-        impulse_vol = float(recent["volume"].iloc[i])
-        vol_confirm = impulse_vol > avg_vol * 1.5
-
-        score = min(10.0, fvg_size_pct * 5.0)
-        if vol_confirm:
-            score = min(10.0, score + 2.0)
-
-        if score > best_score:
-            best_score = score
-            best_fvg = {
-                "fvg_bottom": round(gap_bottom, 2),
-                "fvg_top": round(gap_top, 2),
-                "fvg_mid": round(fvg_mid, 2),
-                "fvg_size_pct": round(fvg_size_pct, 2),
-                "distance_pct": round(distance_pct, 2),
-                "vol_confirmed": vol_confirm,
-                "bars_ago": len(recent) - 1 - i,
-            }
-
-    detected = best_fvg is not None and best_score >= 3.0
-
-    return PatternResult(
-        "fair_value_gap",
-        detected,
-        round(best_score, 1) if detected else 0.0,
-        "price",
-        best_fvg or {},
-    )
-
-
-def _weekly_trend_modifier(df: pd.DataFrame) -> float:
-    """
-    Multi-timeframe confirmation: weekly trend alignment as a score modifier.
-    Returns a bonus/penalty: +1.5 if weekly trend aligned, -1.5 if against.
-    """
-    if len(df) < MTF_WEEKLY_MA * 5 + 5:  # need ~50 daily bars for 10 weekly bars
-        return 0.0
-
-    # Resample daily to weekly
-    weekly = df.resample("W").agg({
-        "open": "first", "high": "max", "low": "min",
-        "close": "last", "volume": "sum",
-    }).dropna()
-
-    if len(weekly) < MTF_WEEKLY_MA + 1:
-        return 0.0
-
-    weekly_ma = weekly["close"].rolling(MTF_WEEKLY_MA).mean()
-    current_weekly = float(weekly["close"].iloc[-1])
-    ma_val = float(weekly_ma.iloc[-1]) if not pd.isna(weekly_ma.iloc[-1]) else 0
-
-    if ma_val <= 0:
-        return 0.0
-
-    above_weekly_ma = current_weekly > ma_val
-    weekly_green = float(weekly["close"].iloc[-1]) > float(weekly["close"].iloc[-2])
-
-    # Weekly RSI overbought check
-    weekly_rsi = calc_rsi(weekly["close"])
-    w_rsi_val = float(weekly_rsi.dropna().iloc[-1]) if len(weekly_rsi.dropna()) > 0 else 50.0
-
-    if above_weekly_ma and weekly_green:
-        bonus = 1.5
-        if w_rsi_val > 70:
-            bonus -= 1.0  # overbought on weekly reduces bonus
-        return bonus
-    elif not above_weekly_ma:
-        return -1.5  # against weekly trend
-    return 0.0
-
-
-# ── Historical pattern matching ──────────────────────────────────────────────
-
-def _compute_historical_accuracy(
-    symbol: str,
-    current_patterns: list[PatternResult],
-    bar_df: pd.DataFrame | None = None,
-) -> dict:
-    """
-    Look back at historical data: when similar patterns appeared, what happened?
-    """
-    today = date.today()
-
-    with _hist_lock:
-        cached = _hist_cache.get(symbol)
-        if cached and cached[0] == today:
-            return cached[1]
-
-    try:
-        if bar_df is not None and len(bar_df) >= 60:
-            hist = bar_df
+    if len(closes) < 10:
+        return PatternResult("rsi2", False, 0.0, "momentum")
+
+    rsi2 = calc_rsi(closes, period=2)
+    current_rsi = float(rsi2.iloc[-1]) if not pd.isna(rsi2.iloc[-1]) else 50.0
+
+    detected = current_rsi < RSI2_THRESHOLD
+    if current_rsi < 5:
+        score = 10.0
+    elif current_rsi < 10:
+        score = 8.0 - (current_rsi - 5) * 0.4
+    elif current_rsi < 20:
+        score = 5.0 - (current_rsi - 10) * 0.3
+    else:
+        score = max(0.0, 3.0 - (current_rsi - 20) * 0.1)
+
+    return PatternResult("rsi2", detected, round(score, 1), "momentum",
+                         {"rsi2_value": round(current_rsi, 1)})
+
+
+def _detect_ibs(df: pd.DataFrame) -> PatternResult:
+    """Internal Bar Strength — close near day's low, 74-82% documented win rate."""
+    if len(df) < 5:
+        return PatternResult("ibs", False, 0.0, "momentum")
+
+    high = float(df["high"].iloc[-1])
+    low = float(df["low"].iloc[-1])
+    close = float(df["close"].iloc[-1])
+
+    bar_range = high - low
+    if bar_range <= 0:
+        return PatternResult("ibs", False, 0.0, "momentum")
+
+    ibs = (close - low) / bar_range
+
+    detected = ibs < IBS_THRESHOLD
+    if ibs < 0.1:
+        score = 10.0
+    elif ibs < 0.2:
+        score = 8.0 - (ibs - 0.1) * 20.0
+    elif ibs < 0.3:
+        score = 5.0 - (ibs - 0.2) * 20.0
+    else:
+        score = max(0.0, 3.0 - (ibs - 0.3) * 5.0)
+
+    return PatternResult("ibs", detected, round(score, 1), "momentum",
+                         {"ibs_value": round(ibs, 3)})
+
+
+def _detect_consec_down(df: pd.DataFrame) -> PatternResult:
+    """3 consecutive lower closes, 72% documented win rate."""
+    if len(df) < CONSEC_DOWN_DAYS + 1:
+        return PatternResult("consec_down", False, 0.0, "momentum")
+
+    consec = 0
+    for i in range(-1, -CONSEC_DOWN_DAYS - 1, -1):
+        c_cur = float(df["close"].iloc[i])
+        c_prev = float(df["close"].iloc[i - 1])
+        if c_cur < c_prev:
+            consec += 1
         else:
-            hist = fetch_bars(symbol, period="1y", interval="1d")
-            if hist is None or len(hist) < 60:
-                return {"accuracy": 0.0, "samples": 0, "avg_move": 0.0, "expected_move": 0.0}
+            break
 
-        closes = hist["close"]
-        volumes = hist["volume"]
+    detected = consec >= CONSEC_DOWN_DAYS
+    if consec >= 4:
+        score = 10.0
+    elif consec >= 3:
+        score = 8.0
+    elif consec >= 2:
+        score = 4.0
+    else:
+        score = 0.0
 
-        bb_upper, bb_mid, bb_lower = bollinger_bands(closes)
-        bandwidth = (bb_upper - bb_lower) / bb_mid.replace(0, np.nan)
-        rsi_series = calc_rsi(closes)
-        _, _, macd_hist = calc_macd(closes)
-
-        active_pattern_names = {p.name for p in current_patterns if p.detected}
-        if not active_pattern_names:
-            result = {"accuracy": 0.0, "samples": 0, "avg_move": 0.0, "expected_move": 0.0}
-            with _hist_lock:
-                _hist_cache[symbol] = (today, result)
-            return result
-
-        wins = 0
-        total = 0
-        moves = []
-
-        for i in range(35, len(closes) - HIST_FORWARD_DAYS):
-            match_count = 0
-            patterns_to_check = len(active_pattern_names)
-
-            if "keltner_squeeze" in active_pattern_names or "bb_squeeze" in active_pattern_names:
-                bw_window = bandwidth.iloc[max(0, i - 20):i + 1].dropna()
-                if len(bw_window) >= 10:
-                    current_bw = float(bw_window.iloc[-1])
-                    pctile = float((bw_window < current_bw).sum() / len(bw_window) * 100)
-                    if pctile <= 20:
-                        match_count += 1
-
-            if "macd_launch_zone" in active_pattern_names:
-                rsi_val = float(rsi_series.iloc[i]) if not pd.isna(rsi_series.iloc[i]) else 50
-                hist_val = float(macd_hist.iloc[i]) if not pd.isna(macd_hist.iloc[i]) else 0
-                if MACD_RSI_LOW <= rsi_val <= MACD_RSI_HIGH and abs(hist_val) < MACD_HIST_FLAT_THRESHOLD:
-                    match_count += 1
-
-            if "volume_accumulation" in active_pattern_names:
-                if i >= 10:
-                    recent_v = float(volumes.iloc[i - 2:i + 1].mean())
-                    prior_v = float(volumes.iloc[i - 10:i - 2].mean())
-                    price_rng = float(closes.iloc[i - 5:i + 1].max() - closes.iloc[i - 5:i + 1].min())
-                    price_avg = float(closes.iloc[i - 5:i + 1].mean())
-                    if prior_v > 0 and price_avg > 0:
-                        if recent_v / prior_v >= VOL_ACCUM_MIN_INCREASE and price_rng / price_avg < VOL_ACCUM_PRICE_RANGE:
-                            match_count += 1
-
-            if match_count >= max(1, patterns_to_check // 2):
-                future_price = float(closes.iloc[i + HIST_FORWARD_DAYS])
-                current_price = float(closes.iloc[i])
-                if current_price > 0:
-                    fwd_return = (future_price - current_price) / current_price
-                    moves.append(fwd_return)
-                    total += 1
-                    if fwd_return >= HIST_WIN_THRESHOLD:
-                        wins += 1
-
-        accuracy = wins / total if total > 0 else 0.0
-        avg_move = sum(moves) / len(moves) if moves else 0.0
-        winning_moves = [m for m in moves if m >= HIST_WIN_THRESHOLD]
-        avg_win = sum(winning_moves) / len(winning_moves) if winning_moves else 0.0
-        expected_move = accuracy * avg_win
-
-        result = {
-            "accuracy": round(accuracy, 3),
-            "samples": total,
-            "avg_move": round(avg_move * 100, 2),
-            "expected_move": round(expected_move * 100, 2),
-            "avg_winning_move": round(avg_win * 100, 2),
-        }
-
-        with _hist_lock:
-            _hist_cache[symbol] = (today, result)
-
-        return result
-
-    except Exception as exc:
-        log.warning("[prediction] Historical analysis failed for %s: %s", symbol, exc)
-        return {"accuracy": 0.0, "samples": 0, "avg_move": 0.0, "expected_move": 0.0}
+    return PatternResult("consec_down", detected, score, "momentum",
+                         {"consecutive_days": consec})
 
 
-# ── Stage classification ─────────────────────────────────────────────────────
+def _detect_bb_touch(df: pd.DataFrame) -> PatternResult:
+    """Price at or below lower Bollinger Band — mean reversion setup."""
+    closes = df["close"]
+    if len(closes) < 25:
+        return PatternResult("bb_lower", False, 0.0, "momentum")
 
-def _classify_stage(patterns: list[PatternResult]) -> str:
-    active = {p.name for p in patterns if p.detected}
-    total_active = len(active)
-    volume_signals = {p.name for p in patterns if p.detected and p.category == "volume"}
+    _, bb_mid, bb_lower = bollinger_bands(closes, period=20, num_std=2.0)
+    current_price = float(closes.iloc[-1])
+    lower_val = float(bb_lower.iloc[-1]) if not pd.isna(bb_lower.iloc[-1]) else 0
+    mid_val = float(bb_mid.iloc[-1]) if not pd.isna(bb_mid.iloc[-1]) else 0
 
-    if total_active == 0:
-        return "no_setup"
+    if lower_val <= 0 or mid_val <= 0:
+        return PatternResult("bb_lower", False, 0.0, "momentum")
 
-    if "macd_launch_zone" in active and total_active >= 3 and volume_signals:
+    bb_width = mid_val - lower_val
+    if bb_width <= 0:
+        return PatternResult("bb_lower", False, 0.0, "momentum")
+
+    distance_below = (lower_val - current_price) / bb_width
+
+    detected = current_price <= lower_val * 1.005
+    if current_price <= lower_val * 0.99:
+        score = 10.0
+    elif current_price <= lower_val:
+        score = 8.0
+    elif current_price <= lower_val * 1.005:
+        score = 6.0
+    else:
+        score = max(0.0, 4.0 - (current_price - lower_val) / bb_width * 10.0)
+
+    return PatternResult("bb_lower", detected, round(score, 1), "momentum",
+                         {"bb_lower": round(lower_val, 2), "distance_pct": round(distance_below * 100, 1)})
+
+
+def _detect_volume_spike(df: pd.DataFrame) -> PatternResult:
+    """Volume spike — confirms capitulation selling before bounce."""
+    if len(df) < 22:
+        return PatternResult("volume_spike", False, 0.0, "volume")
+
+    avg_vol = float(df["volume"].iloc[-21:-1].mean())
+    if avg_vol <= 0:
+        return PatternResult("volume_spike", False, 0.0, "volume")
+
+    cur_vol = float(df["volume"].iloc[-1])
+    vol_ratio = cur_vol / avg_vol
+
+    detected = vol_ratio >= 1.5
+    if vol_ratio >= 2.5:
+        score = 10.0
+    elif vol_ratio >= 2.0:
+        score = 8.0
+    elif vol_ratio >= 1.5:
+        score = 6.0
+    elif vol_ratio >= 1.2:
+        score = 3.0
+    else:
+        score = 0.0
+
+    return PatternResult("volume_spike", detected, round(score, 1), "volume",
+                         {"volume_ratio": round(vol_ratio, 2)})
+
+
+# ── Regime filter ───────────────────────────────────────────────────────────
+
+def _compute_adx(df: pd.DataFrame, period: int = ADX_PERIOD) -> float:
+    """Average Directional Index — measures trend strength."""
+    if len(df) < period * 2:
+        return 25.0  # neutral default
+
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low - close.shift(1)).abs(),
+    ], axis=1).max(axis=1)
+
+    atr_smooth = tr.ewm(span=period, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr_smooth)
+    minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr_smooth)
+
+    di_sum = plus_di + minus_di
+    dx = 100 * ((plus_di - minus_di).abs() / di_sum.where(di_sum > 0, 1.0))
+    adx = dx.ewm(span=period, adjust=False).mean()
+
+    return float(adx.iloc[-1]) if not pd.isna(adx.iloc[-1]) else 25.0
+
+
+def _passes_regime_filter(df: pd.DataFrame) -> tuple[bool, str]:
+    """200-SMA trend filter + ADX regime check."""
+    closes = df["close"]
+
+    if len(closes) < SMA_200_PERIOD + 5:
+        sma_period = min(100, len(closes) - 5)
+        if sma_period < 30:
+            return False, "insufficient data"
+    else:
+        sma_period = SMA_200_PERIOD
+
+    sma = closes.rolling(sma_period).mean()
+    current_price = float(closes.iloc[-1])
+    sma_val = float(sma.iloc[-1])
+
+    if current_price < sma_val * 0.90:
+        return False, f"price ${current_price:.2f} below SMA({sma_period}) ${sma_val:.2f}"
+
+    adx = _compute_adx(df)
+    if adx > ADX_MAX:
+        return False, f"ADX {adx:.0f} > {ADX_MAX} (strong trend, mean reversion risky)"
+
+    return True, f"SMA({sma_period}) OK, ADX {adx:.0f}"
+
+
+# ── Confirmation layer ──────────────────────────────────────────────────────
+
+def _get_confirmations(df: pd.DataFrame) -> tuple[list[PatternResult], bool]:
+    """Run VP/CVD/AMT as confirmation bonus — no longer vetoes signals."""
+    confirms = []
+
+    vp_result = score_volume_profile(df)
+    vp_ok = vp_result["score"] >= VP_CONFIRM_THRESHOLD
+    confirms.append(PatternResult("volume_profile", vp_ok, vp_result["score"],
+                                  "structure", vp_result.get("details", {})))
+
+    of_result = score_order_flow(df)
+    cvd_ok = of_result["score"] >= CVD_VETO_THRESHOLD
+    confirms.append(PatternResult("order_flow", cvd_ok, of_result["score"],
+                                  "volume", of_result.get("details", {})))
+
+    amt_result = score_amt(df)
+    amt_state = amt_result.get("state", "balanced")
+    amt_ok = amt_state not in AMT_VETO_STATES
+    confirms.append(PatternResult("amt_state", amt_ok, amt_result["score"],
+                                  "structure", {"state": amt_state}))
+
+    return confirms, False
+
+
+# ── Stage classification ────────────────────────────────────────────────────
+
+def _classify_stage(primary_count: int, confirm_count: int, best_primary: str) -> str:
+    """Classify stage from primary signal count and confirmation strength."""
+    if primary_count >= 3 and confirm_count >= 2:
         return "launch_zone"
-
-    if "keltner_squeeze" in active and ("higher_lows" in active or "macd_launch_zone" in active):
+    if primary_count >= 2 and confirm_count >= 2:
         return "pre_breakout"
-
-    if volume_signals and total_active >= 2:
+    if primary_count >= 2:
         return "accumulation"
-
-    if "relative_strength" in active or total_active >= 2:
+    if primary_count >= 1 and confirm_count >= 1:
         return "early_accumulation"
-
     return "early_accumulation"
 
 
 STAGE_LABELS = {
     "no_setup":            "No setup detected",
     "early_accumulation":  "Early accumulation — watching",
-    "accumulation":        "Accumulation phase — big buyers detected",
-    "pre_breakout":        "Pre-breakout — pressure building, explosion coming",
-    "launch_zone":         "Launch zone — all systems go, spike imminent",
+    "accumulation":        "Accumulation phase — oversold with confirmation",
+    "pre_breakout":        "Pre-breakout — multiple oversold signals confirmed",
+    "launch_zone":         "Launch zone — maximum confluence, bounce imminent",
 }
 
 STAGE_TIMEFRAME = {
@@ -849,7 +411,7 @@ STAGE_TIMEFRAME = {
 }
 
 
-# ── Risk-reward computation ──────────────────────────────────────────────────
+# ── Risk-reward computation ─────────────────────────────────────────────────
 
 def _compute_risk_reward(
     current_price: float,
@@ -858,23 +420,12 @@ def _compute_risk_reward(
     historical_accuracy: float,
     historical_samples: int,
 ) -> tuple[list[dict], str, float, float, str]:
-    """
-    Compute risk-reward setups for all applicable modes.
-
-    Returns:
-        rr_setups: list of dicts with mode details
-        best_mode: key of the best mode
-        best_ratio: the R:R ratio of the best mode
-        expected_value: EV per $100 risked for the best mode
-        badge: "HIGH R:R" for pre_spike setups, "" otherwise
-    """
+    """Compute risk-reward setups for all applicable modes."""
     rr_setups: list[dict] = []
 
-    # Win rate: use historical accuracy if available, else estimate from confidence
-    if historical_samples >= HIST_MIN_SAMPLES and historical_accuracy > 0:
+    if historical_samples >= 10 and historical_accuracy > 0:
         win_rate = historical_accuracy
     else:
-        # Estimate: confidence/10 scaled to 30-70% range
         win_rate = 0.30 + (confidence / 10.0) * 0.40
 
     for mode_key, mode in RR_MODES.items():
@@ -883,20 +434,16 @@ def _compute_risk_reward(
 
         risk_pct = mode["risk_pct"]
         reward_ratio = mode["reward_ratio"]
-        target_pct = risk_pct * reward_ratio
 
-        # ATR-based adjustment: if ATR suggests tighter stop is reasonable
         atr_pct = (current_atr / current_price) * 100
-        # Use the tighter of mode risk_pct or 1.5x ATR
         effective_risk_pct = min(risk_pct, atr_pct * 1.5)
-        effective_risk_pct = max(0.5, effective_risk_pct)  # floor at 0.5%
+        effective_risk_pct = max(0.5, effective_risk_pct)
 
         effective_target_pct = effective_risk_pct * reward_ratio
 
         stop = round(current_price * (1 - effective_risk_pct / 100), 2)
         target = round(current_price * (1 + effective_target_pct / 100), 2)
 
-        # Expected value per $100 risked
         risk_per_share = current_price - stop
         reward_per_share = target - current_price
         if risk_per_share > 0:
@@ -905,7 +452,6 @@ def _compute_risk_reward(
         else:
             ev_per_100 = 0.0
 
-        # Breakeven win rate for this R:R
         breakeven_wr = 1 / (1 + reward_ratio)
 
         setup = {
@@ -927,7 +473,6 @@ def _compute_risk_reward(
     if not rr_setups:
         return [], "", 0.0, 0.0, ""
 
-    # Best mode: highest positive EV, preferring higher R:R on tie
     positive_ev_setups = [s for s in rr_setups if s["positive_ev"]]
     if positive_ev_setups:
         best = max(positive_ev_setups, key=lambda s: (s["expected_value"], s["rr_ratio"]))
@@ -943,7 +488,7 @@ def _compute_risk_reward(
     )
 
 
-# ── Main prediction function ─────────────────────────────────────────────────
+# ── Main prediction function ───────────────────────────────────────────────
 
 def predict(
     symbol: str,
@@ -951,153 +496,136 @@ def predict(
     sector_etf: str = "SPY",
     spy_df: pd.DataFrame | None = None,
 ) -> Prediction | None:
+    """Run research-backed mean reversion analysis on a symbol.
+
+    Architecture:
+    1. Primary signals: RSI(2), IBS, 3-consecutive-down — at least 1 must fire
+    2. Regime filter: price > SMA-200 (relaxed), ADX < 30
+    3. Confirmation: VP/CVD/AMT — veto if CVD or AMT says sellers in control
     """
-    Run all pattern detectors on a symbol and produce a prediction.
-    Returns None if no meaningful setup is detected.
-
-    Gate checks (any fail = no prediction):
-    1. Must be in an uptrend (SMA20 > SMA50)
-    2. Must have at least one volume-based signal
-    3. Must meet minimum weighted confidence
-    """
-    if df is None or len(df) < 55:  # need 50+ bars for trend filter
+    if df is None or len(df) < 35:
         return None
 
-    # Gate 1: Trend filter — no predictions in downtrends
-    if not _is_uptrending(df):
+    # Step 1: Primary signals (the WHEN — proven timing)
+    rsi2_result = _detect_rsi2(df)
+    ibs_result = _detect_ibs(df)
+    consec_result = _detect_consec_down(df)
+    bb_result = _detect_bb_touch(df)
+
+    primaries = [rsi2_result, ibs_result, consec_result, bb_result]
+    active_primaries = [p for p in primaries if p.detected]
+    primary_count = len(active_primaries)
+
+    # Gate: at least 3 of 4 primary signals must fire (high confluence)
+    if primary_count < 3:
         return None
 
-    # Run all pattern detectors
-    # Note: obv_divergence removed — 0 fires in 50k-observation backtest
-    patterns = [
-        detect_keltner_squeeze(df),
-        detect_adl_divergence(df),
-        detect_volume_accumulation(df),
-        detect_higher_lows(df),
-        detect_fair_value_gap(df),
-        detect_macd_launch_zone(df),
-        detect_relative_strength(df, sector_etf, spy_df=spy_df),
-    ]
-
-    active_patterns = [p for p in patterns if p.detected]
-    if not active_patterns:
+    # Step 2: Regime filter (the WHERE — only trade with the big trend)
+    passes_regime, regime_reason = _passes_regime_filter(df)
+    if not passes_regime:
         return None
 
-    # Gate 2: Volume gate — must have adl_divergence or volume_accumulation
-    # (backtest shows only these two have real volume edge; other volume-category
-    # patterns like obv_divergence had 0 fires)
-    core_volume = {p.name for p in active_patterns} & {"adl_divergence", "volume_accumulation"}
-    if not core_volume:
+    # Step 3: Confirmation layer (the WHO — institutional money agrees)
+    confirms, vetoed = _get_confirmations(df)
+    if vetoed:
         return None
 
-    # Weighted scoring: patterns with higher predictive value count more
+    vol_spike = _detect_volume_spike(df)
+    confirms.append(vol_spike)
+
+    active_confirms = [c for c in confirms if c.detected]
+    confirm_count = len(active_confirms)
+
+    # Step 4: Compute composite score
     weighted_score = 0.0
-    max_weighted = 0.0
-    for p in patterns:
-        weight = PATTERN_WEIGHTS.get(p.name, 1.0)
-        max_weighted += 10.0 * weight
+    max_possible = 0.0
+
+    for p in primaries:
+        weight = PRIMARY_WEIGHTS.get(p.name, 1.0)
+        max_possible += 10.0 * weight
         if p.detected:
             weighted_score += p.score * weight
 
-    # Combo bonus: when adl_divergence or volume_accumulation co-fires with
-    # other patterns, apply multiplicative bonus (backtest shows +5-18pp edge)
-    active_names = {p.name for p in active_patterns}
-    core_active = active_names & COMBO_BONUS_CORE
-    non_core_active = active_names - COMBO_BONUS_CORE
-    if core_active and non_core_active:
-        combo_multiplier = 1.0 + (COMBO_BONUS_MULTIPLIER - 1.0) * len(core_active)
-        weighted_score *= combo_multiplier
+    for c in confirms:
+        bonus = CONFIRM_BONUS.get(c.name, 0.5)
+        max_possible += 10.0 * bonus
+        if c.detected:
+            weighted_score += c.score * bonus
 
-    composite = weighted_score / max_weighted * 10.0 if max_weighted > 0 else 0.0
+    # Confluence bonus: 2+ primary signals
+    if primary_count >= 2:
+        weighted_score *= CONFLUENCE_MULTIPLIER
+    if primary_count >= 3:
+        weighted_score *= 1.1  # extra bonus for triple
 
-    # Confirmation bonus scaled by number of categories active
-    active_categories = len({p.category for p in active_patterns})
-    confirmation_bonus = min(2.0, (active_categories - 1) * 0.8)
-
-    # Multi-timeframe modifier: weekly trend alignment
-    try:
-        mtf_bonus = _weekly_trend_modifier(df)
-    except Exception:
-        mtf_bonus = 0.0
-
-    confidence_raw = composite + confirmation_bonus + mtf_bonus
-    confidence = max(1, min(10, round(confidence_raw)))
+    composite = weighted_score / max_possible * 10.0 if max_possible > 0 else 0.0
+    confidence = max(1, min(10, round(composite)))
 
     if confidence < MIN_CONFIDENCE:
         return None
 
-    # Stage classification
-    stage = _classify_stage(patterns)
-    if stage == "no_setup":
-        return None
+    # Step 5: Stage classification
+    all_patterns = primaries + confirms
+    stage = _classify_stage(primary_count, confirm_count, active_primaries[0].name)
 
-    # Historical accuracy
-    hist = _compute_historical_accuracy(symbol, patterns, bar_df=df)
-    historical_accuracy = hist.get("accuracy", 0.0)
-    historical_samples = hist.get("samples", 0)
-
-    if historical_samples >= HIST_MIN_SAMPLES and historical_accuracy < MIN_HISTORICAL_ACCURACY:
-        log.debug("[prediction] %s: skipped — historical accuracy %.0f%% < %.0f%% (%d samples)",
-                  symbol, historical_accuracy * 100, MIN_HISTORICAL_ACCURACY * 100, historical_samples)
-        return None
-
-    # Price targets — ATR-based for tighter, volatility-adjusted levels
+    # Step 6: Price targets (middle Bollinger Band as primary target)
     current_price = float(df["close"].iloc[-1])
     atr_series = calc_atr(df)
     current_atr = float(atr_series.iloc[-1]) if len(atr_series.dropna()) > 0 else current_price * 0.02
 
-    # Expected move from historical data or ATR-based estimate
-    expected_move_pct = hist.get("avg_winning_move", 0.0)
-    if expected_move_pct <= 0:
-        # Estimate: 2x ATR as percentage
-        expected_move_pct = max(2.0, min(8.0, (current_atr * 2 / current_price) * 100))
+    _, bb_mid, _ = bollinger_bands(df["close"], period=20, num_std=2.0)
+    bb_mid_price = float(bb_mid.iloc[-1]) if not pd.isna(bb_mid.iloc[-1]) else current_price * 1.02
 
-    # Entry zone
+    if bb_mid_price > current_price:
+        expected_move_pct = (bb_mid_price - current_price) / current_price * 100
+    else:
+        expected_move_pct = max(2.0, (current_atr * 2 / current_price) * 100)
+
+    expected_move_pct = max(1.5, min(10.0, expected_move_pct))
+
     entry_low = round(current_price * 0.995, 2)
     entry_high = round(current_price * 1.005, 2)
+    target_price = round(bb_mid_price, 2) if bb_mid_price > current_price else round(current_price * 1.03, 2)
 
-    # Target: current + expected move
-    target_price = round(current_price * (1 + expected_move_pct / 100), 2)
-
-    # ATR-based stop loss — tighter than swing-low based
     stop_loss = round(current_price - STOP_ATR_MULTIPLIER * current_atr, 2)
-    # Sanity: stop shouldn't be more than 5% below entry
     stop_floor = current_price * 0.95
     stop_loss = max(stop_loss, round(stop_floor, 2))
 
-    # Build reasons
+    # Step 7: Build reasons
     reasons = []
-    for p in active_patterns:
-        if p.name == "keltner_squeeze":
-            reasons.append(f"Keltner squeeze: extreme volatility compression ({p.details.get('squeeze_bars', 0)} bars)")
-        elif p.name == "adl_divergence":
-            reasons.append(f"ADL divergence: money flow positive while price flat (div={p.details.get('divergence', 0):.2f})")
-        elif p.name == "volume_accumulation":
-            reasons.append(f"Volume up {p.details.get('vol_increase_ratio', 0):.0%} over 3 days but price flat")
-        elif p.name == "higher_lows":
-            mss = " + structure shift confirmed" if p.details.get("mss_confirmed") else ""
-            reasons.append(f"Higher lows — coiling ({p.details.get('ascending_pct', 0):.0f}% ascending){mss}")
-        elif p.name == "macd_launch_zone":
-            reasons.append(f"MACD launch zone: RSI {p.details.get('rsi', 0):.0f}, histogram converging")
-        elif p.name == "fair_value_gap":
-            reasons.append(f"Fair value gap at ${p.details.get('fvg_mid', 0):.2f} ({p.details.get('bars_ago', 0)} bars ago, {p.details.get('fvg_size_pct', 0):.1f}% gap)")
-        elif p.name == "relative_strength":
-            reasons.append(f"Outperforming SPY {p.details.get('outperform_days', 0)}/{p.details.get('total_days', 5)} days (+{p.details.get('relative_return_pct', 0):.1f}%)")
+    if rsi2_result.detected:
+        reasons.append(f"RSI(2) oversold at {rsi2_result.details.get('rsi2_value', '?')} (buy signal)")
+    if ibs_result.detected:
+        reasons.append(f"IBS {ibs_result.details.get('ibs_value', '?'):.3f} — closed near day's low (bounce expected)")
+    if consec_result.detected:
+        days = consec_result.details.get("consecutive_days", 3)
+        reasons.append(f"{days} consecutive down days — mean reversion due")
+    if bb_result.detected:
+        reasons.append(f"Price at lower Bollinger Band ${bb_result.details.get('bb_lower', 0):.2f} — bounce zone")
+    reasons.append(f"Regime: {regime_reason}")
 
-    if mtf_bonus > 0:
-        reasons.append("Weekly trend aligned — higher timeframe confirmation")
-    elif mtf_bonus < 0:
-        reasons.append("Warning: against weekly trend")
+    for c in active_confirms:
+        if c.name == "volume_profile":
+            reasons.append(f"VP confirms: score {c.score:.1f}/10")
+        elif c.name == "order_flow":
+            reasons.append(f"CVD confirms: buying pressure present ({c.score:.1f}/10)")
+        elif c.name == "amt_state":
+            reasons.append(f"AMT: {c.details.get('state', 'balanced')} — not seller-controlled")
+        elif c.name == "volume_spike":
+            reasons.append(f"Volume spike: {c.details.get('volume_ratio', 0):.1f}x average (capitulation confirmation)")
 
-    if historical_samples >= HIST_MIN_SAMPLES:
-        reasons.append(f"Historical accuracy: {historical_accuracy:.0%} over {historical_samples} similar setups")
+    if bb_mid_price > current_price:
+        reasons.append(f"Target: middle Bollinger Band ${bb_mid_price:.2f} (+{expected_move_pct:.1f}%)")
 
-    # Compute risk-reward setups
+    # Historical accuracy (lightweight — just uses closes, no VP recompute)
+    historical_accuracy = 0.0
+    historical_samples = 0
+
+    # Risk-reward
     rr_setups, best_rr_mode, best_rr_ratio, ev, rr_badge = _compute_risk_reward(
         current_price, current_atr, confidence, historical_accuracy, historical_samples,
     )
 
-    # Override stop/target with best R:R setup if available
     if rr_setups and best_rr_mode:
         best_setup = next((s for s in rr_setups if s["mode"] == best_rr_mode), None)
         if best_setup:
@@ -1106,8 +634,7 @@ def predict(
             reasons.append(
                 f"R:R {best_setup['label']}: risk {best_setup['risk_pct']:.1f}% "
                 f"to gain {best_setup['target_pct']:.1f}% "
-                f"(EV ${ev:+.2f}/trade, {best_setup['win_rate']:.0%} win rate, "
-                f"breakeven at {best_setup['breakeven_wr']:.0%})"
+                f"(EV ${ev:+.2f}/trade, breakeven at {best_setup['breakeven_wr']:.0%})"
             )
 
     return Prediction(
@@ -1122,7 +649,7 @@ def predict(
         stop_loss=stop_loss,
         historical_accuracy=round(historical_accuracy, 3),
         historical_samples=historical_samples,
-        patterns=patterns,
+        patterns=all_patterns,
         reasons=reasons,
         timeframe=STAGE_TIMEFRAME.get(stage, "1-3 days"),
         rr_setups=rr_setups,
@@ -1135,14 +662,10 @@ def predict(
 
 def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None = None,
                    progress_cb: callable | None = None) -> list[Prediction]:
-    """
-    Run predictions on a batch of symbols. Returns only stocks with valid predictions,
-    sorted by confidence descending.
+    """Run predictions on a batch of symbols.
 
-    Uses fetch_bulk_bars to grab bars in chunks of 500 symbols at once via
-    yf.download (single HTTP call per chunk), then runs predictions from cache.
-    This avoids the per-symbol rate-limit bottleneck that made 2000+ stock scans
-    fail silently.
+    Uses fetch_bulk_bars to grab bars in chunks of 500 symbols at once,
+    then runs predictions from cache.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from openbb_data import fetch_bulk_bars
@@ -1151,10 +674,9 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
     predictions: list[Prediction] = []
     total = len(symbols)
 
-    # Fetch SPY data once for all relative-strength checks
     spy_df = get_spy_history(period="10d", interval="1d")
 
-    # ── Phase 1: Bulk-fetch all bars upfront ──────────────────────────────────
+    # Phase 1: Bulk-fetch all bars upfront
     all_bars: dict[str, pd.DataFrame] = {}
     if bars_cache:
         all_bars.update(bars_cache)
@@ -1185,7 +707,7 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
         log.info("[prediction] Bars fetched: %d/%d symbols have data",
                  len(all_bars), total)
 
-    # ── Phase 2: Run predictions from cached bars ─────────────────────────────
+    # Phase 2: Run predictions from cached bars
     def _predict_one(sym: str) -> Prediction | None:
         df = all_bars.get(sym)
         if df is None or df.empty:
@@ -1212,12 +734,16 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
                 except Exception as exc:
                     log.debug("[prediction] %s failed: %s", sym, exc)
 
-    # Sort by confidence descending, then by historical accuracy
     predictions.sort(key=lambda p: (p.confidence, p.historical_accuracy), reverse=True)
 
-    log.info(
-        "[prediction] Batch complete: %d symbols scanned, %d had bars, %d predictions generated",
-        total, len(all_bars), len(predictions),
-    )
+    if predictions:
+        stage_counts = {}
+        for p in predictions:
+            stage_counts[p.stage] = stage_counts.get(p.stage, 0) + 1
+        log.info("[prediction] Batch complete: %d symbols -> %d predictions (stages: %s)",
+                 total, len(predictions), stage_counts)
+    else:
+        log.warning("[prediction] Batch complete: %d symbols scanned, %d had bars, 0 predictions",
+                    total, len(all_bars))
 
     return predictions

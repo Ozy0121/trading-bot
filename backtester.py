@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from openbb_data import fetch_bars
+from indicators import rsi as calc_rsi
 from strategies.momentum import scan as momentum_scan
 from strategies.mean_reversion import scan as mean_reversion_scan
 from strategies.accumulation import scan as accumulation_scan
@@ -47,7 +48,8 @@ BACKTEST_FILE = os.path.join(DATA_DIR, "backtest_results.json")
 
 LOOKBACK_PERIOD = "1y"     # how far back to test
 FORWARD_DAYS = 3           # check returns over 1-3 days after signal
-STOP_LOSS_PCT = 0.03       # 3% stop loss
+SMART_EXIT_WINDOW = 5      # prediction_v2 uses wider window for smart exit
+STOP_LOSS_PCT = 0.05       # 5% stop loss — mean reversion needs room to breathe
 TARGET_PCT = 0.06          # 6% take profit
 WIN_THRESHOLD = 0.01       # 1%+ gain = "win"
 
@@ -88,6 +90,8 @@ class SignalResult:
     hit_target: bool
     hit_stop: bool
     is_win: bool             # day3_return > WIN_THRESHOLD
+    smart_exit_day: int = 0        # which day the smart exit triggered (0 = N/A)
+    smart_exit_return: float = 0.0 # return at smart exit point
 
 
 @dataclass
@@ -114,6 +118,37 @@ class StrategyReport:
 
 # ── Core backtest logic ─────────────────────────────────────────────────────
 
+def _find_smart_exit(df: pd.DataFrame, entry_idx: int, entry_price: float,
+                     window: int = SMART_EXIT_WINDOW) -> tuple[int, float]:
+    """Find best exit within window: first profitable up-close, RSI(2)>65, or best close."""
+    closes = df["close"]
+    n = len(df)
+    max_fwd = min(window, n - entry_idx - 1)
+    best_day = max_fwd
+    best_ret = (float(closes.iloc[entry_idx + max_fwd]) - entry_price) / entry_price * 100
+
+    for d in range(1, max_fwd + 1):
+        idx = entry_idx + d
+        cur_close = float(closes.iloc[idx])
+        prev_close = float(closes.iloc[idx - 1])
+        ret = (cur_close - entry_price) / entry_price * 100
+
+        if ret > best_ret:
+            best_day = d
+            best_ret = ret
+
+        if cur_close > prev_close and ret > WIN_THRESHOLD:
+            return d, ret
+
+        if idx >= entry_idx + 2:
+            rsi2 = calc_rsi(closes.iloc[:idx + 1], period=2)
+            rsi_val = float(rsi2.iloc[-1]) if not pd.isna(rsi2.iloc[-1]) else 0
+            if rsi_val > 65:
+                return d, ret
+
+    return best_day, best_ret
+
+
 def _backtest_strategy_on_stock(
     strategy_name: str,
     strategy_fn: callable,
@@ -129,9 +164,10 @@ def _backtest_strategy_on_stock(
     highs = df["high"]
     lows = df["low"]
     n = len(df)
+    use_smart_exit = strategy_name == "prediction_v2"
+    fwd_days = SMART_EXIT_WINDOW if use_smart_exit else FORWARD_DAYS
 
-    for i in range(MIN_WARMUP_BARS, n - FORWARD_DAYS):
-        # Give strategy data up to and including bar i
+    for i in range(MIN_WARMUP_BARS, n - fwd_days):
         window = df.iloc[:i + 1].copy()
 
         try:
@@ -146,19 +182,31 @@ def _backtest_strategy_on_stock(
         if entry_price <= 0:
             continue
 
-        # Forward returns
-        fwd_closes = [float(closes.iloc[i + d]) for d in range(1, FORWARD_DAYS + 1)]
-        fwd_highs = [float(highs.iloc[i + d]) for d in range(1, FORWARD_DAYS + 1)]
-        fwd_lows = [float(lows.iloc[i + d]) for d in range(1, FORWARD_DAYS + 1)]
+        # Forward returns (always compute day 1-3 for reporting)
+        actual_fwd = min(FORWARD_DAYS, n - i - 1)
+        fwd_closes = [float(closes.iloc[i + d]) for d in range(1, actual_fwd + 1)]
+        fwd_highs = [float(highs.iloc[i + d]) for d in range(1, min(fwd_days, n - i - 1) + 1)]
+        fwd_lows = [float(lows.iloc[i + d]) for d in range(1, min(fwd_days, n - i - 1) + 1)]
 
         day_returns = [(c - entry_price) / entry_price * 100 for c in fwd_closes]
-        max_gain = (max(fwd_highs) - entry_price) / entry_price * 100
-        max_dd = (min(fwd_lows) - entry_price) / entry_price * 100
+        while len(day_returns) < 3:
+            day_returns.append(day_returns[-1] if day_returns else 0.0)
 
-        hit_target = max(fwd_highs) >= entry_price * (1 + TARGET_PCT)
-        hit_stop = min(fwd_lows) <= entry_price * (1 - STOP_LOSS_PCT)
+        max_gain = (max(fwd_highs) - entry_price) / entry_price * 100 if fwd_highs else 0
+        max_dd = (min(fwd_lows) - entry_price) / entry_price * 100 if fwd_lows else 0
+
+        hit_target = max(fwd_highs) >= entry_price * (1 + TARGET_PCT) if fwd_highs else False
+        hit_stop = min(fwd_lows) <= entry_price * (1 - STOP_LOSS_PCT) if fwd_lows else False
 
         signal_date = str(df.index[i].date()) if hasattr(df.index[i], 'date') else str(df.index[i])
+
+        smart_day = 0
+        smart_ret = 0.0
+        if use_smart_exit:
+            smart_day, smart_ret = _find_smart_exit(df, i, entry_price)
+            is_win = smart_ret > WIN_THRESHOLD
+        else:
+            is_win = day_returns[2] > WIN_THRESHOLD
 
         results.append(SignalResult(
             symbol=symbol,
@@ -171,7 +219,9 @@ def _backtest_strategy_on_stock(
             max_drawdown_pct=round(max_dd, 2),
             hit_target=hit_target,
             hit_stop=hit_stop,
-            is_win=day_returns[2] > WIN_THRESHOLD,
+            is_win=is_win,
+            smart_exit_day=smart_day,
+            smart_exit_return=round(smart_ret, 2),
         ))
 
     return results
@@ -210,8 +260,12 @@ def _build_report(strategy_name: str, all_signals: list[SignalResult],
     loss_count = len(losses)
     win_rate = win_count / total * 100
 
-    avg_win = sum(s.day3_return for s in wins) / len(wins) if wins else 0
-    avg_loss = sum(s.day3_return for s in losses) / len(losses) if losses else 0
+    has_smart = any(s.smart_exit_day > 0 for s in all_signals)
+    def _ret(s):
+        return s.smart_exit_return if has_smart and s.smart_exit_day > 0 else s.day3_return
+
+    avg_win = sum(_ret(s) for s in wins) / len(wins) if wins else 0
+    avg_loss = sum(_ret(s) for s in losses) / len(losses) if losses else 0
 
     # Expectancy: expected value per trade
     expectancy = (win_rate / 100 * avg_win) + ((100 - win_rate) / 100 * avg_loss)
@@ -268,11 +322,25 @@ def _build_report(strategy_name: str, all_signals: list[SignalResult],
 
 # ── Main entry point ───────────────────────────────────────────────────────
 
+def _prediction_signal(symbol: str, window: pd.DataFrame) -> dict:
+    """Adapter: wraps prediction.predict() into the backtester's strategy interface."""
+    from prediction import predict
+    result = predict(symbol, window)
+    if result is not None and result.predicted_spike:
+        return {
+            "fired": True,
+            "confidence": result.confidence,
+            "stage": result.stage,
+            "patterns": [p.name for p in result.patterns if p.detected],
+        }
+    return {"fired": False}
+
+
 STRATEGIES = {
     "momentum": momentum_scan,
     "mean_reversion": mean_reversion_scan,
     "accumulation": accumulation_scan,
-    # catalyst excluded — depends on external API data not available historically
+    "prediction_v2": _prediction_signal,
 }
 
 
