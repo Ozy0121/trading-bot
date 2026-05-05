@@ -16,6 +16,22 @@ An automated swing-trading bot for a small ($500) Alpaca brokerage account const
 - **Risk**: Aggressive growth mode, but still respect daily loss limits
 <!-- GSD:project-end -->
 
+## Prediction Bot Identity
+
+This is a **PREDICTION bot**. The entire purpose is to PREDICT which stocks will spike BEFORE they spike, and buy them BEFORE the move happens.
+
+The mean reversion engine is ONE tool in the toolbox, not the whole identity. The bot must:
+
+- **PREDICT**: Use historical pattern matching, CVD divergence, LVN detection, AMT analysis, volume accumulation patterns, news sentiment, and the multi-strategy scoring engine to PREDICT what a stock will do in the next 1-3 days
+- **BUY BEFORE THE MOVE**: Identify stocks in the accumulation/setup phase BEFORE the breakout or bounce happens. Not after.
+- **EXPLAIN THE PREDICTION**: Every trade the bot takes or recommends must come with a prediction statement. Example: "PREDICTION: NVDA will bounce 3-5% within 2 days. REASON: RSI(2) at 4.8, 3 consecutive down days, price touching lower Bollinger Band, CVD showing hidden buying, price sitting at LVN with institutional defense detected. Historical accuracy of this setup: 71% over 83 occurrences."
+- **TRACK PREDICTION ACCURACY**: Log every prediction with the predicted move and actual outcome. Show running accuracy on the dashboard: "Last 30 predictions: 21 correct (70%)"
+- **THE MEAN REVERSION ENGINE IS A PREDICTION**: When all 3-of-4 oversold gates fire, the bot is PREDICTING a bounce. Frame it that way: "PREDICTION: Stock is extremely oversold with 3/4 signals firing. Predicting mean reversion to middle Bollinger Band within 3 days."
+- **THE EXPANDED SCANNER IS A PREDICTION**: When it filters 2600 stocks down to 50 survivors, it is PREDICTING those 50 have the best setups. Frame it that way.
+- **THE PREDICTION SCANNER IS A PREDICTION**: When it ranks and scores the survivors, it is PREDICTING which ones will move first and hardest. Frame it that way.
+
+**This bot predicts. It doesn't just react.**
+
 <!-- GSD:stack-start source:codebase/STACK.md -->
 ## Technology Stack
 
