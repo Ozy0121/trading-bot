@@ -786,6 +786,22 @@ def api_overnight_accuracy():
         return jsonify({"error": str(exc)})
 
 
+@app.route("/api/prediction-log/accuracy")
+def api_prediction_log_accuracy():
+    """Live prediction accuracy from formal tracking system."""
+    from prediction_log import get_accuracy, check_outcomes, get_recent_predictions
+    try:
+        resolved = check_outcomes()
+        accuracy = get_accuracy()
+        recent = get_recent_predictions(20)
+        accuracy["recently_resolved"] = resolved
+        accuracy["recent_predictions"] = recent
+        return jsonify(accuracy)
+    except Exception as exc:
+        log.error("[dashboard] Prediction log accuracy failed: %s", exc)
+        return jsonify({"error": str(exc)})
+
+
 @app.route("/api/expanded-scan")
 def api_expanded_scan():
     """Return the latest expanded scanner results and funnel stats."""

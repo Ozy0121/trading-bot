@@ -789,8 +789,32 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
             stage_counts[p.stage] = stage_counts.get(p.stage, 0) + 1
         log.info("[prediction] Batch complete: %d symbols -> %d predictions (stages: %s)",
                  total, len(predictions), stage_counts)
+        _log_predictions(predictions)
     else:
         log.warning("[prediction] Batch complete: %d symbols scanned, %d had bars, 0 predictions",
                     total, len(all_bars))
 
     return predictions
+
+
+def _log_predictions(predictions: list[Prediction]) -> None:
+    """Log predictions to the formal prediction tracking system."""
+    try:
+        from prediction_log import log_prediction
+        logged = 0
+        for p in predictions:
+            timeframe = 3 if "3" in p.timeframe else 2 if "2" in p.timeframe else 1
+            log_prediction(
+                symbol=p.symbol,
+                direction="up",
+                predicted_move_pct=p.expected_move_pct,
+                timeframe_days=timeframe,
+                confidence=p.confidence,
+                reasons=p.reasons[:5],
+                source="mean_reversion",
+                entry_price=p.entry_high,
+            )
+            logged += 1
+        log.info("[prediction] Logged %d predictions to tracking system", logged)
+    except Exception as exc:
+        log.warning("[prediction] Failed to log predictions: %s", exc)

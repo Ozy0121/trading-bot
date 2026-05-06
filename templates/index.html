@@ -1492,8 +1492,9 @@
           <option value="pre_spike">Pre-Spike 1:5</option>
           <option value="positive_ev">Positive EV Only</option>
         </select>
-        <button class="tb-btn" onclick="runExpandedScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> EXPANDED SCAN</button>
-        <button class="tb-btn" onclick="runPredictionScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> PREDICTION SCAN</button>
+        <button class="tb-btn" onclick="runExpandedScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> EXPANDED SCAN</button>
+        <button class="tb-btn" onclick="runPredictionScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">psychology</span> PREDICTION SCAN</button>
+        <button class="tb-btn" onclick="runOvernightScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
         <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
       </div>
     </div>
@@ -1518,39 +1519,39 @@
     <div id="overnight-picks" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px"></div>
   </div>
 
-  <!-- Prediction Scorecard -->
+  <!-- Live Prediction Accuracy -->
   <div id="scorecard-section" class="chart-card" style="margin-bottom:14px">
     <div class="chart-card-header">
-      <span class="chart-title">PREDICTION SCORECARD</span>
+      <span class="chart-title">LIVE PREDICTION ACCURACY</span>
       <div style="display:flex;gap:8px;align-items:center">
         <span id="scorecard-cumulative" style="font-size:11px;color:var(--outline)"></span>
-        <button class="tb-btn" onclick="checkAccuracy()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">fact_check</span> CHECK ACCURACY</button>
+        <button class="tb-btn" onclick="checkLiveAccuracy()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">fact_check</span> CHECK ACCURACY</button>
       </div>
     </div>
-    <!-- Score bar -->
     <div id="scorecard-stats" style="display:none;padding:8px 0">
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:10px;text-align:center;font-size:12px">
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:10px;text-align:center;font-size:12px">
+        <div><span style="color:var(--outline)">TOTAL</span><br><span id="sc-total" style="font-size:20px;font-weight:700">—</span></div>
         <div><span style="color:var(--outline)">CORRECT</span><br><span id="sc-correct" style="font-size:20px;font-weight:700;color:#66bb6a">—</span></div>
         <div><span style="color:var(--outline)">WRONG</span><br><span id="sc-wrong" style="font-size:20px;font-weight:700;color:#ef5350">—</span></div>
         <div><span style="color:var(--outline)">ACCURACY</span><br><span id="sc-accuracy" style="font-size:20px;font-weight:700">—</span></div>
-        <div><span style="color:var(--outline)">HIT TARGET</span><br><span id="sc-target" style="font-size:20px;font-weight:700;color:#42a5f5">—</span></div>
-        <div><span style="color:var(--outline)">HIT STOP</span><br><span id="sc-stop" style="font-size:20px;font-weight:700;color:#ef5350">—</span></div>
+        <div><span style="color:var(--outline)">PENDING</span><br><span id="sc-pending" style="font-size:20px;font-weight:700;color:#ffa726">—</span></div>
+        <div><span style="color:var(--outline)">PROFIT FACTOR</span><br><span id="sc-pf" style="font-size:20px;font-weight:700">—</span></div>
       </div>
-      <!-- Accuracy bar visual -->
       <div style="height:6px;border-radius:3px;background:var(--surface-high);overflow:hidden;margin-bottom:8px">
         <div id="sc-bar" style="height:100%;border-radius:3px;background:#66bb6a;transition:width 0.4s;width:0%"></div>
       </div>
-      <div id="sc-avg-move" style="font-size:11px;color:var(--on-surface-variant);margin-bottom:8px"></div>
-      <!-- Failure breakdown -->
-      <div id="sc-failures" style="display:none;margin-bottom:10px">
-        <div style="font-size:11px;color:var(--outline);margin-bottom:4px;font-weight:600">WHY PREDICTIONS FAILED</div>
-        <div id="sc-failure-list" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      <div style="display:flex;gap:16px;font-size:11px;color:var(--on-surface-variant);margin-bottom:8px">
+        <span id="sc-last10"></span>
+        <span id="sc-last30"></span>
+        <span id="sc-avg-move"></span>
+      </div>
+      <div id="sc-pf-warning" style="display:none;font-size:11px;padding:6px 10px;border-radius:4px;background:#ef535022;color:#ef5350;border:1px solid #ef535044;margin-bottom:8px">
+        Profit factor below 1.2 — review strategy parameters
       </div>
     </div>
-    <!-- Individual prediction results -->
     <div id="scorecard-results" style="max-height:500px;overflow-y:auto"></div>
     <div id="scorecard-empty" style="text-align:center;padding:20px;color:var(--outline);font-size:12px">
-      Click CHECK ACCURACY to grade yesterday's predictions against actual prices
+      Predictions are logged automatically. Click CHECK ACCURACY to resolve pending outcomes.
     </div>
   </div>
 
@@ -3725,32 +3726,20 @@ async function autoTradePredictions() {
 // ── Prediction Scorecard ─────────────────────────────────────────────────
 
 function loadScorecard() {
-  // Load cumulative stats from overnight accuracy summary
-  fetch('/api/overnight')
+  fetch('/api/prediction-log/accuracy')
     .then(r => r.json())
     .then(data => {
-      const cum = data.accuracy?.cumulative || {};
-      const el = $('scorecard-cumulative');
-      if (cum.total > 0) {
-        el.textContent = `All-time: ${cum.correct || 0}/${cum.total} correct (${cum.correct_pct || 0}%)`;
-      }
-      // If we have recent history, show the last check automatically
-      const recent = data.accuracy?.recent || [];
-      if (recent.length > 0) {
-        const last = recent[recent.length - 1];
-        if (last.results && last.results.length > 0) {
-          renderScorecardResults(last);
-        }
-      }
+      if (data.error || !data.total_predictions) return;
+      renderLiveScorecard(data);
     })
     .catch(() => {});
 }
 
-async function checkAccuracy() {
-  showToast('Checking prediction accuracy against actual prices...', 'info', 5000);
+async function checkLiveAccuracy() {
+  showToast('Resolving pending predictions against actual prices...', 'info', 5000);
   $('scorecard-empty').style.display = 'none';
   try {
-    const res = await fetch('/api/overnight/accuracy');
+    const res = await fetch('/api/prediction-log/accuracy');
     const data = await res.json();
     if (data.error) {
       $('scorecard-empty').style.display = '';
@@ -3758,91 +3747,75 @@ async function checkAccuracy() {
       showToast(data.error, 'warning');
       return;
     }
-    renderScorecardResults(data);
-    showToast(`Accuracy check complete: ${data.correct || 0}/${data.total_checked} correct`, 'success');
-    // Refresh cumulative
-    loadScorecard();
+    renderLiveScorecard(data);
+    const msg = data.recently_resolved > 0
+      ? `Resolved ${data.recently_resolved} predictions. Accuracy: ${data.accuracy_pct}%`
+      : `No new predictions to resolve. Accuracy: ${data.accuracy_pct}%`;
+    showToast(msg, 'success');
   } catch (e) {
     showToast('Accuracy check failed: ' + e.message, 'error');
   }
 }
 
-function renderScorecardResults(data) {
+function renderLiveScorecard(data) {
   $('scorecard-stats').style.display = '';
   $('scorecard-empty').style.display = 'none';
 
-  const correct = data.correct || 0;
-  const wrong = data.wrong || 0;
-  const total = data.total_checked || 0;
-  const correctPct = data.correct_pct || 0;
+  const acc = data.accuracy_pct || 0;
+  const accColor = acc >= 60 ? '#66bb6a' : acc >= 40 ? '#ffa726' : '#ef5350';
 
-  $('sc-correct').textContent = correct;
-  $('sc-wrong').textContent = wrong;
-  $('sc-accuracy').textContent = correctPct + '%';
-  $('sc-accuracy').style.color = correctPct >= 60 ? '#66bb6a' : correctPct >= 40 ? '#ffa726' : '#ef5350';
-  $('sc-target').textContent = data.hit_target || 0;
-  $('sc-stop').textContent = data.hit_stop || 0;
-  $('sc-bar').style.width = correctPct + '%';
-  $('sc-bar').style.background = correctPct >= 60 ? '#66bb6a' : correctPct >= 40 ? '#ffa726' : '#ef5350';
+  $('sc-total').textContent = data.resolved || 0;
+  $('sc-correct').textContent = data.correct || 0;
+  $('sc-wrong').textContent = data.incorrect || 0;
+  $('sc-accuracy').textContent = acc + '%';
+  $('sc-accuracy').style.color = accColor;
+  $('sc-pending').textContent = data.pending || 0;
+  $('sc-pf').textContent = data.profit_factor > 100 ? '—' : data.profit_factor?.toFixed(1) || '—';
+  $('sc-pf').style.color = data.profit_factor >= 1.5 ? '#66bb6a' : data.profit_factor >= 1.0 ? '#ffa726' : '#ef5350';
+  $('sc-bar').style.width = acc + '%';
+  $('sc-bar').style.background = accColor;
 
-  const avgPred = data.avg_predicted_move || 0;
-  const avgActual = data.avg_actual_move || 0;
-  $('sc-avg-move').innerHTML = `Predicted: <strong style="color:var(--on-surface)">+${avgPred.toFixed(1)}%</strong> avg &nbsp;|&nbsp; Actual: <strong style="color:${avgActual >= 0 ? '#66bb6a' : '#ef5350'}">${avgActual >= 0 ? '+' : ''}${avgActual.toFixed(1)}%</strong> avg &nbsp;|&nbsp; Checked: ${data.prediction_date || 'unknown'} predictions`;
+  $('sc-last10').innerHTML = data.last_10 > 0 ? `Last 10: <strong style="color:var(--on-surface)">${data.last_10}%</strong>` : '';
+  $('sc-last30').innerHTML = data.last_30 > 0 ? `Last 30: <strong style="color:var(--on-surface)">${data.last_30}%</strong>` : '';
+  $('sc-avg-move').innerHTML = data.avg_win_pct > 0 ? `Avg win: <strong style="color:#66bb6a">+${data.avg_win_pct}%</strong> | Avg loss: <strong style="color:#ef5350">-${data.avg_loss_pct}%</strong>` : '';
 
-  // Failure breakdown
-  const failures = data.failure_breakdown || {};
-  const failureKeys = Object.keys(failures);
-  if (failureKeys.length > 0) {
-    $('sc-failures').style.display = '';
-    const failureLabels = {
-      hit_stop_loss: { label: 'Hit Stop Loss', color: '#ef5350', icon: 'trending_down' },
-      went_opposite: { label: 'Went Opposite', color: '#ef5350', icon: 'south' },
-      no_movement: { label: 'No Movement', color: '#ffa726', icon: 'horizontal_rule' },
-      weak_move: { label: 'Weak Move', color: '#ffa726', icon: 'trending_flat' },
-    };
-    $('sc-failure-list').innerHTML = failureKeys
-      .sort((a, b) => failures[b] - failures[a])
-      .map(k => {
-        const f = failureLabels[k] || { label: k, color: 'var(--outline)', icon: 'error' };
-        return `<div style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:4px;background:${f.color}15;border:1px solid ${f.color}30;font-size:11px">
-          <span class="material-symbols-outlined" style="font-size:14px;color:${f.color}">${f.icon}</span>
-          <span style="color:${f.color};font-weight:600">${failures[k]}</span>
-          <span style="color:var(--on-surface-variant)">${f.label}</span>
-        </div>`;
-      }).join('');
-  } else {
-    $('sc-failures').style.display = 'none';
-  }
+  $('scorecard-cumulative').textContent = data.resolved > 0
+    ? `${data.correct}/${data.resolved} correct (${acc}%) | ${data.pending} pending`
+    : `${data.total_predictions} predictions logged, ${data.pending} awaiting resolution`;
 
-  // Individual results
-  const results = data.results || [];
-  if (results.length > 0) {
-    $('scorecard-results').innerHTML = results.map(r => {
-      const isCorrect = r.verdict === 'CORRECT';
-      const borderColor = isCorrect ? '#66bb6a' : '#ef5350';
-      const icon = isCorrect ? 'check_circle' : 'cancel';
-      const verdictColor = isCorrect ? '#66bb6a' : '#ef5350';
-      const actualColor = r.actual_close_move >= 0 ? '#66bb6a' : '#ef5350';
-      const patternsStr = (r.patterns || []).join(', ').replace(/_/g, ' ');
+  const pfWarn = $('sc-pf-warning');
+  if (pfWarn) pfWarn.style.display = data.profit_factor_warning ? '' : 'none';
 
-      return `<div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px;border-radius:6px;overflow:hidden;border:1px solid ${borderColor}30;cursor:pointer" onclick="openChart('${r.symbol}')">
+  // Render recent predictions
+  const recent = data.recent_predictions || [];
+  if (recent.length > 0) {
+    $('scorecard-results').innerHTML = recent.map(r => {
+      const isPending = r.outcome === 'pending';
+      const isCorrect = r.outcome === 'correct';
+      const borderColor = isPending ? '#ffa726' : isCorrect ? '#66bb6a' : '#ef5350';
+      const icon = isPending ? 'schedule' : isCorrect ? 'check_circle' : 'cancel';
+      const outcomeLabel = isPending ? 'PENDING' : r.outcome.toUpperCase();
+      const actualStr = r.actual_move_pct !== null && r.actual_move_pct !== undefined
+        ? `Actual: <strong style="color:${r.actual_move_pct >= 0 ? '#66bb6a' : '#ef5350'}">${r.actual_move_pct >= 0 ? '+' : ''}${r.actual_move_pct.toFixed(1)}%</strong>`
+        : '';
+
+      return `<div style="display:flex;align-items:stretch;gap:0;margin-bottom:6px;border-radius:6px;overflow:hidden;border:1px solid ${borderColor}30;cursor:pointer" onclick="openChart('${esc(r.symbol)}')">
         <div style="width:4px;background:${borderColor};flex-shrink:0"></div>
         <div style="flex:1;padding:8px 12px;background:${borderColor}08">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
             <div style="display:flex;align-items:center;gap:6px">
-              <span class="material-symbols-outlined" style="font-size:16px;color:${verdictColor}">${icon}</span>
-              <span style="font-weight:700;font-size:13px;color:var(--on-surface)">${r.symbol}</span>
-              <span style="font-size:10px;padding:1px 6px;border-radius:2px;background:${verdictColor}22;color:${verdictColor};font-weight:600">${r.verdict}</span>
+              <span class="material-symbols-outlined" style="font-size:16px;color:${borderColor}">${icon}</span>
+              <span style="font-weight:700;font-size:13px">${esc(r.symbol)}</span>
+              <span style="font-size:10px;padding:1px 6px;border-radius:2px;background:${borderColor}22;color:${borderColor};font-weight:600">${outcomeLabel}</span>
               <span style="font-size:10px;color:var(--outline)">conf ${r.confidence}/10</span>
+              <span style="font-size:10px;color:var(--outline)">${r.id}</span>
             </div>
             <div style="display:flex;align-items:center;gap:10px;font-size:12px">
-              <span style="color:var(--outline)">Predicted <strong style="color:var(--on-surface)">+${r.predicted_move?.toFixed(1)}%</strong></span>
-              <span style="color:var(--outline)">Actual <strong style="color:${actualColor}">${r.actual_close_move >= 0 ? '+' : ''}${r.actual_close_move?.toFixed(1)}%</strong></span>
-              <span style="color:var(--outline)">Peak <strong style="color:${r.actual_max_move >= 0 ? '#66bb6a' : '#ef5350'}">+${r.actual_max_move?.toFixed(1)}%</strong></span>
+              <span style="color:var(--outline)">Predicted <strong style="color:var(--on-surface)">+${r.predicted_move_pct?.toFixed(1)}%</strong></span>
+              ${actualStr}
             </div>
           </div>
-          ${!isCorrect && r.failure_reason ? `<div style="font-size:11px;color:#ef5350;padding:2px 0 0 22px">${r.failure_reason}</div>` : ''}
-          ${patternsStr ? `<div style="font-size:10px;color:var(--outline);padding:2px 0 0 22px">Patterns: ${patternsStr}</div>` : ''}
+          <div style="font-size:10px;color:var(--outline);padding:2px 0 0 22px;max-width:600px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.prediction_statement || '')}</div>
         </div>
       </div>`;
     }).join('');
