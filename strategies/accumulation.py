@@ -1,43 +1,35 @@
 """
 strategies/accumulation.py
 --------------------------
-Pre-spike accumulation strategy — fires when multiple prediction patterns
-indicate a stock is being quietly accumulated before a move.
+Pre-spike accumulation strategy — fires when Volume Profile, Order Flow,
+and AMT signals indicate a stock is being quietly accumulated before a move.
 
-Unlike momentum (waits for breakout) or mean reversion (waits for oversold),
-this strategy fires BEFORE the move happens, during the setup phase.
-
-STRAT-05: Detect pre-spike accumulation setups for early entry.
+Uses the same VP/CVD/AMT signal generators as prediction.py but with
+a simpler threshold (any 2 of 3 signals active = fire).
 """
 
 from __future__ import annotations
 
 import pandas as pd
 
-from prediction import (
-    detect_keltner_squeeze,
-    detect_obv_divergence,
-    detect_volume_accumulation,
-    detect_higher_lows,
-    detect_macd_launch_zone,
-    _classify_stage,
-    STAGE_LABELS,
-)
+from volume_profile import score_volume_profile
+from order_flow import score_order_flow
+from amt_engine import score_amt
+from prediction import STAGE_LABELS
 from logger_setup import get_logger
 
 log = get_logger()
 
-MIN_PATTERNS = 2  # need at least 2 patterns to fire
+MIN_SIGNALS = 2
+VP_THRESHOLD = 5.0
+CVD_THRESHOLD = 5.5
+AMT_THRESHOLD = 5.0
 
 
 def scan(symbol: str, df: pd.DataFrame) -> dict:
-    """
-    Scan a symbol for pre-spike accumulation setup.
+    """Scan a symbol for pre-spike accumulation setup.
 
-    Fires when at least 2 prediction patterns are active simultaneously.
-    Technical score based on pattern quality and count.
-
-    Returns dict with keys: strategy, fired, technical_score, volume_ratio, details.
+    Fires when at least 2 of 3 signals (VP, CVD, AMT) are active.
     """
     _empty = {
         "strategy": "accumulation",
@@ -50,44 +42,50 @@ def scan(symbol: str, df: pd.DataFrame) -> dict:
     if df is None or len(df) < 35:
         return _empty
 
-    # Run the prediction pattern detectors (skip relative_strength — too slow for scanning)
-    patterns = [
-        detect_keltner_squeeze(df),
-        detect_obv_divergence(df),
-        detect_volume_accumulation(df),
-        detect_higher_lows(df),
-        detect_macd_launch_zone(df),
-    ]
+    vp = score_volume_profile(df)
+    of = score_order_flow(df)
+    amt = score_amt(df)
 
-    active = [p for p in patterns if p.detected]
-    fired = len(active) >= MIN_PATTERNS
+    active = []
+    if vp["score"] >= VP_THRESHOLD:
+        active.append(("volume_profile", vp["score"]))
+    if of["score"] >= CVD_THRESHOLD:
+        active.append(("order_flow", of["score"]))
+    if amt["score"] >= AMT_THRESHOLD:
+        active.append(("amt_state", amt["score"]))
+
+    fired = len(active) >= MIN_SIGNALS
 
     if not fired:
         return {
             **_empty,
             "details": {
-                "patterns_detected": len(active),
-                "patterns_needed": MIN_PATTERNS,
-                "active_patterns": [p.name for p in active],
+                "signals_detected": len(active),
+                "signals_needed": MIN_SIGNALS,
+                "active_signals": [a[0] for a in active],
             },
         }
 
-    # Technical score: average of active pattern scores + confirmation bonus
-    avg_score = sum(p.score for p in active) / len(active)
-    confirmation_bonus = min(2.0, (len(active) - MIN_PATTERNS) * 1.0)
+    avg_score = sum(s for _, s in active) / len(active)
+    confirmation_bonus = min(2.0, (len(active) - MIN_SIGNALS) * 1.0)
     tech_score = min(10.0, avg_score + confirmation_bonus)
 
-    # Volume ratio from the most relevant source
-    vol_pattern = next((p for p in active if p.name == "volume_accumulation"), None)
-    volume_ratio = vol_pattern.details.get("vol_increase_ratio", 1.0) if vol_pattern else 1.0
-
-    stage = _classify_stage(patterns)
+    # Derive stage from AMT state
+    amt_state = amt.get("state", "balanced")
+    if amt_state == "imbalanced_up" and len(active) == 3:
+        stage = "launch_zone"
+    elif amt_state in ("imbalanced_up", "testing_low") and len(active) >= 2:
+        stage = "pre_breakout"
+    elif len(active) >= 2:
+        stage = "accumulation"
+    else:
+        stage = "early_accumulation"
 
     log.info(
-        "[accumulation] %s PRE-SPIKE: %d patterns active (%s), stage=%s, score=%.1f",
+        "[accumulation] %s PRE-SPIKE: %d signals active (%s), stage=%s, score=%.1f",
         symbol,
         len(active),
-        "+".join(p.name for p in active),
+        "+".join(a[0] for a in active),
         stage,
         tech_score,
     )
@@ -96,12 +94,15 @@ def scan(symbol: str, df: pd.DataFrame) -> dict:
         "strategy": "accumulation",
         "fired": True,
         "technical_score": round(tech_score, 2),
-        "volume_ratio": round(volume_ratio, 2),
+        "volume_ratio": 1.0,
         "details": {
-            "patterns_detected": len(active),
-            "active_patterns": [p.name for p in active],
-            "pattern_scores": {p.name: p.score for p in active},
+            "signals_detected": len(active),
+            "active_signals": [a[0] for a in active],
+            "signal_scores": {a[0]: a[1] for a in active},
             "stage": stage,
             "stage_label": STAGE_LABELS.get(stage, ""),
+            "vp_position": vp.get("position", "unknown"),
+            "cvd_trend": of.get("cvd_trend", "neutral"),
+            "amt_state": amt_state,
         },
     }

@@ -1492,8 +1492,8 @@
           <option value="pre_spike">Pre-Spike 1:5</option>
           <option value="positive_ev">Positive EV Only</option>
         </select>
-        <button class="tb-btn" onclick="runPredictionScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> SCAN NOW</button>
-        <button class="tb-btn" onclick="runOvernightScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
+        <button class="tb-btn" onclick="runExpandedScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> EXPANDED SCAN</button>
+        <button class="tb-btn" onclick="runPredictionScan()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> PREDICTION SCAN</button>
         <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
       </div>
     </div>
@@ -2634,17 +2634,32 @@ function refresh(d) {
   }
 
   // ── Watchlist ──
-  const wl = d.watchlist || [];
+  let wl = d.watchlist || [];
+  const expandedResults = d.expanded_scan_results || [];
+  const usingExpanded = wl.length === 0 && expandedResults.length > 0;
+  if (usingExpanded) {
+    wl = expandedResults.map(r => ({
+      symbol: r.symbol, price: r.last_close || 0, change_pct: r.ret_5d ? r.ret_5d * 100 : 0,
+      signal: 'HOLD', rsi: r.rsi_14 || 0, volume_ratio: r.vol_ratio || 0,
+      score: r.quant_score || 0, conviction: {}, _source: 'expanded'
+    }));
+  }
   if (wl.length > 0) {
-    setText('scan-time', 'LAST_SCAN: ' + new Date().toLocaleTimeString());
-    const topMovers = d.use_top_movers;
     const scanBadge = $('scan-mode-badge');
-    if (topMovers) {
-      scanBadge.textContent = 'TOP MOVERS';
-      scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:rgba(237,127,100,.08);color:var(--error);border:1px solid rgba(237,127,100,.18);text-transform:uppercase;letter-spacing:0.04em';
+    if (usingExpanded) {
+      setText('scan-time', 'SOURCE: EXPANDED SCAN');
+      scanBadge.textContent = 'EXPANDED SURVIVORS';
+      scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:rgba(66,165,245,.08);color:#42a5f5;border:1px solid rgba(66,165,245,.18);text-transform:uppercase;letter-spacing:0.04em';
     } else {
-      scanBadge.textContent = 'FIXED WATCHLIST';
-      scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:var(--surface);color:var(--outline);border:1px solid var(--ghost-border);text-transform:uppercase;letter-spacing:0.04em';
+      setText('scan-time', 'LAST_SCAN: ' + new Date().toLocaleTimeString());
+      const topMovers = d.use_top_movers;
+      if (topMovers) {
+        scanBadge.textContent = 'TOP MOVERS';
+        scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:rgba(237,127,100,.08);color:var(--error);border:1px solid rgba(237,127,100,.18);text-transform:uppercase;letter-spacing:0.04em';
+      } else {
+        scanBadge.textContent = 'FIXED WATCHLIST';
+        scanBadge.style.cssText = 'font-family:Space Grotesk,sans-serif;font-size:10px;padding:2px 8px;border-radius:0;background:var(--surface);color:var(--outline);border:1px solid var(--ghost-border);text-transform:uppercase;letter-spacing:0.04em';
+      }
     }
 
     const _threshold = d.conviction_threshold || 5.8;
@@ -3585,12 +3600,38 @@ function renderFilteredPredictions() {
 
 function filterByRRMode() { renderFilteredPredictions(); }
 
+async function runExpandedScan(btn) {
+  if (btn) btnLoading(btn, 'expanded_scan');
+  $('intel-scan-summary').textContent = 'Running expanded scan (2,600+ stocks)...';
+  try {
+    await fetch('/api/expanded-scan/run', { method: 'POST' });
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      const res = await fetch('/api/expanded-scan');
+      const data = await res.json();
+      if (data.status === 'complete' || data.status === 'error' || attempts > 300) {
+        clearInterval(poll);
+        if (data.status === 'complete' && (data.results||[]).length > 0) {
+          $('intel-scan-summary').textContent = `${(data.results||[]).length} survivors — running prediction engine...`;
+          runPredictionScan();
+        } else {
+          $('intel-scan-summary').textContent = data.status === 'complete'
+            ? 'Expanded scan complete: 0 survivors'
+            : 'Expanded scan ' + (data.status || 'done');
+        }
+      }
+    }, 5000);
+  } catch (e) {
+    showToast('Expanded scan failed: ' + e.message, 'error');
+  }
+}
+
 async function runPredictionScan(btn) {
   if (btn) btnLoading(btn, 'predictions');
-  $('intel-scan-summary').textContent = 'Scanning...';
+  $('intel-scan-summary').textContent = 'Running prediction scan...';
   try {
     await fetch('/api/predictions/run', { method: 'POST' });
-    // Poll for results — overlay shows progress via SSE
     let attempts = 0;
     const poll = setInterval(async () => {
       attempts++;
@@ -3602,7 +3643,7 @@ async function runPredictionScan(btn) {
       }
     }, 5000);
   } catch (e) {
-    showToast('Scan failed: ' + e.message, 'error');
+    showToast('Prediction scan failed: ' + e.message, 'error');
   }
 }
 

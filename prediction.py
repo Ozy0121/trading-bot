@@ -140,6 +140,7 @@ class Prediction:
     patterns: list[PatternResult] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     timeframe: str = "1-3 days"
+    position_size_mult: float = 1.0
     rr_setups: list[dict] = field(default_factory=list)
     best_rr_mode: str = ""
     best_rr_ratio: float = 0.0
@@ -330,14 +331,26 @@ def _compute_adx(df: pd.DataFrame, period: int = ADX_PERIOD) -> float:
     return float(adx.iloc[-1]) if not pd.isna(adx.iloc[-1]) else 25.0
 
 
-def _passes_regime_filter(df: pd.DataFrame) -> tuple[bool, str]:
-    """200-SMA trend filter + ADX regime check."""
+def _sma_slope_rising(sma_series: pd.Series, lookback: int = 20) -> bool:
+    """Check if the SMA itself is flat or rising over the last N bars."""
+    if len(sma_series.dropna()) < lookback + 1:
+        return True
+    recent = float(sma_series.iloc[-1])
+    past = float(sma_series.iloc[-lookback])
+    return recent >= past
+
+
+def _passes_regime_filter(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) -> tuple[bool, str, float]:
+    """200-SMA trend filter + ADX regime check + SMA slope + SPY regime.
+
+    Returns (passes, reason, position_size_multiplier).
+    """
     closes = df["close"]
 
     if len(closes) < SMA_200_PERIOD + 5:
         sma_period = min(100, len(closes) - 5)
         if sma_period < 30:
-            return False, "insufficient data"
+            return False, "insufficient data", 0.0
     else:
         sma_period = SMA_200_PERIOD
 
@@ -345,14 +358,27 @@ def _passes_regime_filter(df: pd.DataFrame) -> tuple[bool, str]:
     current_price = float(closes.iloc[-1])
     sma_val = float(sma.iloc[-1])
 
-    if current_price < sma_val * 0.90:
-        return False, f"price ${current_price:.2f} below SMA({sma_period}) ${sma_val:.2f}"
+    if current_price < sma_val * 0.95:
+        return False, f"price ${current_price:.2f} >5% below SMA({sma_period}) ${sma_val:.2f}", 0.0
+
+    if not _sma_slope_rising(sma):
+        return False, f"SMA({sma_period}) slope falling — bearish long-term trend", 0.0
 
     adx = _compute_adx(df)
     if adx > ADX_MAX:
-        return False, f"ADX {adx:.0f} > {ADX_MAX} (strong trend, mean reversion risky)"
+        return False, f"ADX {adx:.0f} > {ADX_MAX} (strong trend, mean reversion risky)", 0.0
 
-    return True, f"SMA({sma_period}) OK, ADX {adx:.0f}"
+    position_mult = 1.0
+    spy_note = ""
+    if spy_df is not None and len(spy_df) >= 201:
+        spy_sma = spy_df["close"].rolling(200).mean()
+        spy_price = float(spy_df["close"].iloc[-1])
+        spy_sma_val = float(spy_sma.iloc[-1])
+        if spy_price < spy_sma_val:
+            position_mult = 0.5
+            spy_note = ", SPY below 200-SMA (50% size)"
+
+    return True, f"SMA({sma_period}) OK, ADX {adx:.0f}{spy_note}", position_mult
 
 
 # ── Confirmation layer ──────────────────────────────────────────────────────
@@ -506,8 +532,15 @@ def predict(
     if df is None or len(df) < 35:
         return None
 
+    # ETF detection for RSI calibration
+    _ETF_SYMBOLS = {"SPY", "QQQ", "IWM", "DIA", "VOO", "VTI", "XLF", "XLE", "XLK", "XLV"}
+    is_etf = symbol.upper() in _ETF_SYMBOLS
+
     # Step 1: Primary signals (the WHEN — proven timing)
     rsi2_result = _detect_rsi2(df)
+    if is_etf and rsi2_result.details.get("rsi2_value", 50) >= 5:
+        rsi2_result = PatternResult("rsi2", False, 0.0, "momentum", rsi2_result.details)
+
     ibs_result = _detect_ibs(df)
     consec_result = _detect_consec_down(df)
     bb_result = _detect_bb_touch(df)
@@ -516,16 +549,15 @@ def predict(
     active_primaries = [p for p in primaries if p.detected]
     primary_count = len(active_primaries)
 
-    # Gate: at least 3 of 4 primary signals must fire (high confluence)
     if primary_count < 3:
         return None
 
-    # Step 2: Regime filter (the WHERE — only trade with the big trend)
-    passes_regime, regime_reason = _passes_regime_filter(df)
+    # Step 2: Regime filter (tightened: 5% SMA threshold, slope check, SPY regime)
+    passes_regime, regime_reason, position_mult = _passes_regime_filter(df, spy_df)
     if not passes_regime:
         return None
 
-    # Step 3: Confirmation layer (the WHO — institutional money agrees)
+    # Step 3: Confirmation layer (bonus scoring, never veto)
     confirms, vetoed = _get_confirmations(df)
     if vetoed:
         return None
@@ -535,6 +567,16 @@ def predict(
 
     active_confirms = [c for c in confirms if c.detected]
     confirm_count = len(active_confirms)
+
+    # Position sizing by CVD conviction
+    cvd_confirm = next((c for c in confirms if c.name == "order_flow"), None)
+    if cvd_confirm and cvd_confirm.detected:
+        cvd_size_mult = 1.0
+    elif cvd_confirm and cvd_confirm.score >= 1.0:
+        cvd_size_mult = 0.75
+    else:
+        cvd_size_mult = 0.50
+    position_mult *= cvd_size_mult
 
     # Step 4: Compute composite score
     weighted_score = 0.0
@@ -552,11 +594,10 @@ def predict(
         if c.detected:
             weighted_score += c.score * bonus
 
-    # Confluence bonus: 2+ primary signals
     if primary_count >= 2:
         weighted_score *= CONFLUENCE_MULTIPLIER
     if primary_count >= 3:
-        weighted_score *= 1.1  # extra bonus for triple
+        weighted_score *= 1.1
 
     composite = weighted_score / max_possible * 10.0 if max_possible > 0 else 0.0
     confidence = max(1, min(10, round(composite)))
@@ -568,13 +609,14 @@ def predict(
     all_patterns = primaries + confirms
     stage = _classify_stage(primary_count, confirm_count, active_primaries[0].name)
 
-    # Step 6: Price targets (middle Bollinger Band as primary target)
+    # Step 6: Price targets & stop-loss (larger of 1.5x ATR or 5%)
     current_price = float(df["close"].iloc[-1])
     atr_series = calc_atr(df)
     current_atr = float(atr_series.iloc[-1]) if len(atr_series.dropna()) > 0 else current_price * 0.02
 
-    _, bb_mid, _ = bollinger_bands(df["close"], period=20, num_std=2.0)
+    _, bb_mid, bb_upper = bollinger_bands(df["close"], period=20, num_std=2.0)
     bb_mid_price = float(bb_mid.iloc[-1]) if not pd.isna(bb_mid.iloc[-1]) else current_price * 1.02
+    bb_upper_price = float(bb_upper.iloc[-1]) if not pd.isna(bb_upper.iloc[-1]) else current_price * 1.04
 
     if bb_mid_price > current_price:
         expected_move_pct = (bb_mid_price - current_price) / current_price * 100
@@ -587,37 +629,43 @@ def predict(
     entry_high = round(current_price * 1.005, 2)
     target_price = round(bb_mid_price, 2) if bb_mid_price > current_price else round(current_price * 1.03, 2)
 
-    stop_loss = round(current_price - STOP_ATR_MULTIPLIER * current_atr, 2)
-    stop_floor = current_price * 0.95
-    stop_loss = max(stop_loss, round(stop_floor, 2))
+    atr_stop_dist = STOP_ATR_MULTIPLIER * current_atr
+    pct_stop_dist = current_price * 0.05
+    stop_dist = max(atr_stop_dist, pct_stop_dist)
+    stop_type = "ATR" if atr_stop_dist >= pct_stop_dist else "5%"
+    stop_loss = round(current_price - stop_dist, 2)
 
-    # Step 7: Build reasons
+    # Step 7: Build prediction statement and reasons
     reasons = []
     if rsi2_result.detected:
-        reasons.append(f"RSI(2) oversold at {rsi2_result.details.get('rsi2_value', '?')} (buy signal)")
+        rsi_val = rsi2_result.details.get('rsi2_value', '?')
+        reasons.append(f"RSI(2) oversold at {rsi_val}{' (ETF threshold: <5)' if is_etf else ''}")
     if ibs_result.detected:
-        reasons.append(f"IBS {ibs_result.details.get('ibs_value', '?'):.3f} — closed near day's low (bounce expected)")
+        reasons.append(f"IBS {ibs_result.details.get('ibs_value', '?'):.3f} — closed near day's low")
     if consec_result.detected:
         days = consec_result.details.get("consecutive_days", 3)
         reasons.append(f"{days} consecutive down days — mean reversion due")
     if bb_result.detected:
-        reasons.append(f"Price at lower Bollinger Band ${bb_result.details.get('bb_lower', 0):.2f} — bounce zone")
+        reasons.append(f"Price at lower Bollinger Band ${bb_result.details.get('bb_lower', 0):.2f}")
     reasons.append(f"Regime: {regime_reason}")
+    reasons.append(f"Stop: ${stop_loss:.2f} ({stop_type}-based, {stop_dist/current_price*100:.1f}%)")
 
     for c in active_confirms:
         if c.name == "volume_profile":
             reasons.append(f"VP confirms: score {c.score:.1f}/10")
         elif c.name == "order_flow":
-            reasons.append(f"CVD confirms: buying pressure present ({c.score:.1f}/10)")
+            reasons.append(f"CVD confirms: buying pressure ({c.score:.1f}/10) — {cvd_size_mult:.0%} position size")
         elif c.name == "amt_state":
             reasons.append(f"AMT: {c.details.get('state', 'balanced')} — not seller-controlled")
         elif c.name == "volume_spike":
-            reasons.append(f"Volume spike: {c.details.get('volume_ratio', 0):.1f}x average (capitulation confirmation)")
+            reasons.append(f"Volume spike: {c.details.get('volume_ratio', 0):.1f}x avg (capitulation)")
 
     if bb_mid_price > current_price:
-        reasons.append(f"Target: middle Bollinger Band ${bb_mid_price:.2f} (+{expected_move_pct:.1f}%)")
+        reasons.append(f"Target 1: mid BB ${bb_mid_price:.2f} (+{expected_move_pct:.1f}%)")
+    if bb_upper_price > current_price:
+        upper_move = (bb_upper_price - current_price) / current_price * 100
+        reasons.append(f"Target 2: upper BB ${bb_upper_price:.2f} (+{upper_move:.1f}%)")
 
-    # Historical accuracy (lightweight — just uses closes, no VP recompute)
     historical_accuracy = 0.0
     historical_samples = 0
 
@@ -629,8 +677,6 @@ def predict(
     if rr_setups and best_rr_mode:
         best_setup = next((s for s in rr_setups if s["mode"] == best_rr_mode), None)
         if best_setup:
-            stop_loss = best_setup["stop_price"]
-            target_price = best_setup["target_price"]
             reasons.append(
                 f"R:R {best_setup['label']}: risk {best_setup['risk_pct']:.1f}% "
                 f"to gain {best_setup['target_pct']:.1f}% "
@@ -652,6 +698,7 @@ def predict(
         patterns=all_patterns,
         reasons=reasons,
         timeframe=STAGE_TIMEFRAME.get(stage, "1-3 days"),
+        position_size_mult=round(position_mult, 2),
         rr_setups=rr_setups,
         best_rr_mode=best_rr_mode,
         best_rr_ratio=best_rr_ratio,

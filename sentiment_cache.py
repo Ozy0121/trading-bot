@@ -60,25 +60,39 @@ REQUEST_TIMEOUT = 8    # seconds per HTTP request
 _BULLISH_KEYWORDS_STRONG = [
     "strong buy", "price target raised", "upgraded", "outperform",
     "surges", "soars", "record high", "blowout", "crushes estimates",
-    "massive beat", "buy rating",
+    "massive beat", "buy rating", "all-time high", "breakout",
+    "exceeds expectations", "blockbuster", "top pick",
 ]  # weight: 2.0
 
 _BULLISH_KEYWORDS_MODERATE = [
     "upgrade", "upgrades", "overweight", "bullish", "rally",
     "beat", "beats", "jumps", "initiates", "positive", "growth",
     "raises guidance", "above expectations", "accelerating",
+    "gains", "rises", "climbs", "higher", "raises", "raised",
+    "optimistic", "momentum", "strong", "tops", "exceeds",
+    "revenue growth", "profit", "dividend increase", "buyback",
+    "share repurchase", "expands", "acquisition", "partnership",
+    "launches", "innovation", "approval", "awarded", "wins contract",
+    "upside", "rebound", "recovery", "analyst buy",
 ]  # weight: 1.0
 
 _BEARISH_KEYWORDS_STRONG = [
     "sell rating", "price target cut", "downgraded", "underperform",
     "plunges", "crashes", "massive miss", "bankruptcy", "fraud",
-    "sec investigation", "warning",
+    "sec investigation", "warning", "delisted", "default",
+    "class action", "lawsuit filed", "halted",
 ]  # weight: 2.0
 
 _BEARISH_KEYWORDS_MODERATE = [
     "downgrade", "downgrades", "underweight", "bearish",
     "falls", "drops", "misses", "miss", "concern", "decline",
     "cuts guidance", "below expectations", "slowing",
+    "loses", "lower", "weak", "disappoints", "shrinks",
+    "layoffs", "restructuring", "headwinds", "risk", "risks",
+    "pressure", "warns", "cuts dividend", "debt", "losses",
+    "volatility", "uncertainty", "investigation", "recall",
+    "shortfall", "negative", "downside", "selloff", "sell-off",
+    "tumbles", "slides", "sinks", "retreats",
 ]  # weight: 1.0
 
 # ── Sentiment cache (D-06) ────────────────────────────────────────────────────
@@ -181,12 +195,17 @@ def _fetch_sentiment(symbol: str) -> float:
         return 5.0
 
     log.info("[sentiment_cache] Scoring %d headlines for %s", len(headlines), symbol)
-    base_score = _score_headlines(headlines)
+    base_score, breakdown = _score_headlines(headlines)
+
+    log.info(
+        "[sentiment_cache] %s: %d bullish, %d bearish, %d neutral = %.2f/10",
+        symbol, breakdown["bullish"], breakdown["bearish"],
+        breakdown["neutral"], base_score,
+    )
 
     # D-07: Trending topic detection -- high article count amplifies signal
     article_count = len(headlines)
     if article_count >= 8:
-        # Stock is trending: push score further from neutral (5.0)
         deviation = base_score - 5.0
         amplified = 5.0 + deviation * 1.3  # 30% amplification
         amplified = round(max(0.0, min(10.0, amplified)), 2)
@@ -270,45 +289,58 @@ def _fetch_yahoo_rss(symbol: str) -> list[str] | None:
         return None
 
 
-def _score_headlines(headlines: list[str]) -> float:
+def _score_headlines(headlines: list[str]) -> tuple[float, dict]:
     """
     Score headlines using weighted keyword matching (D-06 updated).
 
     Strong keywords count 2x. Produces wider spread: bullish -> >7, bearish -> <3.
-    Formula:
-      bull/bear weights normalized by max possible (total * 2.0)
-      tanh(raw * 2.5) applies sigmoid-like stretching to push toward extremes
-      score = (stretched + 1) / 2 * 10   → range [0, 10]
+    Returns (score, breakdown_dict).
     """
     import math
 
     bull_weight = 0.0
     bear_weight = 0.0
+    bull_count = 0
+    bear_count = 0
 
     for headline in headlines:
         lower = headline.lower()
-        # Strong keywords (weight 2.0)
+        matched_bull = False
+        matched_bear = False
         if any(kw in lower for kw in _BULLISH_KEYWORDS_STRONG):
             bull_weight += 2.0
+            matched_bull = True
         elif any(kw in lower for kw in _BULLISH_KEYWORDS_MODERATE):
             bull_weight += 1.0
+            matched_bull = True
         if any(kw in lower for kw in _BEARISH_KEYWORDS_STRONG):
             bear_weight += 2.0
+            matched_bear = True
         elif any(kw in lower for kw in _BEARISH_KEYWORDS_MODERATE):
             bear_weight += 1.0
+            matched_bear = True
+        if matched_bull:
+            bull_count += 1
+        if matched_bear:
+            bear_count += 1
 
     total = len(headlines)
+    neutral_count = total - len({i for i in range(total)
+                                  if any(kw in headlines[i].lower() for kw in
+                                         _BULLISH_KEYWORDS_STRONG + _BULLISH_KEYWORDS_MODERATE +
+                                         _BEARISH_KEYWORDS_STRONG + _BEARISH_KEYWORDS_MODERATE)})
+
+    breakdown = {"bullish": bull_count, "bearish": bear_count, "neutral": neutral_count}
+
     if total == 0:
-        return 5.0
+        return 5.0, breakdown
 
-    # Normalize by headline count, but allow exceeding [-1,+1] for strong signals
-    max_possible = total * 2.0  # if every headline matched a strong keyword
-    raw = (bull_weight - bear_weight) / max_possible  # [-1, +1]
+    max_possible = total * 2.0
+    raw = (bull_weight - bear_weight) / max_possible
 
-    # tanh(raw * 4.0) maps: raw=0.5 -> ~0.96, raw=1.0 -> ~1.00 — wider spread than 2.5
     stretched = math.tanh(raw * 4.0)
-    score = (stretched + 1) / 2 * 10  # [0, 10]
-    return round(max(0.0, min(10.0, score)), 2)
+    score = (stretched + 1) / 2 * 10
+    return round(max(0.0, min(10.0, score)), 2), breakdown
 
 
 _earnings_fetch_delay = 0.3  # seconds between individual yfinance earnings calls

@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -37,6 +38,16 @@ POLYGON_BASE_URL = "https://api.polygon.io"
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 FMP_BASE_URL = "https://financialmodelingprep.com"
 REQUEST_TIMEOUT = 15
+
+
+def _to_polygon_ticker(symbol: str) -> str:
+    """Convert Yahoo-style ticker (BRK-B) to Polygon-style (BRK.B)."""
+    return symbol.replace("-", ".")
+
+
+def _from_polygon_ticker(symbol: str) -> str:
+    """Convert Polygon-style ticker (BRK.B) to Yahoo-style (BRK-B)."""
+    return symbol.replace(".", "-")
 
 # ── Polygon grouped daily cache ──────────────────────────────────────────────
 # Prevents re-fetching the same data hundreds of times per scan cycle.
@@ -171,13 +182,14 @@ def _polygon_get(endpoint: str, params: dict | None = None) -> dict | None:
 
 def _polygon_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.DataFrame | None:
     """Fetch bars for a single symbol from Polygon.io."""
+    poly_sym = _to_polygon_ticker(symbol)
     multiplier, timespan = _INTERVAL_MAP_POLYGON.get(interval, (1, "day"))
     days = _period_to_days(period)
     date_to = datetime.now().strftime("%Y-%m-%d")
     date_from = (datetime.now() - timedelta(days=days + 5)).strftime("%Y-%m-%d")
 
     data = _polygon_get(
-        f"/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{date_from}/{date_to}",
+        f"/v2/aggs/ticker/{poly_sym}/range/{multiplier}/{timespan}/{date_from}/{date_to}",
         {"adjusted": "true", "sort": "asc", "limit": 50000},
     )
     if not data or data.get("resultsCount", 0) == 0:
@@ -239,8 +251,11 @@ def _polygon_bulk_bars(symbols: list[str], period: str = "5d", progress_cb=None)
     """
     days = _period_to_days(period)
 
-    # For periods > 10 days or small symbol lists, use per-ticker endpoint
-    if days > 10 or len(symbols) < 50:
+    # Grouped daily handles up to ~60 days efficiently (1 call/trading day).
+    # Beyond 60 days the per-ticker endpoint is more practical.
+    # Small symbol lists (<50) are also sent per-ticker to avoid wasting a
+    # grouped-daily API call for a handful of symbols.
+    if days > 60 or len(symbols) < 50:
         return _polygon_bulk_per_ticker(symbols, period, progress_cb)
 
     # Grouped daily: 1 API call per trading day, returns ALL tickers
@@ -258,10 +273,6 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
     now = time.time()
     ttl = _grouped_cache_ttl()
 
-    with _grouped_cache_lock:
-        cache_age = now - _grouped_cache_ts
-        cache_valid = _grouped_cache_ts > 0 and cache_age < ttl
-
     days = _period_to_days(period)
     per_sym: dict[str, list[dict]] = {s: [] for s in symbols}
 
@@ -274,33 +285,42 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
         if len(dates) >= trading_days_needed:
             break
 
-    if cache_valid:
-        for date_str in reversed(dates):
-            with _grouped_cache_lock:
-                grouped = _grouped_cache.get(date_str)
-            if not grouped:
-                continue
-            for sym in symbols:
-                if sym in grouped:
-                    per_sym[sym].append(grouped[sym])
-    else:
-        if progress_cb:
-            progress_cb(0, len(symbols), f"Fetching {len(dates)} days from Polygon...")
+    with _grouped_cache_lock:
+        cache_age = now - _grouped_cache_ts
+        ts_valid = _grouped_cache_ts > 0 and cache_age < ttl
+        cached_dates = set(_grouped_cache.keys()) if ts_valid else set()
 
-        for date_idx, date_str in enumerate(reversed(dates)):
-            grouped = _polygon_grouped_daily(date_str)
-            if not grouped:
-                continue
-            for sym in symbols:
-                if sym in grouped:
-                    per_sym[sym].append(grouped[sym])
-            if progress_cb and date_idx % 2 == 0:
-                progress_cb(0, len(symbols), f"Polygon: fetched {date_idx + 1}/{len(dates)} days...")
+    dates_needed = [d for d in dates if d not in cached_dates]
+    cache_valid = ts_valid and len(dates_needed) == 0
+
+    if dates_needed:
+        if progress_cb:
+            progress_cb(0, len(symbols), f"Fetching {len(dates_needed)} days from Polygon...")
+
+        workers = min(20, len(dates_needed))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_polygon_grouped_daily, d): d for d in dates_needed}
+            done_count = 0
+            for fut in as_completed(futures):
+                done_count += 1
+                if progress_cb and done_count % 2 == 0:
+                    progress_cb(0, len(symbols), f"Polygon: fetched {done_count}/{len(dates_needed)} days...")
 
         with _grouped_cache_lock:
             _grouped_cache_ts = time.time()
             with _api_stats_lock:
                 _api_stats["last_polygon_refresh"] = datetime.now().isoformat()
+
+    for date_str in reversed(dates):
+        with _grouped_cache_lock:
+            grouped = _grouped_cache.get(date_str)
+        if not grouped:
+            continue
+        for sym in symbols:
+            poly_sym = _to_polygon_ticker(sym)
+            match = grouped.get(sym) or grouped.get(poly_sym)
+            if match:
+                per_sym[sym].append(match)
 
     result: dict[str, pd.DataFrame] = {}
     for sym, bars in per_sym.items():
@@ -325,12 +345,16 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
         log.info("[openbb_data] Polygon grouped daily: %d/%d symbols across %d days",
                  len(result), len(symbols), len(dates))
 
+    # On cache hits keep missing-symbol and refresh notices at DEBUG to avoid
+    # flooding the console every 60 s bot cycle.  Only escalate to INFO when
+    # we actually hit the API so operators know a real fetch happened.
+    _log_level = log.debug if cache_valid else log.info
     if missing and len(missing) <= 20:
-        log.info("[openbb_data] Missing symbols (%d): %s", len(missing), ", ".join(missing[:20]))
+        _log_level("[openbb_data] Missing symbols (%d): %s", len(missing), ", ".join(missing[:20]))
     elif missing:
-        log.info("[openbb_data] Missing %d symbols (first 10): %s", len(missing), ", ".join(missing[:10]))
+        _log_level("[openbb_data] Missing %d symbols (first 10): %s", len(missing), ", ".join(missing[:10]))
 
-    log.info("[openbb_data] Polygon data cached — next refresh in %d minutes", next_refresh_min)
+    _log_level("[openbb_data] Polygon data cached — next refresh in %d minutes", next_refresh_min)
     return result
 
 
@@ -341,12 +365,21 @@ def _polygon_bulk_per_ticker(symbols: list[str], period: str = "30d", progress_c
     if progress_cb:
         progress_cb(0, len(symbols), f"Polygon: fetching {period} bars for {len(symbols):,} symbols...")
 
-    for i, sym in enumerate(symbols):
-        df = _polygon_bars(sym, period=period, interval="1d")
-        if df is not None:
-            result[sym] = df
-        if progress_cb and i % 50 == 0 and i > 0:
-            progress_cb(i, len(symbols), f"Polygon: {i:,}/{len(symbols):,} symbols...")
+    workers = min(50, len(symbols))
+    done_count = 0
+    done_lock = threading.Lock()
+
+    def _fetch_one(sym: str) -> tuple[str, pd.DataFrame | None]:
+        return sym, _polygon_bars(sym, period=period, interval="1d")
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for sym, df in pool.map(_fetch_one, symbols):
+            if df is not None:
+                result[sym] = df
+            with done_lock:
+                done_count += 1
+                if progress_cb and done_count % 50 == 0:
+                    progress_cb(done_count, len(symbols), f"Polygon: {done_count:,}/{len(symbols):,} symbols...")
 
     if progress_cb:
         progress_cb(len(symbols), len(symbols), f"Polygon: got {period} bars for {len(result):,}/{len(symbols):,} symbols")
@@ -518,7 +551,7 @@ def fetch_quote(symbol: str) -> float | None:
     # ── Primary: Polygon.io ─────────────────────────────────────────────────
     if POLYGON_API_KEY:
         try:
-            data = _polygon_get(f"/v2/last/trade/{symbol}")
+            data = _polygon_get(f"/v2/last/trade/{_to_polygon_ticker(symbol)}")
             if data and "results" in data:
                 price = float(data["results"].get("p", 0))
                 if price > 0:
@@ -567,7 +600,7 @@ def fetch_ticker_info(symbol: str) -> dict:
     # ── Primary: Polygon.io ─────────────────────────────────────────────────
     if POLYGON_API_KEY:
         try:
-            data = _polygon_get(f"/v3/reference/tickers/{symbol}")
+            data = _polygon_get(f"/v3/reference/tickers/{_to_polygon_ticker(symbol)}")
             if data and "results" in data:
                 r = data["results"]
                 info = {

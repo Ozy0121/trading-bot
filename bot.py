@@ -469,7 +469,16 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
         log.info("[bot] ── Cycle: %s ──", cycle_start.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         try:
-            # ── 1. Market hours ──────────────────────────────────────────────
+            # ── 1. Scan watchlist (runs even when market closed) ────────
+            watchlist = get_watchlist()
+            catalysts = get_catalysts(watchlist)
+            scan_results = scan(watchlist, catalysts=catalysts)
+            shared_state.update(watchlist=[
+                {k: v for k, v in r.items() if k != "df"}
+                for r in scan_results
+            ])
+
+            # ── 2. Market hours ──────────────────────────────────────────────
             if not assert_market_open(trading_client):
                 shared_state.push_trade(
                     time=cycle_start.strftime("%H:%M:%S"),
@@ -478,13 +487,13 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                 _interruptible_sleep(config.POLL_INTERVAL)
                 continue
 
-            # ── 2. Account info ──────────────────────────────────────────────
+            # ── 3. Account info ──────────────────────────────────────────────
             account = trading_client.get_account()
             equity  = float(account.equity)
             cash    = float(account.cash)
             bp      = float(account.buying_power)
 
-            # ── 3. Daily loss check ──────────────────────────────────────────
+            # ── 4. Daily loss check ──────────────────────────────────────────
             if daily_loss_exceeded(equity):
                 log.critical("[bot] Daily loss limit hit. Kill switch.")
                 shared_state.update(status="loss_limit_hit")
@@ -496,7 +505,7 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                 kill_switch(trading_client)
                 break
 
-            # ── 4. PDT status ────────────────────────────────────────────────
+            # ── 5. PDT status ────────────────────────────────────────────────
             pdt = get_pdt_info(trading_client)
             shared_state.update(
                 pdt_applies=pdt["applies"],
@@ -504,21 +513,9 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
                 pdt_remaining=pdt["remaining"],
             )
 
-            # ── 5. Get consecutive losses for position sizing ─────────────────
+            # ── 6. Get consecutive losses for position sizing ─────────────────
             snap = shared_state.snapshot()
             consecutive_losses = snap.get("consecutive_losses", 0)
-
-            # ── 6. Fetch catalysts (ARK + analyst upgrades) ───────────────────
-            watchlist = get_watchlist()
-            catalysts = get_catalysts(watchlist)
-
-            # ── 7. Scan watchlist ────────────────────────────────────────────
-            scan_results = scan(watchlist, catalysts=catalysts)
-
-            shared_state.update(watchlist=[
-                {k: v for k, v in r.items() if k != "df"}
-                for r in scan_results
-            ])
 
             # ── 7a. Agent coordinator cycle ─────────────────────────────────
             if _coordinator:

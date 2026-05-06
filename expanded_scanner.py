@@ -19,7 +19,7 @@ import os
 import re
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from datetime import date, datetime, timezone, timedelta
 
 import pandas as pd
@@ -231,72 +231,74 @@ def _score_quant_multifactor(
     t4_start = time.time()
     PER_STOCK_TIMEOUT = 5.0
 
-    for i, sym in enumerate(symbols):
-        if _cancelled() or time.time() >= deadline:
-            reason = "cancelled" if _cancelled() else "deadline"
-            log.warning("[expanded] T4 %s after scoring %d/%d symbols",
-                        reason, len(scored), len(symbols))
-            break
-
+    def _score_one(sym: str) -> dict | None:
         df = bars_dict.get(sym)
         if df is None or df.empty:
+            return None
+        result = compute_quant_score(sym, df, momentum_ranks.get(sym, 0.5))
+        closes = df["close"]
+        result["last_close"] = round(float(closes.iloc[-1]), 4)
+        if len(closes) >= 5:
+            first = float(closes.iloc[-5])
+            result["ret_5d"] = round((float(closes.iloc[-1]) - first) / first, 4) if first > 0 else 0.0
+        if len(closes) >= 14:
+            from indicators import rsi as calc_rsi
+            rsi_s = calc_rsi(closes, period=14)
+            result["rsi_14"] = round(float(rsi_s.iloc[-1]), 2) if not pd.isna(rsi_s.iloc[-1]) else 0.0
+        if "volume" in df.columns and len(df) >= 2:
+            avg_vol = float(df["volume"].iloc[:-1].mean())
+            result["vol_ratio"] = round(float(df["volume"].iloc[-1]) / avg_vol, 2) if avg_vol > 0 else 0.0
+        return result
+
+    executor = ThreadPoolExecutor(max_workers=workers)
+    pending = {executor.submit(_score_one, sym): sym for sym in symbols}
+    done_count = 0
+
+    while pending:
+        if _cancelled() or time.time() >= deadline:
+            reason = "cancelled" if _cancelled() else "deadline"
+            log.warning("[expanded] T4 %s after scoring %d/%d symbols", reason, done_count, len(symbols))
+            break
+
+        finished, pending_set = wait(pending.keys(), timeout=PER_STOCK_TIMEOUT, return_when=FIRST_COMPLETED)
+        pending = {f: pending[f] for f in pending_set}
+
+        if not finished:
+            timed_out = list(pending.keys())[:5]
+            for f in timed_out:
+                sym = pending.pop(f)
+                f.cancel()
+                skipped.append(sym)
+                done_count += 1
+                log.warning("[expanded] T4 timeout: %s — skipping", sym)
             continue
 
-        try:
-            stock_start = time.time()
-            result = compute_quant_score(sym, df, momentum_ranks.get(sym, 0.5))
-            elapsed = time.time() - stock_start
-            if elapsed > PER_STOCK_TIMEOUT:
-                log.warning("[expanded] T4 slow stock: %s took %.1fs", sym, elapsed)
-            scored.append(result)
-        except Exception as exc:
-            skipped.append(sym)
-            log.debug("[expanded] T4 scoring failed for %s: %s", sym, exc)
+        for future in finished:
+            done_count += 1
+            try:
+                result = future.result(timeout=0)
+                if result is not None:
+                    scored.append(result)
+            except Exception as exc:
+                sym = {v: k for k, v in pending.items()}.get(future, "?")
+                skipped.append(str(sym))
+                log.debug("[expanded] T4 scoring failed for %s: %s", sym, exc)
 
-        if i % 20 == 0 and i > 0:
+        if done_count % 20 < len(finished):
             elapsed_total = time.time() - t4_start
-            rate = i / elapsed_total if elapsed_total > 0 else 1
-            remaining = (len(symbols) - i) / rate if rate > 0 else 0
+            rate = done_count / elapsed_total if elapsed_total > 0 else 1
+            remaining = (len(symbols) - done_count) / rate if rate > 0 else 0
             eta_str = f"~{int(remaining)}s remaining" if remaining < 3600 else f"~{remaining/60:.0f}m remaining"
-            progress.track("expanded_scan", current=i, total=len(symbols),
-                           label=f"T4 scoring: {i:,}/{len(symbols):,} ({eta_str})")
-            _scan_log(f"T4 scoring: {i:,}/{len(symbols):,} stocks analyzed ({len(scored):,} scored, {eta_str})")
+            progress.track("expanded_scan", current=done_count, total=len(symbols),
+                           label=f"T4 scoring: {done_count:,}/{len(symbols):,} ({eta_str})")
+            _scan_log(f"T4 scoring: {done_count:,}/{len(symbols):,} stocks analyzed ({len(scored):,} scored, {eta_str})")
+
+    for f in pending:
+        f.cancel()
+    executor.shutdown(wait=False, cancel_futures=True)
 
     if skipped:
         log.info("[expanded] T4 skipped %d stocks: %s", len(skipped), ", ".join(skipped[:15]))
-
-    # ETF double-check via ticker info for survivors
-    # Only check a manageable number in parallel
-    to_check = scored[:200]
-    etf_symbols: set[str] = set()
-
-    def _check_etf(item: dict) -> str | None:
-        sym = item["symbol"]
-        try:
-            info = fetch_ticker_info(sym)
-            if info and _is_etf_or_preferred(sym, info):
-                return sym
-        except Exception:
-            pass
-        return None
-
-    with ThreadPoolExecutor(max_workers=min(workers, 5)) as executor:
-        futures = {executor.submit(_check_etf, item): item for item in to_check}
-        for future in as_completed(futures):
-            if time.time() >= deadline:
-                break
-            try:
-                result = future.result(timeout=10)
-                if result:
-                    etf_symbols.add(result)
-            except Exception:
-                pass
-
-    # Remove ETFs that leaked through
-    if etf_symbols:
-        log.info("[expanded] T4 ETF check removed %d symbols: %s",
-                 len(etf_symbols), list(etf_symbols)[:10])
-        scored = [s for s in scored if s["symbol"] not in etf_symbols]
 
     # Sort by quant_score descending, take top N
     scored.sort(key=lambda x: x.get("quant_score", 0), reverse=True)
@@ -540,6 +542,8 @@ def _get_market_close_today(trading_client) -> datetime | None:
             return None  # holiday or weekend
 
         close_time = cal[0].close
+        if isinstance(close_time, datetime):
+            close_time = close_time.time()
         eastern = zoneinfo.ZoneInfo("America/New_York")
         close_dt = datetime.combine(today, close_time, tzinfo=eastern)
         return close_dt.astimezone(timezone.utc)

@@ -341,16 +341,24 @@ def _score_symbol_multi(
     symbol: str,
     etf_scores: dict[str, float],
     catalysts: dict | None = None,
+    prefetched_df: pd.DataFrame | None = None,
 ) -> dict | None:
     """
-    Fetch bars, run all strategies from REGISTRY, and return a scored dict with
-    conviction breakdown. Returns None if insufficient data.
+    Score a symbol using all strategies from REGISTRY and return a scored dict
+    with conviction breakdown. Returns None if insufficient data.
+
+    If prefetched_df is provided, uses it directly instead of fetching bars.
 
     Backward-compatible keys are preserved for bot.py compatibility:
     symbol, price, signal, raw_signal, score, rsi, volume_ratio,
     bb_upper, bb_lower, macd_hist, df, strategy, conviction (new: breakdown dict).
     """
-    df = fetch_bars_yf(symbol)
+    if prefetched_df is not None:
+        df = prefetched_df[["open", "high", "low", "close", "volume"]].copy()
+        if len(df) > 1:
+            df = df.iloc[:-1]
+    else:
+        df = fetch_bars_yf(symbol)
     if df is None or len(df) < max(config.LONG_WINDOW + 2, 22):
         return None
 
@@ -534,6 +542,13 @@ def scan(watchlist: list[str], catalysts: dict | None = None,
     """
     log.info("[scanner] Multi-strategy scan: %d symbols", len(watchlist))
 
+    # Pre-fetch all bars in bulk (parallel via Polygon) instead of one-by-one
+    interval = _YF_INTERVAL.get(config.BAR_TIMEFRAME, "5m")
+    period = "5d" if interval in ("1m", "2m", "5m", "15m", "30m") else "60d"
+    log.info("[scanner] Bulk-fetching bars for %d symbols (period=%s)...", len(watchlist), period)
+    prefetched = fetch_bulk_bars(watchlist, period=period, interval="1d")
+    log.info("[scanner] Bulk fetch complete: %d/%d symbols have data", len(prefetched), len(watchlist))
+
     # Pre-fetch sector ETF scores once for the whole scan
     etf_scores = _fetch_sector_scores()
 
@@ -543,7 +558,7 @@ def scan(watchlist: list[str], catalysts: dict | None = None,
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_sym = {
-            executor.submit(_score_symbol_multi, sym, etf_scores, catalysts): sym
+            executor.submit(_score_symbol_multi, sym, etf_scores, catalysts, prefetched.get(sym)): sym
             for sym in watchlist
         }
         for future in as_completed(future_to_sym):

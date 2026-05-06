@@ -136,6 +136,22 @@ def run_overnight_scan(progress_cb: callable | None = None) -> dict:
     with _last_scan_lock:
         _last_scan_result = result
 
+    # Push predictions to shared state so the dashboard can display them
+    import state as shared_state
+    from stock_universe import get_scan_summary
+    all_pred_dicts = [p.to_dict() for p in high_confidence[:30]]
+    shared_state.update(
+        predictions=all_pred_dicts,
+        prediction_count=len(predictions),
+        scan_universe_size=total_scanned,
+        scan_summary=get_scan_summary(total_scanned, len(predictions), len(high_confidence)),
+    )
+    log.info(
+        "[prediction] Predictions saved to state: %d stocks in launch zone, "
+        "%d building up, %d early accumulation",
+        len(ready_tomorrow), len(building), len(early),
+    )
+
     log.info(
         "[overnight] Scan complete in %.0fs: %d scanned → %d predictions → "
         "%d high confidence (%d ready, %d building, %d early)",
