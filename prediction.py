@@ -27,13 +27,13 @@ from __future__ import annotations
 import threading
 from datetime import date
 from dataclasses import dataclass, field, asdict
+from typing import Callable
 
-import numpy as np
 import pandas as pd
 
 from indicators import rsi as calc_rsi, bollinger_bands, atr as calc_atr
 from logger_setup import get_logger
-from openbb_data import fetch_bars, get_spy_history
+from openbb_data import get_spy_history
 from volume_profile import score_volume_profile
 from order_flow import score_order_flow
 from amt_engine import score_amt
@@ -375,7 +375,7 @@ def _passes_regime_filter(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) 
         spy_price = float(spy_df["close"].iloc[-1])
         spy_sma_val = float(spy_sma.iloc[-1])
         if spy_price < spy_sma_val:
-            position_mult = 0.5
+            position_mult *= 0.5
             spy_note = ", SPY below 200-SMA (50% size)"
 
     return True, f"SMA({sma_period}) OK, ADX {adx:.0f}{spy_note}", position_mult
@@ -384,7 +384,7 @@ def _passes_regime_filter(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) 
 # ── Confirmation layer ──────────────────────────────────────────────────────
 
 def _get_confirmations(df: pd.DataFrame) -> tuple[list[PatternResult], bool]:
-    """Run VP/CVD/AMT as confirmation bonus — no longer vetoes signals."""
+    """Run VP/CVD/AMT confirmation layer — vetoes when sellers clearly control."""
     confirms = []
 
     vp_result = score_volume_profile(df)
@@ -403,7 +403,16 @@ def _get_confirmations(df: pd.DataFrame) -> tuple[list[PatternResult], bool]:
     confirms.append(PatternResult("amt_state", amt_ok, amt_result["score"],
                                   "structure", {"state": amt_state}))
 
-    return confirms, False
+    # Veto if CVD shows strong seller control OR AMT is imbalanced_down
+    vetoed = (not cvd_ok and of_result["score"] <= 0) or (not amt_ok)
+    if vetoed:
+        veto_reasons = []
+        if not cvd_ok and of_result["score"] <= 0:
+            veto_reasons.append(f"CVD seller control (score={of_result['score']:.1f})")
+        if not amt_ok:
+            veto_reasons.append(f"AMT state={amt_state}")
+        log.info("[prediction] Veto triggered: %s", ", ".join(veto_reasons))
+    return confirms, vetoed
 
 
 # ── Stage classification ────────────────────────────────────────────────────
@@ -666,8 +675,15 @@ def predict(
         upper_move = (bb_upper_price - current_price) / current_price * 100
         reasons.append(f"Target 2: upper BB ${bb_upper_price:.2f} (+{upper_move:.1f}%)")
 
-    historical_accuracy = 0.0
-    historical_samples = 0
+    # Query actual prediction accuracy from tracking system
+    try:
+        from prediction_log import get_symbol_accuracy
+        _sym_acc = get_symbol_accuracy(symbol)
+        historical_accuracy = _sym_acc["accuracy"]
+        historical_samples = _sym_acc["samples"]
+    except Exception:
+        historical_accuracy = 0.0
+        historical_samples = 0
 
     # Risk-reward
     rr_setups, best_rr_mode, best_rr_ratio, ev, rr_badge = _compute_risk_reward(
@@ -708,7 +724,7 @@ def predict(
 
 
 def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None = None,
-                   progress_cb: callable | None = None) -> list[Prediction]:
+                   progress_cb: Callable | None = None) -> list[Prediction]:
     """Run predictions on a batch of symbols.
 
     Uses fetch_bulk_bars to grab bars in chunks of 500 symbols at once,
