@@ -719,6 +719,18 @@ def api_predictions_run():
                 universe = get_full_universe(include_discovery=True)
                 progress.push_log("predictions", f"No survivors — falling back to full universe ({len(universe)})", "warning")
 
+            from config import WATCHLIST
+            from stock_universe import get_sp500, get_nasdaq100
+            seen = set(universe)
+            extras = []
+            for s in WATCHLIST + get_sp500() + get_nasdaq100():
+                if s not in seen:
+                    seen.add(s)
+                    extras.append(s)
+            if extras:
+                universe.extend(extras)
+                progress.push_log("predictions", f"Added {len(extras)} large-cap + watchlist stocks to universe")
+
             funnel = get_funnel_stats()
             progress.track("predictions", total=len(universe), current=0,
                            label=f"AI analyzing {len(universe):,} stocks...")
