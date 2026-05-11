@@ -2,226 +2,333 @@
 
 ## Overview
 
-Starting from a working single-strategy stock bot, this roadmap extends it into a multi-strategy swing trading system with options execution and AI-powered analysis. The build order prioritizes capital protection first (bracket orders for offline safety), then smarter entries (prediction engine), then options expansion, and finally AI-assisted analysis. The user cannot monitor the bot 24/7, so server-side protection is the #1 priority.
+Starting from a working prediction bot with safety infrastructure, expanded scanning, and a Flask dashboard, this roadmap addresses critical bugs, architectural debt, and capability gaps identified by a full-team review (May 2026). The build order prioritizes fixing what's broken first, then making predictions actually accurate, then improving the trader experience, and finally expanding into options and AI analysis.
 
 ## Milestones
 
-- :construction: **v1.0 Multi-Strategy Options Bot** - Phases 1-5 (Phases 1-2 complete, 3-5 pending)
-- :clipboard: **v2.0 Intelligence Suite** - Phases 6-11 (planned)
+- :white_check_mark: **v1.0 Multi-Strategy Foundation** - Phases 1-2 (Complete)
+- :white_check_mark: **v2.0 Intelligence Suite** - Phases 6-7 (Complete, Phases 8-11 superseded)
+- :construction: **v2.1 Stability & Critical Fixes** - Phases 8-9 (Fix bugs that undermine prediction quality)
+- :clipboard: **v2.2 Prediction Intelligence** - Phases 10-11 (Make predictions actually work)
+- :clipboard: **v2.3 Trader Experience** - Phases 12-13 (UX that serves a 3-trade-per-week trader)
+- :clipboard: **v3.0 Options & News** - Phases 14-15 (Expand asset types and data sources)
+- :clipboard: **v3.1 AI & Reports** - Phases 16-17 (AI analyst and reporting)
 
-## Phases
-
-**Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
-- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
-
-Decimal phases appear between their surrounding integers in numeric order.
+## Completed Phases
 
 <details>
-<summary>v1.0 Multi-Strategy Options Bot (Phases 1-5)</summary>
+<summary>v1.0 Multi-Strategy Foundation (Phases 1-2) — Complete</summary>
 
-- [x] **Phase 1: Safety Infrastructure + Bracket Orders** - State persistence, order fill handling, and server-side bracket orders that protect positions when the bot is offline (completed 2026-03-28)
-- [x] **Phase 2: Prediction Engine + Stock Scanning** - Multi-strategy scoring with news sentiment, volume analysis, and conviction-based trade filtering (completed 2026-03-30)
-- [ ] **Phase 3: Options Trading** - Add options chain analysis and order execution
-- [ ] **Phase 4: Position Sizing & Allocation** - Enforce dual capital buckets and trade budget gate
-- [ ] **Phase 5: Dashboard + Predictions + AI Analyst** - Predictions tab, conviction breakdowns, watchlist management, and AI chart analysis via Anthropic API
+- [x] **Phase 1: Safety Infrastructure + Bracket Orders** — State persistence, bracket orders, OCC-aware PDT tracking (completed 2026-03-28)
+- [x] **Phase 2: Prediction Engine + Stock Scanning** — Multi-strategy scoring, news sentiment, volume analysis, conviction filtering (completed 2026-03-30)
 
 </details>
 
-### v2.0 Intelligence Suite (Phases 6-11)
-
-- [ ] **Phase 6: Score Recalibration** - Letter grades, hover breakdowns, and config-driven grade thresholds for conviction scores
-- [x] **Phase 7: Expanded Scanner** - S&P 500 + NASDAQ 100 universe with hard pre-filters and two-tier scan architecture
-- [ ] **Phase 8: Multi-Source News** - Finnhub, RSS feeds, SEC EDGAR, FRED calendar aggregated with deduplication and per-source caching
-- [ ] **Phase 9: Overnight Scanner** - Post-market daemon that generates Tomorrow's Game Plan with approve/reject UI and morning pre-queue
-- [ ] **Phase 10: Intelligence Tab** - Market overview dashboard with index charts, VIX gauge, sector heatmap, breadth indicators, and AI brief
-- [ ] **Phase 11: PDF Report** - Downloadable professional report with account summary, positions, trade history, metrics, and embedded charts
-
-## Phase Details
-
 <details>
-<summary>v1.0 Phase Details (Phases 1-5)</summary>
+<summary>v2.0 Intelligence Suite (Phases 6-7) — Complete</summary>
 
-### Phase 1: Safety Infrastructure + Bracket Orders
-**Goal**: The bot survives restarts without losing state, handles order fills explicitly, and — critically — places server-side bracket orders (stop-loss + take-profit) on Alpaca for every position so the user is protected even when the bot is offline
-**Depends on**: Nothing (first phase)
-**Requirements**: SAFE-01, SAFE-02, SAFE-03, SAFE-04, SAFE-05, BRACKET-01, BRACKET-02, BRACKET-03, BRACKET-04, BRACKET-05
-**Success Criteria** (what must be TRUE):
-  1. Bot restarts and restores peak prices, entry dates, and PDT history without data loss
-  2. An options round-trip using an OCC-format symbol counts against the 3-trade PDT limit
-  3. Order submission polls for fill status and handles partial fills and rejections with explicit log messages — not silent success
-  4. `liquidate_all()` closes both stock positions and open options positions cleanly
-  5. Bot refuses to start in live mode if options trading is not enabled on the Alpaca account
-  6. Every stock buy is immediately followed by a bracket order (stop-loss + take-profit) that lives on Alpaca's servers
-  7. On startup, bot verifies all existing positions have active stop-loss orders — missing ones are recreated
-  8. On shutdown, bot confirms all positions have active server-side stop-losses before allowing exit
-  9. Dashboard shows stop-loss and take-profit prices for each position
-  10. Stop-loss and take-profit percentages are adjustable from the dashboard
-**Plans:** 4/4 plans complete
-Plans:
-- [x] 01-01-PLAN.md — State persistence + OCC detection + test scaffold
-- [x] 01-02-PLAN.md — Bracket orders + fill polling + startup/shutdown checks
-- [x] 01-03-PLAN.md — Options-aware liquidation + startup validation
-- [x] 01-04-PLAN.md — Dashboard bracket UI + exit settings panel
-
-### Phase 2: Prediction Engine + Stock Scanning
-**Goal**: Scanner produces a unified ranked candidate list using multi-strategy scoring (technical + volume + news sentiment + sector momentum), only takes trades above a configurable conviction threshold (~5.8/10), and logs reasoning for every entry and skip decision
-**Depends on**: Phase 1
-**Requirements**: STRAT-01, STRAT-02, STRAT-03, STRAT-04, STRAT-05, STRAT-06, SCAN-01, SCAN-02, SCAN-03, SCAN-04, SCAN-05, PRED-01, PRED-02, PRED-03, PRED-04, PRED-05
-**Success Criteria** (what must be TRUE):
-  1. Each candidate carries a 0-10 conviction score with breakdown (technical, volume, sentiment, sector)
-  2. Scanner evaluates momentum breakout, mean reversion, and catalyst signals independently before combining
-  3. News sentiment analysis scores headlines as positive/negative/neutral and factors into conviction
-  4. Unusual volume spikes (2x+ normal) are detected and boost conviction scores
-  5. Sector ETF performance surfaces leaders from top-performing sectors
-  6. Only trades with conviction >= threshold are executed — lower scores are skipped with logged reasoning
-  7. Every trade entry and skip is logged with full reasoning breakdown
-  8. Curated watchlist of 50-75 symbols covering all GICS sectors, editable via config
-  9. Full scan of 50-75 symbols completes in under 30 seconds
-**Plans:** 5/5 plans complete
-Plans:
-- [x] 02-01-PLAN.md — Strategy foundation: config + state extensions, 3 strategy modules + registry
-- [x] 02-02-PLAN.md — Sentiment cache: news scoring + earnings penalty
-- [x] 02-03-PLAN.md — Scanner orchestrator rewrite + bot integration + tests
-- [x] 02-04-PLAN.md — Scoring recalibration: threshold, sentiment overhaul, volume fairness, market regime filter
-- [x] 02-05-PLAN.md — Watchlist expansion, multi-candidate best_buy, top movers circular logic fix
-
-### Phase 3: Options Trading
-**Goal**: Bot can analyze options chains, select appropriate contracts with hard liquidity filters, construct valid OCC symbols, and submit LIMIT-only options orders with options-specific exit rules enforced
-**Depends on**: Phase 2
-**Requirements**: OPT-01, OPT-02, OPT-03, OPT-04, OPT-05, OPT-06
-**Success Criteria** (what must be TRUE):
-  1. Options chain fetch returns only contracts with DTE 7-21 days, OI > 100, and bid-ask spread < 15% — illiquid contracts are hard-rejected
-  2. Automated contract selection picks the closest OTM strike with adequate liquidity and constructs a valid OCC symbol
-  3. All options orders are submitted as LIMIT orders — MARKET orders are never used for options
-  4. Calls are selected for bullish signals and puts for bearish signals with no exceptions
-  5. Open options positions are auto-closed when premium drops 50%, rises 75%, or DTE reaches 3 days or fewer
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 4: Position Sizing & Allocation
-**Goal**: Capital is hard-split into stock and options buckets, options contracts stay within the premium cap, stock positions are sized aggressively for 3-trade-per-week rhythm, and a 3-trade gate enforces the PDT budget across both asset types
-**Depends on**: Phase 3
-**Requirements**: SIZE-01, SIZE-02, SIZE-03, SIZE-04
-**Success Criteria** (what must be TRUE):
-  1. Stock and options each operate from a separate $250 capital bucket — spending from one does not affect the other
-  2. No options contract is purchased if the premium (times 100 multiplier) exceeds $150
-  3. Stock positions are sized to use available stock budget aggressively within each of the 3 allowed weekly trades
-  4. Bot enforces a hard 3-trade ceiling per 5-business-day window across both stocks and options combined — a 4th trade is blocked
-**Plans**: TBD
-
-### Phase 5: Dashboard + Predictions + AI Analyst
-**Goal**: Dashboard shows options positions, conviction score breakdowns for all watchlist stocks, a Predictions tab with the bot's outlook and reasoning, watchlist management, and an AI Chart Analyst panel powered by the Anthropic API that gives plain-English analysis and trade recommendations
-**Depends on**: Phase 4
-**Requirements**: DASH-01, DASH-02, DASH-03, DASH-04, DASH-05, DASH-06, AI-01, AI-02, AI-03, AI-04
-**Success Criteria** (what must be TRUE):
-  1. Options positions display premium paid, current P&L using the 100x multiplier, and days to expiry countdown
-  2. Every open position shows which strategy triggered it (momentum, reversion, or catalyst)
-  3. A scan results view shows all ranked candidates with their composite scores and strategy types
-  4. User can add or remove symbols from the curated watchlist through the dashboard without editing config files
-  5. Predictions tab shows conviction score breakdown (technical, volume, sentiment, sector) for each watchlist stock with reasoning
-  6. AI Chart Analyst panel uses Claude claude-sonnet-4-20250514 to analyze current price action, indicators, and news, producing a 2-3 sentence summary with bullish/bearish/neutral indicator and confidence score
-  7. AI analysis updates on symbol switch and every few minutes
-  8. "What should I do?" button gives specific buy/sell/hold/wait recommendation with reasoning
-**Plans**: TBD
-**UI hint**: yes
+- [x] **Phase 6: Score Recalibration** — Letter grades, hover breakdowns, config-driven thresholds (completed 2026-04-08)
+- [x] **Phase 7: Expanded Scanner** — S&P 500 + NASDAQ 100 universe, four-tier cascade to ~50 survivors (completed 2026-04-19)
 
 </details>
 
-### Phase 6: Score Recalibration
-**Goal**: Conviction scores are immediately interpretable through letter grades and hover breakdowns, so the user understands at a glance why each candidate scored the way it did
-**Depends on**: Phase 2 (existing conviction scoring system)
-**Requirements**: SCORE-01, SCORE-02
-**Success Criteria** (what must be TRUE):
-  1. Every conviction score displays as a letter grade (A/B/C/D/F) alongside the numeric value, with grade cutoffs driven by config constants relative to the conviction threshold
-  2. Hovering over any score reveals a tooltip breakdown showing each sub-score (technical, volume, sentiment, sector) with numeric values and the strategy label that produced the signal
+<details>
+<summary>Quick Tasks Completed (ad-hoc work between phases)</summary>
+
+| Date | Task | Commit |
+|------|------|--------|
+| 2026-03-28 | Dashboard UI redesign (glassmorphism dark theme) | b1c55ee |
+| 2026-04-01 | Conviction scoring recalibration | 6aedc04 |
+| 2026-04-02 | Fix stop-without-liquidate, wire agent coordinator | c7660c6 |
+| 2026-04-26 | Pattern weight calibration from backtest results | 2f4466e |
+| 2026-05-04 | Prediction engine v4 win rate improvement (51%→77%) | 0e3a788 |
+| 2026-05-05 | Position sizing multiplier, regime filter improvements | — |
+| 2026-05-06 | Two-stage scan workflow, parallel scoring | — |
+| 2026-05-07 | Prediction filter relaxation (ADX 40→60, confluence 3→2) | — |
+| 2026-05-08 | Scan button tooltips, stream reconnection with backoff | — |
+
+</details>
+
+---
+
+## Active Roadmap
+
+### v2.1 Stability & Critical Fixes
+
+#### Phase 8: Critical Bug Fixes
+**Goal**: Fix bugs that are actively undermining prediction quality, position sizing, and system reliability — the bot is producing predictions with broken scoring and dead safety guards
+
+**Depends on**: None (urgent fixes)
+
+**Bugs to fix** (from code review):
+
+| # | Severity | File | Issue |
+|---|----------|------|-------|
+| 1 | CRITICAL | prediction.py:389-409 | **Dead veto branch** — `_get_confirmations()` always returns `vetoed=False`. CVD/AMT veto guard is dead code. Setups that should be rejected pass through silently. |
+| 2 | CRITICAL | prediction.py:672-673 | **Accuracy always 0.0** — `historical_accuracy` and `historical_samples` are hardcoded to zero. Never queries actual prediction outcomes. Sorting by accuracy degenerates to confidence-only. |
+| 3 | CRITICAL | dashboard.py:725 | **Broken deduplication** — `set.add()` inside list comprehension is a side-effect anti-pattern. Dedup intent works in CPython but is fragile and misleading. |
+| 4 | HIGH | prediction.py:381 | **Position sizing overwrite** — `position_mult = 0.5` (assignment) instead of `*= 0.5`. SPY penalty silently discards SMA-slope penalty instead of compounding. |
+| 5 | HIGH | stream.py:50-53 | **Backoff reset too early** — `backoff = 5` resets before `stream.run()` succeeds. Auth failures cause aggressive 5-second retry storm. |
+| 6 | HIGH | bot.py | **daily_loss_exceeded never called** — Function exists in safety.py but bot.py never invokes it. Daily loss limit is a dead guard. |
+| 7 | MEDIUM | prediction.py:31,36 | Unused imports (numpy, fetch_bars) |
+| 8 | MEDIUM | prediction.py:714 | `callable` (lowercase) is not a valid type hint |
+
+**Success Criteria**:
+  1. Veto branch is live — CVD/AMT signals can reject bad setups
+  2. Historical accuracy feeds from prediction_log into scoring
+  3. Position sizing compounds penalties correctly (`*=` not `=`)
+  4. Stream backoff only resets after confirmed stable connection
+  5. Daily loss limit is actually enforced in the bot loop
+  6. All unused imports removed, type hints corrected
+
 **Plans:** 2 plans
+
 Plans:
-- [x] 06-01-PLAN.md — Expose conviction_threshold in state + test scaffold for grade logic
-- [x] 06-02-PLAN.md — Grade pill CSS/JS, tooltip with sub-score bars, stale dot cleanup
-**UI hint**: yes
+- [x] 08-01-PLAN.md — Fix prediction engine bugs (veto, accuracy, sizing, imports, type hint)
+- [x] 08-02-PLAN.md — Fix dashboard dedup, stream backoff, verify daily loss guard
 
-### Phase 7: Expanded Scanner
-**Goal**: The scanner discovers high-conviction candidates from a universe of 2,500+ stocks using a four-tier cascading pipeline (price/mcap, volume, momentum, quant scoring) that culls to ~50 survivors, ranked by multi-factor quant model
-**Depends on**: Phase 6
-**Requirements**: UNIV-01, UNIV-02, UNIV-03, UNIV-04, UNIV-05
-**Success Criteria** (what must be TRUE):
-  1. Scanner fetches S&P 500 and NASDAQ 100 constituents daily (cached) and merges them into a deduplicated expanded watchlist
-  2. Stocks with daily volume >2x their 20-day average are automatically added to the expanded watchlist
-  3. Hard pre-filters reject stocks outside $5-MAX_POSITION_VALUE price range, below 500K daily volume, below $100M market cap, off NYSE/NASDAQ, or that are ETFs/preferred shares — before any scoring runs
-  4. Bulk yf.download() pre-filter culls the full universe to ~50 survivors, then existing conviction scoring runs only on survivors
-  5. The expanded universe scan runs only during the overnight window — the live 60-second bot loop continues using the existing curated watchlist
-**Plans:** 2 plans
-Plans:
-- [x] 07-01-PLAN.md — Factor scoring modules (SMC + multi-factor quant)
-- [ ] 07-02-PLAN.md — Four-tier pipeline, overnight daemon, integration hooks
+---
 
-### Phase 8: Multi-Source News
-**Goal**: News from multiple sources (Finnhub, RSS feeds, SEC EDGAR, FRED) is aggregated, deduplicated, and cached with per-source TTLs, giving the bot and user broader market awareness
-**Depends on**: Phase 6
-**Requirements**: NEWS-01, NEWS-02, NEWS-03, NEWS-04, NEWS-05, NEWS-06
-**Success Criteria** (what must be TRUE):
-  1. Finnhub company news API returns headlines for scoring finalists with rate-aware batching that stays under 60 calls/minute
-  2. RSS feeds from Google News, MarketWatch, and Reuters are parsed via feedparser, handling both RSS 2.0 and Atom formats without silent failures
-  3. SEC EDGAR 8-K RSS feed is fetched with a compliant User-Agent header and 10 req/s rate limit, and items appear as timing signals (not scored)
-  4. FRED economic calendar provides FOMC, CPI, and NFP dates — works with or without a FRED API key (static fallback when key is missing)
-  5. All news items from all sources share a common format: headline, source, URL, published date, and category — with deduplication by title similarity and per-source TTL caching
+#### Phase 9: Architecture Cleanup
+**Goal**: Reduce the risk of silent bugs and thread-safety issues by splitting the monolithic dashboard, adding state schema validation, and protecting shared mutable globals
 
-**Plans**: TBD
-
-### Phase 9: Overnight Scanner
-**Goal**: After market close, the bot automatically scans the expanded universe and presents a ranked "Tomorrow's Game Plan" that the user can approve or reject from the dashboard, so morning trades are deliberate rather than reactive
-**Depends on**: Phase 7, Phase 8
-**Requirements**: OVNT-01, OVNT-02, OVNT-03, OVNT-04, OVNT-05
-**Success Criteria** (what must be TRUE):
-  1. A post-market daemon thread triggers after market close (time from Alpaca calendar, DST-safe) and scans the expanded watchlist on daily bars
-  2. The overnight scan produces a ranked "Tomorrow's Game Plan" showing top 10 candidates with symbol, score, strategy, key indicators, and top headlines
-  3. Dashboard shows the pending game plan with per-symbol approve/reject buttons that persist decisions immediately
-  4. Approved candidates get priority in the morning scan — the bot checks the pre-queue before running its live scan at open
-  5. Overnight plan decisions persist to a JSON file, survive bot restarts, and automatically expire after 18 hours
-**Plans**: TBD
-**UI hint**: yes
-
-### Phase 10: Intelligence Tab
-**Goal**: A dedicated dashboard tab gives the user market-wide context (index performance, volatility, sector rotation, breadth) plus a plain-English AI brief, so trade decisions are informed by macro conditions
 **Depends on**: Phase 8
-**Requirements**: INTEL-01, INTEL-02, INTEL-03, INTEL-04, INTEL-05, INTEL-06
-**Success Criteria** (what must be TRUE):
-  1. Intelligence tab shows SPY, QQQ, DIA, and IWM with current price, daily change %, and 5-day mini-charts
-  2. VIX gauge displays current level with a classification label (low/moderate/high/extreme) and 5-day history
-  3. Sector performance heatmap shows all 11 GICS sectors with 5-day % change and color gradient, reusing existing scanner sector ETF data
-  4. Market breadth indicators (advance/decline ratio, % above 200 SMA) are displayed and cached daily
-  5. An AI market brief (2-4 sentences via Claude Sonnet) analyzes market trend, dominant sector, VIX risk, and notable macro events — cached for 15 minutes, with graceful fallback if API key is missing
-**Plans**: TBD
-**UI hint**: yes
 
-### Phase 11: PDF Report
-**Goal**: The user can download a professional PDF report summarizing account status, positions, trade history, and performance metrics with embedded charts — generated in-memory with no disk I/O
-**Depends on**: Phase 10
-**Requirements**: PDF-01, PDF-02, PDF-03, PDF-04, PDF-05, PDF-06
-**Success Criteria** (what must be TRUE):
-  1. GET /api/report/pdf returns a downloadable PDF with account summary (equity, cash, buying power, daily P&L)
-  2. Report includes all open positions with entry price, current price, P&L, and stop/take-profit levels
-  3. Report includes last 50 trades with date, symbol, side, entry, exit, P&L, and win/loss status
-  4. Report includes performance metrics: win rate, average gain/loss, consecutive losses, and PDT usage
-  5. Report includes 5-day price line charts for held symbols rendered via matplotlib into BytesIO and embedded in the reportlab PDF — never written to disk, generated in under 3 seconds
-**Plans**: TBD
+**Issues to fix** (from architecture review):
+
+| # | Area | Issue |
+|---|------|-------|
+| 1 | dashboard.py (1084 lines) | Monolith handling REST, SSE, manual trading, scan orchestration, auto-trading, backtesting. Split into route modules. |
+| 2 | safety.py globals | `_peak_prices`, `_positions_opened_today`, `_session_start_equity` mutated from multiple threads with no lock. `update_peak_price()` has read-then-write race. |
+| 3 | state.py | Flat dict with 50+ keys, no schema validation. `update()` silently ignores unknown keys — typos produce silent bugs. |
+| 4 | Prediction data divergence | Dashboard reads predictions from `shared_state`. Bot reads from `prediction_scanner.get_latest_predictions()` (disk). Two sources can diverge. |
+| 5 | bot.py:run_bot (270 lines) | 14-phase monolith. Extract each phase into a function. |
+| 6 | server.py startup | All imports/wiring inline with no error isolation. One failure blocks entire startup. |
+
+**Success Criteria**:
+  1. dashboard.py split into ≤3 route modules (trading, scanner, data)
+  2. safety.py globals protected by Lock — no unguarded cross-thread mutation
+  3. state.py validates keys on `update()` — unknown keys raise ValueError
+  4. Single prediction data source for both bot and dashboard
+  5. run_bot phases extracted into named functions
+  6. server.py startup failures isolated — scanner failure doesn't block dashboard
+
+---
+
+### v2.2 Prediction Intelligence
+
+#### Phase 10: Prediction Feedback Loop
+**Goal**: Close the loop between predictions and outcomes — backtesting results and live trade outcomes feed back into confidence scoring, so the bot learns which signals actually work
+
+**Depends on**: Phase 9
+
+**Current state**: Backtesting (run_backtest_v3/v4) runs but results never feed into prediction.py. Prediction accuracy is tracked in prediction_log.py (50% actual win rate) but never read by the scoring engine. Confidence is computed from signal presence alone.
+
+**What to build**:
+  1. **Outcome tracker** — After each prediction, monitor the stock for 3 days and record actual outcome (direction correct? magnitude? timing?)
+  2. **Signal-level accuracy** — Track which specific signals (RSI2 oversold, IBS<0.2, BB touch, etc.) correlated with correct predictions vs false signals
+  3. **Adaptive confidence** — Weight signals by their historical accuracy, not fixed weights. RSI2 oversold showing 75% accuracy should weight more than consec_down at 45%
+  4. **Backtest integration** — run_backtest results auto-update signal weights in prediction.py config
+  5. **Dashboard accuracy display** — Show "Last 30 predictions: X correct (Y%)" prominently, per the CLAUDE.md identity
+
+**Success Criteria**:
+  1. Every prediction is tracked to resolution with predicted vs actual outcome
+  2. Signal-level accuracy stats are maintained and queryable
+  3. Confidence scoring uses historical signal accuracy, not hardcoded weights
+  4. Backtest results automatically update signal weights
+  5. Dashboard shows running prediction accuracy (overall and per-signal)
+
+---
+
+#### Phase 11: Signal Expansion
+**Goal**: Wire in the signals that are already coded but unused, and add the critical missing ones — the bot currently relies almost entirely on mean reversion with arbitrary thresholds
+
+**Depends on**: Phase 10 (needs feedback loop to validate new signals)
+
+**Already coded but not wired into prediction.py**:
+  - VWAP (in agents/strategist.py)
+  - Stochastic RSI (in agents/quant_analyst.py)
+  - Money Flow Index (in agents/quant_analyst.py)
+  - Keltner Channels (in indicators.py)
+  - MACD Divergence (in indicators.py)
+
+**Missing entirely**:
+  - Sector rotation / relative strength vs SPY
+  - Market internals (advance/decline, breadth thrust, put/call ratio)
+  - Earnings volatility expansion (data in sentiment_cache, not used)
+  - Support/resistance levels (swing point detection)
+  - Re-entry logic after stop hit
+
+**What to build**:
+  1. Wire existing signals into prediction.py scoring pipeline
+  2. Add sector relative strength as a prediction factor
+  3. Add market breadth as a regime filter (not just SPY SMA)
+  4. Add momentum breakout strategy alongside mean reversion
+  5. Validate each new signal via backtest before enabling
+
+**Success Criteria**:
+  1. Prediction engine uses ≥6 signal types (up from 2 primary + 3 confirmation)
+  2. Both mean reversion AND momentum breakout strategies produce predictions
+  3. Market breadth data informs regime filtering
+  4. Each signal's contribution to accuracy is tracked independently
+  5. Backtest win rate ≥60% across combined signal set
+
+---
+
+### v2.3 Trader Experience
+
+#### Phase 12: Dashboard UX Overhaul
+**Goal**: Restructure the dashboard around the trader's decision loop (scan → predict → decide → trade → monitor → exit) instead of the current back-office analysis layout
+
+**Depends on**: Phase 9 (dashboard split)
+
+**Current problems** (from UX review):
+  - No at-a-glance risk summary (positions, account delta, PDT remaining)
+  - No one-click position exit — requires: Positions tab → find row → click button
+  - Manual order entry hidden in slide-out panel
+  - Intelligence tab conflates predictions, scans, heatmap, and backtesting
+  - No trade fill notifications (toasts/banners)
+  - Chart toolbar has ~15 buttons across 4 groups — overwhelming
+  - 6-column metric card grid too cramped on mobile
+
+**What to build**:
+  1. **Risk banner** — Always-visible bar showing: open positions with P&L, net account delta, PDT trades remaining, daily loss used
+  2. **One-click exit** — "Close" button on every position card/row, visible from any tab
+  3. **Trade notifications** — Toast/banner when orders fill, with sound option
+  4. **Simplified chart presets** — "Swing" preset (daily, SMA+BB+Vol) replaces 15 toolbar buttons
+  5. **Decision flow** — Reorganize tabs: Today's Picks → Chart → Trade → Positions → History
+  6. **Promote order entry** — Quick-buy button on prediction cards ("Buy 1 share of NVDA")
+  7. **Mobile optimization** — Risk banner collapses to essentials, swipe to close positions
+
+**Success Criteria**:
+  1. PDT remaining and net P&L visible from every tab without clicking
+  2. Any position can be closed in ≤2 clicks from any screen
+  3. Order fills produce visible notification within 2 seconds
+  4. New user can understand what the bot recommends within 10 seconds of loading
+  5. Mobile layout shows risk + top pick above the fold
+
+---
+
+#### Phase 13: Strategic PDT Management
+**Goal**: The bot doesn't just check PDT — it reasons about whether to spend a trade now or save it for a higher-conviction setup later in the week
+
+**Depends on**: Phase 10 (needs prediction accuracy data)
+
+**Current state**: PDT is binary — "can I trade?" yes/no. No strategic reasoning about trade allocation across the week.
+
+**What to build**:
+  1. **Trade budget planner** — Show remaining trades + days until reset, with "conviction threshold escalation" (if 1 trade left, only take A-grade setups)
+  2. **Opportunity cost display** — "You used 2/3 trades. Remaining trade reserved for setups scoring ≥8.0"
+  3. **Weekly review** — After PDT window resets, show: trades used, outcomes, what was skipped and what it did
+  4. **Save-for-later queue** — If a B-grade setup fires on a day with 1 trade remaining, queue it and alert if it becomes A-grade tomorrow
+
+**Success Criteria**:
+  1. Bot adjusts conviction threshold based on remaining weekly trades
+  2. Dashboard shows trade budget with explicit "save vs spend" recommendation
+  3. Weekly retrospective shows trade allocation efficiency
+
+---
+
+### v3.0 Options & News
+
+#### Phase 14: Options Trading
+**Goal**: Add options chain analysis and order execution — calls for bullish signals, puts for bearish, with hard liquidity filters and options-specific exit rules
+
+**Depends on**: Phase 11 (needs momentum/bearish signals for puts)
+
+**Success Criteria**:
+  1. Options chain fetch returns contracts with DTE 7-21, OI>100, spread<15%
+  2. Contract selection picks closest OTM strike with adequate liquidity
+  3. All options orders are LIMIT only — never MARKET
+  4. Calls for bullish, puts for bearish, no exceptions
+  5. Auto-close when premium drops 50%, rises 75%, or DTE≤3
+
+---
+
+#### Phase 15: Multi-Source News & Overnight Scanner
+**Goal**: Aggregate news from Finnhub, RSS, SEC EDGAR, and FRED calendar. Run overnight scans to produce "Tomorrow's Game Plan" with approve/reject UI.
+
+**Depends on**: Phase 12 (needs UX for approve/reject workflow)
+
+**Success Criteria**:
+  1. Finnhub news with rate-aware batching (60 calls/min)
+  2. RSS feeds parsed (Google News, MarketWatch, Reuters)
+  3. SEC EDGAR 8-K with compliant User-Agent
+  4. FRED economic calendar (FOMC, CPI, NFP dates)
+  5. Common news format with dedup and per-source TTL caching
+  6. Post-market scan produces ranked "Tomorrow's Game Plan"
+  7. Dashboard shows approve/reject per symbol, decisions persist and expire after 18h
+
+---
+
+### v3.1 AI & Reports
+
+#### Phase 16: AI Market Analyst
+**Goal**: Claude-powered analysis panel that gives plain-English market commentary and per-stock trade recommendations
+
+**Depends on**: Phase 15 (needs multi-source news data)
+
+**Success Criteria**:
+  1. AI brief (2-4 sentences) analyzes trend, dominant sector, VIX, macro events
+  2. Per-stock "What should I do?" gives buy/sell/hold/wait with reasoning
+  3. Analysis updates every 15 minutes, cached, graceful fallback if API unavailable
+
+---
+
+#### Phase 17: PDF Report
+**Goal**: Downloadable professional report with account summary, positions, trade history, metrics, and embedded charts
+
+**Depends on**: Phase 16
+
+**Success Criteria**:
+  1. GET /api/report/pdf returns downloadable PDF
+  2. Includes: account summary, open positions, last 50 trades, performance metrics
+  3. Embedded price charts via matplotlib, generated in-memory, under 3 seconds
+
+---
 
 ## Progress
 
-**Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 11
+| Phase | Milestone | Status | Completed |
+|-------|-----------|--------|-----------|
+| 1. Safety Infrastructure | v1.0 | :white_check_mark: Complete | 2026-03-28 |
+| 2. Prediction Engine | v1.0 | :white_check_mark: Complete | 2026-03-30 |
+| 6. Score Recalibration | v2.0 | :white_check_mark: Complete | 2026-04-08 |
+| 7. Expanded Scanner | v2.0 | :white_check_mark: Complete | 2026-04-19 |
+| **8. Critical Bug Fixes** | **v2.1** | **Not started** | — |
+| 9. Architecture Cleanup | v2.1 | Not started | — |
+| 10. Prediction Feedback Loop | v2.2 | Not started | — |
+| 11. Signal Expansion | v2.2 | Not started | — |
+| 12. Dashboard UX Overhaul | v2.3 | Not started | — |
+| 13. Strategic PDT Management | v2.3 | Not started | — |
+| 14. Options Trading | v3.0 | Not started | — |
+| 15. Multi-Source News & Overnight | v3.0 | Not started | — |
+| 16. AI Market Analyst | v3.1 | Not started | — |
+| 17. PDF Report | v3.1 | Not started | — |
 
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 1. Safety Infrastructure + Bracket Orders | v1.0 | 4/4 | Complete | 2026-03-28 |
-| 2. Prediction Engine + Stock Scanning | v1.0 | 5/5 | Complete | 2026-03-30 |
-| 3. Options Trading | v1.0 | 0/? | Not started | - |
-| 4. Position Sizing & Allocation | v1.0 | 0/? | Not started | - |
-| 5. Dashboard + Predictions + AI Analyst | v1.0 | 0/? | Not started | - |
-| 6. Score Recalibration | v2.0 | 2/2 | Complete | 2026-04-08 |
-| 7. Expanded Scanner | v2.0 | 2/2 | Complete | 2026-04-19 |
-| 8. Multi-Source News | v2.0 | 0/? | Not started | - |
-| 9. Overnight Scanner | v2.0 | 0/? | Not started | - |
-| 10. Intelligence Tab | v2.0 | 0/? | Not started | - |
-| 11. PDF Report | v2.0 | 0/? | Not started | - |
+## Dependency Graph
+
+```
+Phase 8 (Bug Fixes)
+  └── Phase 9 (Architecture Cleanup)
+        ├── Phase 10 (Feedback Loop)
+        │     ├── Phase 11 (Signal Expansion)
+        │     │     └── Phase 14 (Options Trading)
+        │     └── Phase 13 (Strategic PDT)
+        └── Phase 12 (UX Overhaul)
+              └── Phase 15 (News & Overnight)
+                    └── Phase 16 (AI Analyst)
+                          └── Phase 17 (PDF Report)
+```
+
+## Blockers/Concerns
+
+- **Phase 11**: Adding signals without feedback loop = noise. Must have Phase 10 first.
+- **Phase 14**: Options on $500 account limits contracts to ~$1-2 premium. Liquidity will be thin.
+- **Phase 15**: Finnhub free tier 60 calls/min. SEC EDGAR requires specific User-Agent.
+- **Phase 15**: DST boundary timing — use Alpaca calendar API, not hardcoded times.
+- **Phase 16**: Anthropic API cost. Cache aggressively, 15-min TTL minimum.
+
+## Key Insight from Review
+
+> The bot's current ~50% win rate comes from risk management (small positions, trailing stops), NOT from prediction accuracy. The prediction engine is well-structured but has critical bugs (dead veto, broken accuracy tracking, overwritten sizing) and relies almost entirely on mean reversion with arbitrary thresholds. Fixing the feedback loop (Phase 10) is the single highest-leverage improvement — without it, adding more signals just adds noise.
