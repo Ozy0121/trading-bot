@@ -227,6 +227,23 @@ def get_accuracy(window: int = 30) -> dict:
     }
 
 
+def get_symbol_accuracy(symbol: str, window: int = 50) -> dict:
+    """Get prediction accuracy for a specific symbol.
+
+    Returns dict with 'accuracy' (0.0-1.0) and 'samples' (int).
+    """
+    records = _load_records()
+    sym = symbol.upper()
+    resolved = [r for r in records
+                if r.get("symbol", "").upper() == sym
+                and r["outcome"] in ("correct", "incorrect")]
+    if not resolved:
+        return {"accuracy": 0.0, "samples": 0}
+    recent = resolved[-window:]
+    correct = sum(1 for r in recent if r["outcome"] == "correct")
+    return {"accuracy": round(correct / len(recent), 3), "samples": len(recent)}
+
+
 def get_recent_predictions(limit: int = 20) -> list[dict]:
     """Get most recent predictions for dashboard display."""
     records = _load_records()
