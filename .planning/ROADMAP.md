@@ -113,6 +113,13 @@ Plans:
   5. run_bot phases extracted into named functions
   6. server.py startup failures isolated — scanner failure doesn't block dashboard
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Split dashboard.py into three Flask Blueprint route modules
+- [ ] 09-02-PLAN.md — Add state schema validation (ValueError) and safety.py thread locks
+- [ ] 09-03-PLAN.md — Unify prediction data, isolate server startup, extract run_bot phases
+
 ---
 
 ### v2.2 Prediction Intelligence
