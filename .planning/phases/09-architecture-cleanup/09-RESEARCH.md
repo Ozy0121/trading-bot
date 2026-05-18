@@ -636,27 +636,16 @@ does not modify what keys are stored — existing state in memory is unaffected.
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Are there other undeclared state.update() keys besides scan_funnel?**
-   - What we know: `scan_funnel` confirmed missing from schema. Other callers not fully audited.
-   - What's unclear: `bot.py`, `expanded_scanner.py`, `sentiment.py` may have additional unknown keys.
-   - Recommendation: Wave 0 task — grep all `shared_state.update(` calls across the repo and
-     cross-reference every key against the `_state` dict. Add missing keys before D-04.
+   - RESOLVED: Plan 09-02 Task 1 Step 1 performs a full grep audit of all `shared_state.update()` call sites before enforcing ValueError. Any missing keys will be added to the schema.
 
 2. **Should `_get_prediction_candidate()` in bot.py be updated as part of D-03?**
-   - What we know: It calls `prediction_scanner.get_latest_predictions()` (disk source).
-   - What's unclear: Whether the planner treats this as in-scope for D-03.
-   - Recommendation: Yes — include it in the prediction unification wave. Otherwise D-03 is
-     incomplete (bot still diverges from dashboard).
+   - RESOLVED: Yes — Plan 09-03 Task 1 explicitly changes `_get_prediction_candidate()` to read from `shared_state.snapshot()` instead of disk.
 
 3. **Does `scan_funnel` vs `expanded_scan_funnel` confusion exist elsewhere?**
-   - What we know: `state.py` has `expanded_scan_funnel` (line 129). Dashboard writes `scan_funnel`.
-   - What's unclear: Whether `scan_funnel` and `expanded_scan_funnel` are intended to be separate
-     or the dashboard is using the wrong key name.
-   - Recommendation: Audit during the grep pass. If `scan_funnel` is intended to be separate from
-     `expanded_scan_funnel`, add it to the schema. If it's a typo for `expanded_scan_funnel`, fix
-     the call site.
+   - RESOLVED: They are two separate keys. `expanded_scan_funnel` is written by expanded_scanner.py for expanded scan results. `scan_funnel` is written by dashboard.py for prediction scan results. Plan 09-02 Task 1 adds `scan_funnel` as a new key to `_state` dict.
 
 ---
 
