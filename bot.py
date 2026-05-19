@@ -343,14 +343,14 @@ def _get_prediction_candidate() -> dict | None:
     Returns a dict shaped like a scanner result, or None.
     """
     try:
-        from prediction_scanner import get_latest_predictions
         from openbb_data import fetch_bars
 
-        preds = get_latest_predictions()
+        snap = shared_state.snapshot()
+        preds = snap.get("predictions", [])
         if not preds:
             return None
 
-        all_picks = preds.get("ready_tomorrow", []) + preds.get("all_predictions", [])
+        all_picks = preds  # predictions already filtered/ranked in shared_state
         if not all_picks:
             return None
 

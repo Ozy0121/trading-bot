@@ -394,6 +394,31 @@ def check_prediction_accuracy() -> dict:
     return accuracy
 
 
+# ── Hydrate shared_state from disk ──────────────────────────────────────────
+
+def load_predictions_into_state() -> bool:
+    """Load today's disk predictions into shared_state on startup.
+    Returns True if predictions were loaded, False if stale/missing."""
+    import state as shared_state
+    try:
+        with open(PREDICTIONS_FILE) as f:
+            data = json.load(f)
+        scan_date = data.get("scan_date", "")
+        if scan_date != date.today().isoformat():
+            log.info("[prediction_scanner] Disk predictions from %s are stale, skipping", scan_date)
+            return False
+        preds = data.get("all_predictions", [])
+        shared_state.update(
+            predictions=preds[:30],
+            prediction_count=len(preds),
+        )
+        log.info("[prediction_scanner] Loaded %d predictions from disk into shared_state", len(preds))
+        return True
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        log.debug("[prediction_scanner] No disk predictions to load: %s", exc)
+        return False
+
+
 # ── Load saved predictions ───────────────────────────────────────────────────
 
 def get_latest_predictions() -> dict | None:

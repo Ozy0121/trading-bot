@@ -100,8 +100,9 @@ def api_predictions_run():
 @scanner_bp.route("/api/overnight")
 def api_overnight():
     """Return the latest overnight predictions and accuracy stats."""
-    from prediction_scanner import get_latest_predictions, get_accuracy_summary
-    preds = get_latest_predictions()
+    from prediction_scanner import get_accuracy_summary
+    snap = shared_state.snapshot()
+    preds = snap.get("overnight_predictions")
     accuracy = get_accuracy_summary()
     return jsonify({
         "predictions": preds,

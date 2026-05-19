@@ -93,6 +93,10 @@ dashboard.set_dependencies(
     start_fn=bot.run_bot_from_server,
 )
 
+# Hydrate shared_state with today's disk predictions (if any)
+from prediction_scanner import load_predictions_into_state
+load_predictions_into_state()
+
 from agents.event_bus import EventBus
 from agents.coordinator import AgentCoordinator
 

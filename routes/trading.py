@@ -453,12 +453,12 @@ def api_predictions_auto_trade():
 
     def _do():
         try:
-            from prediction_scanner import get_latest_predictions
             from bot import place_limit_buy
             from safety import check_pdt_allows_buy, calculate_safe_qty, get_dynamic_fraction, get_pdt_info
 
-            preds = get_latest_predictions()
-            if not preds:
+            snap = shared_state.snapshot()
+            preds_list = snap.get("predictions", [])
+            if not preds_list:
                 log.warning("[auto-trade] No predictions available")
                 return
 
@@ -477,12 +477,10 @@ def api_predictions_auto_trade():
             # Cap orders to PDT remaining trades
             effective_max = min(max_orders, pdt["remaining"]) if pdt["applies"] else max_orders
 
-            # Get top picks (launch_zone and pre_breakout only)
-            ready = preds.get("ready_tomorrow", [])
-            if not ready:
-                ready = [p for p in preds.get("all_predictions", [])
-                         if p.get("confidence", 0) >= 8
-                         and p.get("stage") in ("launch_zone", "pre_breakout")]
+            # Get top picks (launch_zone and pre_breakout only) from shared_state
+            ready = [p for p in preds_list
+                     if p.get("confidence", 0) >= 8
+                     and p.get("stage") in ("launch_zone", "pre_breakout")]
 
             placed = 0
             for p in ready[:effective_max]:
