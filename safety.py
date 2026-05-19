@@ -79,19 +79,25 @@ def validate_options_enabled(trading_client: TradingClient, live_mode: bool) -> 
 
 
 # ── State persistence ─────────────────────────────────────────────────────────
-_state_lock = threading.Lock()
+_state_lock = threading.Lock()       # protects file I/O in _save_state()
+_globals_lock = threading.Lock()     # protects _session_start_equity, _peak_prices, _positions_opened_today
 STATE_FILE = config.STATE_FILE_PATH
 
 
 def _save_state() -> None:
-    """Write current safety globals to disk. Call after every mutation."""
+    """Write current safety globals to disk. Call after every mutation.
+
+    IMPORTANT: Must be called OUTSIDE _globals_lock to avoid deadlock.
+    Snapshots globals under _globals_lock, then writes under _state_lock.
+    """
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    payload = {
-        "date": date.today().isoformat(),
-        "peak_prices": dict(_peak_prices),
-        "positions_opened_today": list(_positions_opened_today),
-        "session_start_equity": _session_start_equity,
-    }
+    with _globals_lock:
+        payload = {
+            "date": date.today().isoformat(),
+            "peak_prices": dict(_peak_prices),
+            "positions_opened_today": list(_positions_opened_today),
+            "session_start_equity": _session_start_equity,
+        }
     try:
         with _state_lock:
             tmp = STATE_FILE + ".tmp"
@@ -115,9 +121,10 @@ def load_state_from_file() -> None:
         if saved_date != date.today().isoformat():
             log.info("[safety] State file is from %s -- starting fresh (new day).", saved_date)
             return
-        _peak_prices = data.get("peak_prices", {})
-        _positions_opened_today = set(data.get("positions_opened_today", []))
-        _session_start_equity = data.get("session_start_equity")
+        with _globals_lock:
+            _peak_prices = data.get("peak_prices", {})
+            _positions_opened_today = set(data.get("positions_opened_today", []))
+            _session_start_equity = data.get("session_start_equity")
         log.info("[safety] State restored: %d peak prices, %d PDT entries.",
                  len(_peak_prices), len(_positions_opened_today))
     except Exception as exc:
@@ -325,16 +332,19 @@ _session_start_equity: float | None = None
 
 def record_session_start_equity(equity: float) -> None:
     global _session_start_equity
-    _session_start_equity = equity
+    with _globals_lock:
+        _session_start_equity = equity
     log.info("[safety] Session start equity: $%.2f", equity)
     _save_state()
 
 
 def daily_loss_exceeded(current_equity: float) -> bool:
-    if _session_start_equity is None:
+    with _globals_lock:
+        start = _session_start_equity
+    if start is None:
         log.warning("[safety] Session start equity not recorded.")
         return False
-    loss = _session_start_equity - current_equity
+    loss = start - current_equity
     if loss >= config.DAILY_LOSS_LIMIT:
         log.critical("[safety] DAILY LOSS LIMIT HIT. Loss=$%.2f / Limit=$%.2f.",
                      loss, config.DAILY_LOSS_LIMIT)
@@ -353,7 +363,8 @@ _peak_prices: dict[str, float] = {}   # symbol -> highest price since entry
 
 def record_peak_price(symbol: str, price: float) -> None:
     """Call when a position is first opened to set the initial peak."""
-    _peak_prices[symbol.upper()] = price
+    with _globals_lock:
+        _peak_prices[symbol.upper()] = price
     log.debug("[safety] Trailing stop initialized: %s @ %.4f", symbol, price)
     _save_state()
 
@@ -361,15 +372,20 @@ def record_peak_price(symbol: str, price: float) -> None:
 def update_peak_price(symbol: str, price: float) -> None:
     """Call each cycle to ratchet the peak higher as price rises."""
     sym = symbol.upper()
-    if sym not in _peak_prices or price > _peak_prices[sym]:
-        _peak_prices[sym] = price
+    should_save = False
+    with _globals_lock:
+        if sym not in _peak_prices or price > _peak_prices[sym]:
+            _peak_prices[sym] = price
+            should_save = True
+    if should_save:
         _save_state()
 
 
 def trailing_stop_triggered(symbol: str, price: float) -> bool:
     """True if price has fallen >= TRAILING_STOP_PCT from the peak."""
-    sym  = symbol.upper()
-    peak = _peak_prices.get(sym)
+    sym = symbol.upper()
+    with _globals_lock:
+        peak = _peak_prices.get(sym)
     if peak is None or peak <= 0:
         return False
     drawdown = (peak - price) / peak
@@ -384,12 +400,14 @@ def trailing_stop_triggered(symbol: str, price: float) -> bool:
 
 def clear_peak_price(symbol: str) -> None:
     """Call when a position is closed."""
-    _peak_prices.pop(symbol.upper(), None)
+    with _globals_lock:
+        _peak_prices.pop(symbol.upper(), None)
     _save_state()
 
 
 def get_peak_price(symbol: str) -> float | None:
-    return _peak_prices.get(symbol.upper())
+    with _globals_lock:
+        return _peak_prices.get(symbol.upper())
 
 
 # ── PDT (Pattern Day Trader) protection ──────────────────────────────────────
@@ -398,17 +416,20 @@ _positions_opened_today: set[str] = set()
 
 
 def record_buy_date(symbol: str) -> None:
-    _positions_opened_today.add(symbol.upper())
+    with _globals_lock:
+        _positions_opened_today.add(symbol.upper())
     _save_state()
 
 
 def clear_position_date(symbol: str) -> None:
-    _positions_opened_today.discard(symbol.upper())
+    with _globals_lock:
+        _positions_opened_today.discard(symbol.upper())
     _save_state()
 
 
 def would_be_day_trade(symbol: str) -> bool:
-    return symbol.upper() in _positions_opened_today
+    with _globals_lock:
+        return symbol.upper() in _positions_opened_today
 
 
 def check_pdt_allows_sell(trading_client: TradingClient, symbol: str) -> bool:

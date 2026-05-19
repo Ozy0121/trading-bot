@@ -127,17 +127,20 @@ _state = {
     "expanded_scan_time":     None,   # ISO timestamp of last expanded scan
     "expanded_scan_status":   "idle", # idle | running | complete | error
     "expanded_scan_funnel":   {},     # {universe: N, t1: N, t2: N, t3: N, survivors: N}
+    "scan_funnel":            {},     # prediction scan funnel breakdown
 }
 
 
 def update(**kwargs) -> None:
     with _lock:
         for k, v in kwargs.items():
-            if k in _state:
-                _state[k] = v
-            else:
-                import logging
-                logging.getLogger(__name__).warning("[state] Unknown key ignored: %s", k)
+            if k not in _state:
+                raise ValueError(
+                    f"[state] Unknown key: {k!r}. "
+                    f"Add it to _state in state.py or fix the typo. "
+                    f"Valid keys: {sorted(k for k in _state.keys() if not k.startswith('_'))}"
+                )
+            _state[k] = v
 
 
 def push_history(time: str, price: float, short_sma: float, long_sma: float,
