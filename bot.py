@@ -17,6 +17,7 @@ Strategy summary:
 import signal
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from alpaca.trading.client import TradingClient
@@ -430,6 +431,324 @@ def _get_prediction_candidate() -> dict | None:
         return None
 
 
+# ── Per-cycle context ───────────────────────────────────────────────────────
+
+@dataclass
+class _CycleContext:
+    """Per-cycle state passed between phase functions."""
+    trading_client: TradingClient = None
+    data_client: StockHistoricalDataClient = None
+    session_start_equity: float = 0.0
+    cycle_start: datetime = None
+    scan_results: list = field(default_factory=list)
+    catalysts: dict = field(default_factory=dict)
+    equity: float = 0.0
+    cash: float = 0.0
+    buying_power: float = 0.0
+    consecutive_losses: int = 0
+    all_positions: list = field(default_factory=list)
+    held_symbol: str = ""
+    held_qty: float = 0.0
+    avg_cost: float = 0.0
+    pos_pnl: float = 0.0
+    held_result: dict = None
+    price: float = 0.0
+    sig: str = "HOLD"
+    pdt: dict = field(default_factory=dict)
+    peak: float = None
+    trail_level: float = None
+    s_sma: float = 0.0
+    l_sma: float = 0.0
+
+
+# ── Extracted phase functions ───────────────────────────────────────────────
+
+def _phase_1_scan_watchlist(ctx: _CycleContext) -> None:
+    """Phase 1: Scan watchlist and fetch catalysts."""
+    watchlist = get_watchlist()
+    ctx.catalysts = get_catalysts(watchlist)
+    ctx.scan_results = scan(watchlist, catalysts=ctx.catalysts)
+    shared_state.update(watchlist=[
+        {k: v for k, v in r.items() if k != "df"}
+        for r in ctx.scan_results
+    ])
+
+
+def _phase_2_check_market_hours(ctx: _CycleContext) -> bool:
+    """Phase 2: Verify market is open. Returns False if should skip cycle."""
+    if not assert_market_open(ctx.trading_client):
+        shared_state.push_trade(
+            time=ctx.cycle_start.strftime("%H:%M:%S"),
+            event="MARKET_CLOSED", detail="Waiting for open",
+        )
+        return False
+    return True
+
+
+def _phase_3_get_account_info(ctx: _CycleContext) -> None:
+    """Phase 3: Fetch account equity, cash, buying power."""
+    account = ctx.trading_client.get_account()
+    ctx.equity = float(account.equity)
+    ctx.cash = float(account.cash)
+    ctx.buying_power = float(account.buying_power)
+
+
+def _phase_4_check_daily_loss(ctx: _CycleContext) -> bool:
+    """Phase 4: Check daily loss limit. Returns True if limit hit (should break)."""
+    if daily_loss_exceeded(ctx.equity):
+        log.critical("[bot] Daily loss limit hit. Kill switch.")
+        shared_state.update(status="loss_limit_hit")
+        shared_state.push_trade(
+            time=ctx.cycle_start.strftime("%H:%M:%S"),
+            event="DAILY_LOSS_LIMIT",
+            detail=f"Loss exceeded ${config.DAILY_LOSS_LIMIT:.2f}.",
+        )
+        kill_switch(ctx.trading_client)
+        return True
+    return False
+
+
+def _phase_5_update_pdt(ctx: _CycleContext) -> None:
+    """Phase 5: Fetch and update PDT status."""
+    ctx.pdt = get_pdt_info(ctx.trading_client)
+    shared_state.update(
+        pdt_applies=ctx.pdt["applies"],
+        pdt_used=ctx.pdt["used"],
+        pdt_remaining=ctx.pdt["remaining"],
+    )
+
+
+def _phase_6_get_losses(ctx: _CycleContext) -> None:
+    """Phase 6: Get consecutive losses for position sizing."""
+    snap = shared_state.snapshot()
+    ctx.consecutive_losses = snap.get("consecutive_losses", 0)
+
+
+def _phase_7_agent_cycle(ctx: _CycleContext) -> None:
+    """Phase 7a: Run agent coordinator cycle."""
+    if _coordinator:
+        try:
+            cycle_result = _coordinator.run_cycle()
+            log.info("[bot] Agent cycle result: %s", cycle_result.get("action", "UNKNOWN"))
+        except Exception as exc:
+            log.error("[bot] Coordinator cycle error: %s", exc, exc_info=True)
+
+
+def _phase_8_find_positions(ctx: _CycleContext) -> None:
+    """Phase 8: Find current open positions."""
+    ctx.all_positions = get_all_positions_data(ctx.trading_client)
+    shared_state.update(positions=ctx.all_positions)
+
+    # Determine what we're currently holding
+    snap = shared_state.snapshot()
+    ctx.held_symbol = snap.get("symbol") or config.SYMBOL
+    # If we have an open position, use that symbol
+    if ctx.all_positions:
+        ctx.held_symbol = ctx.all_positions[0]["symbol"]
+        shared_state.update(symbol=ctx.held_symbol)
+
+    ctx.held_qty, ctx.avg_cost, ctx.pos_pnl = get_held_position(
+        ctx.trading_client, ctx.held_symbol
+    )
+
+    # Get scan result for held symbol
+    ctx.held_result = next(
+        (r for r in ctx.scan_results if r["symbol"] == ctx.held_symbol), None
+    )
+
+    ctx.price = ctx.held_result["price"] if ctx.held_result else 0.0
+    ctx.sig = ctx.held_result["signal"] if ctx.held_result else "HOLD"
+    ctx.s_sma = ctx.held_result.get("short_sma", 0.0) if ctx.held_result else 0.0
+    ctx.l_sma = ctx.held_result.get("long_sma", 0.0) if ctx.held_result else 0.0
+
+
+def _phase_9_update_trailing_stop(ctx: _CycleContext) -> None:
+    """Phase 9: Update trailing stop peak price."""
+    if ctx.held_qty > 0 and ctx.price > 0:
+        update_peak_price(ctx.held_symbol, ctx.price)
+
+    ctx.peak = get_peak_price(ctx.held_symbol)
+    ctx.trail_level = round(ctx.peak * (1 - config.TRAILING_STOP_PCT), 4) if ctx.peak else None
+
+    log.info(
+        "[bot] %s qty=%.0f equity=$%.2f | PDT %d/3 | losses=%d | peak=%s trail=%s",
+        ctx.held_symbol, ctx.held_qty, ctx.equity,
+        ctx.pdt["used"], ctx.consecutive_losses,
+        f"${ctx.peak:.2f}" if ctx.peak else "—",
+        f"${ctx.trail_level:.2f}" if ctx.trail_level else "—",
+    )
+
+
+def _phase_10_update_state(ctx: _CycleContext) -> None:
+    """Phase 10: Push all data to shared state."""
+    daily_pnl = ctx.equity - ctx.session_start_equity
+
+    ind = {}
+    if ctx.held_result and ctx.held_result.get("df") is not None:
+        ind = compute_indicators(ctx.held_result["df"])
+
+    cat = ctx.catalysts.get(ctx.held_symbol, {})
+
+    shared_state.update(
+        equity=ctx.equity, cash=ctx.cash, buying_power=ctx.buying_power,
+        symbol=ctx.held_symbol,
+        shares_held=ctx.held_qty, avg_cost=ctx.avg_cost, position_pnl=ctx.pos_pnl,
+        signal=ctx.sig, price=ctx.price, short_sma=ctx.s_sma, long_sma=ctx.l_sma,
+        daily_pnl=round(daily_pnl, 2),
+        session_start_equity=ctx.session_start_equity,
+        peak_price=ctx.peak, trailing_stop_price=ctx.trail_level,
+        rsi=ctx.held_result.get("rsi") if ctx.held_result else None,
+        macd_hist=ctx.held_result.get("macd_hist") if ctx.held_result else None,
+        bb_upper=ctx.held_result.get("bb_upper") if ctx.held_result else None,
+        bb_lower=ctx.held_result.get("bb_lower") if ctx.held_result else None,
+        volume_ratio=ctx.held_result.get("volume_ratio", 1.0) if ctx.held_result else 1.0,
+        catalyst_ark=cat.get("ark_buying", False),
+        catalyst_upgrade=cat.get("analyst_upgrade", False),
+        _rsi_series=ind.get("_rsi_series", []),
+        _macd_series=ind.get("_macd_series", []),
+        _macd_sig_series=ind.get("_macd_sig_series", []),
+        _macd_hist_series=ind.get("_macd_hist_series", []),
+        _bb_upper_series=ind.get("_bb_upper_series", []),
+        _bb_lower_series=ind.get("_bb_lower_series", []),
+    )
+
+
+def _phase_11_sell_logic(ctx: _CycleContext) -> bool:
+    """Phase 11: Evaluate sell signals (trailing stop, take profit, SMA signal).
+    Returns True if a sell action was taken or blocked (caller should sleep+continue)."""
+    # Trailing stop
+    if ctx.held_qty > 0 and ctx.price > 0:
+        if trailing_stop_triggered(ctx.held_symbol, ctx.price):
+            if check_pdt_allows_sell(ctx.trading_client, ctx.held_symbol):
+                place_sell(ctx.trading_client, ctx.held_qty, ctx.price,
+                           reason="TRAILING_STOP", symbol=ctx.held_symbol,
+                           avg_cost=ctx.avg_cost)
+            else:
+                log.warning("[bot] PDT: trailing stop blocked on %s.", ctx.held_symbol)
+                shared_state.push_trade(
+                    time=ctx.cycle_start.strftime("%H:%M:%S"),
+                    event="PDT_HOLD",
+                    detail=f"Trailing stop triggered on {ctx.held_symbol} but PDT blocked.",
+                )
+            return True
+
+    # Take-profit
+    if ctx.held_qty > 0 and ctx.avg_cost > 0 and ctx.price:
+        pnl_pct = (ctx.price - ctx.avg_cost) / ctx.avg_cost
+
+        if config.TAKE_PROFIT_PCT > 0 and pnl_pct >= config.TAKE_PROFIT_PCT:
+            log.info("[bot] TAKE PROFIT: +%.2f%% on %s", pnl_pct * 100, ctx.held_symbol)
+            if check_pdt_allows_sell(ctx.trading_client, ctx.held_symbol):
+                place_sell(ctx.trading_client, ctx.held_qty, ctx.price,
+                           reason="TAKE_PROFIT", symbol=ctx.held_symbol,
+                           avg_cost=ctx.avg_cost)
+            else:
+                log.warning("[bot] PDT: take-profit blocked on %s.", ctx.held_symbol)
+            return True
+
+    # SMA sell signal
+    if ctx.held_qty > 0 and ctx.sig == "SELL":
+        if check_pdt_allows_sell(ctx.trading_client, ctx.held_symbol):
+            place_sell(ctx.trading_client, ctx.held_qty, ctx.price,
+                       reason="SIGNAL", symbol=ctx.held_symbol,
+                       avg_cost=ctx.avg_cost)
+        else:
+            log.info("[bot] PDT: holding %s — sell blocked.", ctx.held_symbol)
+            shared_state.push_trade(
+                time=ctx.cycle_start.strftime("%H:%M:%S"),
+                event="PDT_HOLD",
+                detail=f"SELL signal on {ctx.held_symbol} blocked by PDT.",
+            )
+        return True
+
+    return False
+
+
+def _phase_12_buy_logic(ctx: _CycleContext) -> None:
+    """Phase 12: Evaluate buy signals and place orders."""
+    if ctx.held_qty == 0:
+        if not check_pdt_allows_buy(ctx.trading_client):
+            log.info("[bot] PDT: 3/3 day trades used. No new positions today.")
+            shared_state.push_trade(
+                time=ctx.cycle_start.strftime("%H:%M:%S"),
+                event="PDT_HOLD",
+                detail="3/3 day trades used — no new positions today.",
+            )
+        else:
+            candidates = best_buy(ctx.scan_results)
+            candidate = None
+            source = "watchlist"
+
+            if candidates:
+                candidate = candidates[0]
+            else:
+                # Check prediction engine picks
+                pred_candidate = _get_prediction_candidate()
+                if pred_candidate:
+                    candidate = pred_candidate
+                    source = "prediction"
+
+            if candidate:
+                buy_sym = candidate["symbol"]
+                buy_price = candidate["price"]
+                conv = candidate.get("conviction", {})
+                cat_info = ctx.catalysts.get(buy_sym, {})
+                cat_str = []
+                if cat_info.get("ark_buying"):
+                    cat_str.append("ARK")
+                if cat_info.get("analyst_upgrade"):
+                    cat_str.append("Upgrade")
+                if cat_str:
+                    log.info("[bot] Catalysts for %s: %s", buy_sym, "+".join(cat_str))
+
+                log.info("[bot] HIGH CONVICTION BUY: %s @ $%.2f "
+                         "(score=%.1f rsi=%.1f vol=%.1fx macd=%.4f) "
+                         "[source=%s, %d candidates available]",
+                         buy_sym, buy_price,
+                         candidate.get("score", 0),
+                         candidate.get("rsi", 50),
+                         candidate.get("volume_ratio", 1.0),
+                         candidate.get("macd_hist", 0),
+                         source, len(candidates) if candidates else 1)
+
+                log.info("[bot] Best candidate: %s (conviction: %.1f/10 -- "
+                         "tech:%.1f vol:%.1f sent:%.1f sec:%.1f)",
+                         buy_sym, conv.get("composite", 0),
+                         conv.get("technical", 0), conv.get("volume", 0),
+                         conv.get("sentiment", 0), conv.get("sector", 0))
+
+                log.info("[bot] Executing trade from %s strategy: %s",
+                         source,
+                         ", ".join(conv.get("strategies_fired", ["unknown"])))
+
+                shared_state.update(symbol=buy_sym)
+                place_buy(ctx.trading_client, ctx.equity, buy_price,
+                          symbol=buy_sym,
+                          consecutive_losses=ctx.consecutive_losses)
+            else:
+                log.info("[bot] No high-conviction BUY found. Patience. Holding cash.")
+    else:
+        log.info("[bot] Holding %s — signal=%s. Monitoring trailing stop @ $%s.",
+                 ctx.held_symbol, ctx.sig,
+                 f"{ctx.trail_level:.2f}" if ctx.trail_level else "—")
+
+
+def _phase_13_push_history(ctx: _CycleContext) -> None:
+    """Phase 13: Push chart history to shared state."""
+    if ctx.price and ctx.s_sma and ctx.l_sma:
+        last_bar = ctx.held_result["df"].iloc[-1] if ctx.held_result else None
+        shared_state.push_history(
+            time=ctx.cycle_start.isoformat(), price=ctx.price,
+            short_sma=ctx.s_sma, long_sma=ctx.l_sma,
+            bb_upper=ctx.held_result.get("bb_upper") if ctx.held_result else None,
+            bb_lower=ctx.held_result.get("bb_lower") if ctx.held_result else None,
+            open_=float(last_bar["open"]) if last_bar is not None else None,
+            high=float(last_bar["high"]) if last_bar is not None else None,
+            low=float(last_bar["low"]) if last_bar is not None else None,
+            volume=float(last_bar["volume"]) if last_bar is not None else None,
+        )
+
+
 # ── Main trading loop ────────────────────────────────────────────────────────
 
 def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClient,
@@ -465,262 +784,33 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
             log.error("[bot] Coordinator startup failed: %s", exc, exc_info=True)
 
     while not _shutdown_requested:
-        cycle_start = datetime.now(timezone.utc)
-        log.info("[bot] ── Cycle: %s ──", cycle_start.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        ctx = _CycleContext(
+            trading_client=trading_client,
+            data_client=data_client,
+            session_start_equity=session_start_equity,
+            cycle_start=datetime.now(timezone.utc),
+        )
+        log.info("[bot] ── Cycle: %s ──", ctx.cycle_start.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         try:
-            # ── 1. Scan watchlist (runs even when market closed) ────────
-            watchlist = get_watchlist()
-            catalysts = get_catalysts(watchlist)
-            scan_results = scan(watchlist, catalysts=catalysts)
-            shared_state.update(watchlist=[
-                {k: v for k, v in r.items() if k != "df"}
-                for r in scan_results
-            ])
-
-            # ── 2. Market hours ──────────────────────────────────────────────
-            if not assert_market_open(trading_client):
-                shared_state.push_trade(
-                    time=cycle_start.strftime("%H:%M:%S"),
-                    event="MARKET_CLOSED", detail="Waiting for open",
-                )
+            _phase_1_scan_watchlist(ctx)
+            if not _phase_2_check_market_hours(ctx):
                 _interruptible_sleep(config.POLL_INTERVAL)
                 continue
-
-            # ── 3. Account info ──────────────────────────────────────────────
-            account = trading_client.get_account()
-            equity  = float(account.equity)
-            cash    = float(account.cash)
-            bp      = float(account.buying_power)
-
-            # ── 4. Daily loss check ──────────────────────────────────────────
-            if daily_loss_exceeded(equity):
-                log.critical("[bot] Daily loss limit hit. Kill switch.")
-                shared_state.update(status="loss_limit_hit")
-                shared_state.push_trade(
-                    time=cycle_start.strftime("%H:%M:%S"),
-                    event="DAILY_LOSS_LIMIT",
-                    detail=f"Loss exceeded ${config.DAILY_LOSS_LIMIT:.2f}.",
-                )
-                kill_switch(trading_client)
+            _phase_3_get_account_info(ctx)
+            if _phase_4_check_daily_loss(ctx):
                 break
-
-            # ── 5. PDT status ────────────────────────────────────────────────
-            pdt = get_pdt_info(trading_client)
-            shared_state.update(
-                pdt_applies=pdt["applies"],
-                pdt_used=pdt["used"],
-                pdt_remaining=pdt["remaining"],
-            )
-
-            # ── 6. Get consecutive losses for position sizing ─────────────────
-            snap = shared_state.snapshot()
-            consecutive_losses = snap.get("consecutive_losses", 0)
-
-            # ── 7a. Agent coordinator cycle ─────────────────────────────────
-            if _coordinator:
-                try:
-                    cycle_result = _coordinator.run_cycle()
-                    log.info("[bot] Agent cycle result: %s", cycle_result.get("action", "UNKNOWN"))
-                except Exception as exc:
-                    log.error("[bot] Coordinator cycle error: %s", exc, exc_info=True)
-
-            # ── 8. Find current open positions ───────────────────────────────
-            all_positions = get_all_positions_data(trading_client)
-            shared_state.update(positions=all_positions)
-
-            # Determine what we're currently holding
-            held_symbol = snap.get("symbol") or config.SYMBOL
-            # If we have an open position, use that symbol
-            if all_positions:
-                held_symbol = all_positions[0]["symbol"]
-                shared_state.update(symbol=held_symbol)
-
-            held_qty, avg_cost, pos_pnl = get_held_position(trading_client, held_symbol)
-
-            # Get scan result for held symbol
-            held_result = next(
-                (r for r in scan_results if r["symbol"] == held_symbol), None
-            )
-
-            price = held_result["price"] if held_result else 0.0
-            sig   = held_result["signal"] if held_result else "HOLD"
-            s_sma = held_result.get("short_sma", 0.0) if held_result else 0.0
-            l_sma = held_result.get("long_sma",  0.0) if held_result else 0.0
-
-            # ── 9. Update trailing stop peak ─────────────────────────────────
-            if held_qty > 0 and price > 0:
-                update_peak_price(held_symbol, price)
-
-            peak = get_peak_price(held_symbol)
-            trail_level = round(peak * (1 - config.TRAILING_STOP_PCT), 4) if peak else None
-
-            log.info(
-                "[bot] %s qty=%.0f equity=$%.2f | PDT %d/3 | losses=%d | peak=%s trail=%s",
-                held_symbol, held_qty, equity,
-                pdt["used"], consecutive_losses,
-                f"${peak:.2f}" if peak else "—",
-                f"${trail_level:.2f}" if trail_level else "—",
-            )
-
-            # ── 10. Shared state update ──────────────────────────────────────
-            daily_pnl = equity - session_start_equity
-
-            ind = {}
-            if held_result and held_result.get("df") is not None:
-                ind = compute_indicators(held_result["df"])
-
-            cat = catalysts.get(held_symbol, {})
-
-            shared_state.update(
-                equity=equity, cash=cash, buying_power=bp,
-                symbol=held_symbol,
-                shares_held=held_qty, avg_cost=avg_cost, position_pnl=pos_pnl,
-                signal=sig, price=price, short_sma=s_sma, long_sma=l_sma,
-                daily_pnl=round(daily_pnl, 2),
-                session_start_equity=session_start_equity,
-                peak_price=peak, trailing_stop_price=trail_level,
-                rsi=held_result.get("rsi")       if held_result else None,
-                macd_hist=held_result.get("macd_hist") if held_result else None,
-                bb_upper=held_result.get("bb_upper")   if held_result else None,
-                bb_lower=held_result.get("bb_lower")   if held_result else None,
-                volume_ratio=held_result.get("volume_ratio", 1.0) if held_result else 1.0,
-                catalyst_ark=cat.get("ark_buying", False),
-                catalyst_upgrade=cat.get("analyst_upgrade", False),
-                _rsi_series=ind.get("_rsi_series", []),
-                _macd_series=ind.get("_macd_series", []),
-                _macd_sig_series=ind.get("_macd_sig_series", []),
-                _macd_hist_series=ind.get("_macd_hist_series", []),
-                _bb_upper_series=ind.get("_bb_upper_series", []),
-                _bb_lower_series=ind.get("_bb_lower_series", []),
-            )
-
-            if price and s_sma and l_sma:
-                last_bar = held_result["df"].iloc[-1] if held_result else None
-                shared_state.push_history(
-                    time=cycle_start.isoformat(), price=price,
-                    short_sma=s_sma, long_sma=l_sma,
-                    bb_upper=held_result.get("bb_upper") if held_result else None,
-                    bb_lower=held_result.get("bb_lower") if held_result else None,
-                    open_=float(last_bar["open"])   if last_bar is not None else None,
-                    high=float(last_bar["high"])    if last_bar is not None else None,
-                    low=float(last_bar["low"])      if last_bar is not None else None,
-                    volume=float(last_bar["volume"]) if last_bar is not None else None,
-                )
-
-            # ── 11. Trailing stop (replaces fixed stop-loss) ─────────────────
-            if held_qty > 0 and price > 0:
-                if trailing_stop_triggered(held_symbol, price):
-                    if check_pdt_allows_sell(trading_client, held_symbol):
-                        place_sell(trading_client, held_qty, price,
-                                   reason="TRAILING_STOP", symbol=held_symbol,
-                                   avg_cost=avg_cost)
-                    else:
-                        log.warning("[bot] PDT: trailing stop blocked on %s.", held_symbol)
-                        shared_state.push_trade(
-                            time=cycle_start.strftime("%H:%M:%S"),
-                            event="PDT_HOLD",
-                            detail=f"Trailing stop triggered on {held_symbol} but PDT blocked.",
-                        )
-                    _interruptible_sleep(config.POLL_INTERVAL)
-                    continue
-
-            # ── 12. Take-profit ──────────────────────────────────────────────
-            if held_qty > 0 and avg_cost > 0 and price:
-                pnl_pct = (price - avg_cost) / avg_cost
-
-                if config.TAKE_PROFIT_PCT > 0 and pnl_pct >= config.TAKE_PROFIT_PCT:
-                    log.info("[bot] TAKE PROFIT: +%.2f%% on %s", pnl_pct * 100, held_symbol)
-                    if check_pdt_allows_sell(trading_client, held_symbol):
-                        place_sell(trading_client, held_qty, price,
-                                   reason="TAKE_PROFIT", symbol=held_symbol,
-                                   avg_cost=avg_cost)
-                    else:
-                        log.warning("[bot] PDT: take-profit blocked on %s.", held_symbol)
-                    _interruptible_sleep(config.POLL_INTERVAL)
-                    continue
-
-            # ── 13. SMA sell signal ──────────────────────────────────────────
-            if held_qty > 0 and sig == "SELL":
-                if check_pdt_allows_sell(trading_client, held_symbol):
-                    place_sell(trading_client, held_qty, price,
-                               reason="SIGNAL", symbol=held_symbol,
-                               avg_cost=avg_cost)
-                else:
-                    log.info("[bot] PDT: holding %s — sell blocked.", held_symbol)
-                    shared_state.push_trade(
-                        time=cycle_start.strftime("%H:%M:%S"),
-                        event="PDT_HOLD",
-                        detail=f"SELL signal on {held_symbol} blocked by PDT.",
-                    )
+            _phase_5_update_pdt(ctx)
+            _phase_6_get_losses(ctx)
+            _phase_7_agent_cycle(ctx)
+            _phase_8_find_positions(ctx)
+            _phase_9_update_trailing_stop(ctx)
+            _phase_10_update_state(ctx)
+            _phase_13_push_history(ctx)
+            if _phase_11_sell_logic(ctx):
                 _interruptible_sleep(config.POLL_INTERVAL)
                 continue
-
-            # ── 14. Entry ───────────────────────────────────────────────────
-            if held_qty == 0:
-                if not check_pdt_allows_buy(trading_client):
-                    log.info("[bot] PDT: 3/3 day trades used. No new positions today.")
-                    shared_state.push_trade(
-                        time=cycle_start.strftime("%H:%M:%S"),
-                        event="PDT_HOLD",
-                        detail="3/3 day trades used — no new positions today.",
-                    )
-                else:
-                    candidates = best_buy(scan_results)
-                    candidate = None
-                    source = "watchlist"
-
-                    if candidates:
-                        candidate = candidates[0]
-                    else:
-                        # ── 14a. Check prediction engine picks ──────────────
-                        pred_candidate = _get_prediction_candidate()
-                        if pred_candidate:
-                            candidate = pred_candidate
-                            source = "prediction"
-
-                    if candidate:
-                        buy_sym   = candidate["symbol"]
-                        buy_price = candidate["price"]
-                        conv      = candidate.get("conviction", {})
-                        cat_info  = catalysts.get(buy_sym, {})
-                        cat_str   = []
-                        if cat_info.get("ark_buying"):      cat_str.append("ARK")
-                        if cat_info.get("analyst_upgrade"): cat_str.append("Upgrade")
-                        if cat_str:
-                            log.info("[bot] Catalysts for %s: %s", buy_sym, "+".join(cat_str))
-
-                        log.info("[bot] HIGH CONVICTION BUY: %s @ $%.2f "
-                                 "(score=%.1f rsi=%.1f vol=%.1fx macd=%.4f) "
-                                 "[source=%s, %d candidates available]",
-                                 buy_sym, buy_price,
-                                 candidate.get("score", 0),
-                                 candidate.get("rsi", 50),
-                                 candidate.get("volume_ratio", 1.0),
-                                 candidate.get("macd_hist", 0),
-                                 source, len(candidates) if candidates else 1)
-
-                        log.info("[bot] Best candidate: %s (conviction: %.1f/10 -- "
-                                 "tech:%.1f vol:%.1f sent:%.1f sec:%.1f)",
-                                 buy_sym, conv.get("composite", 0),
-                                 conv.get("technical", 0), conv.get("volume", 0),
-                                 conv.get("sentiment", 0), conv.get("sector", 0))
-
-                        log.info("[bot] Executing trade from %s strategy: %s",
-                                 source,
-                                 ", ".join(conv.get("strategies_fired", ["unknown"])))
-
-                        shared_state.update(symbol=buy_sym)
-                        place_buy(trading_client, equity, buy_price,
-                                  symbol=buy_sym,
-                                  consecutive_losses=consecutive_losses)
-                    else:
-                        log.info("[bot] No high-conviction BUY found. Patience. Holding cash.")
-            else:
-                log.info("[bot] Holding %s — signal=%s. Monitoring trailing stop @ $%s.",
-                         held_symbol, sig,
-                         f"{trail_level:.2f}" if trail_level else "—")
-
+            _phase_12_buy_logic(ctx)
         except Exception as exc:
             log.error("[bot] Unhandled exception: %s", exc, exc_info=True)
 
