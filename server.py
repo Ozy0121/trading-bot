@@ -76,8 +76,19 @@ validate_options_enabled(trading_client, live_mode=not config.PAPER_TRADING)
 
 log.info("[server] Connected. Starting background services...")
 
-live_stream.start(config.API_KEY, config.SECRET_KEY)
-sentiment_feed.start()
+# ── Optional services (dashboard still starts on failure) ──────────────────
+
+try:
+    live_stream.start(config.API_KEY, config.SECRET_KEY)
+    log.info("[server] Live stream started")
+except Exception as exc:
+    log.warning("[server] Live stream failed to start — continuing without live prices: %s", exc)
+
+try:
+    sentiment_feed.start()
+    log.info("[server] Sentiment feed started")
+except Exception as exc:
+    log.warning("[server] Sentiment feed failed to start — continuing without sentiment: %s", exc)
 
 shared_state.update(
     status="idle",
@@ -94,28 +105,38 @@ dashboard.set_dependencies(
 )
 
 # Hydrate shared_state with today's disk predictions (if any)
-from prediction_scanner import load_predictions_into_state
-load_predictions_into_state()
+try:
+    from prediction_scanner import load_predictions_into_state
+    load_predictions_into_state()
+except Exception as exc:
+    log.warning("[server] Prediction hydration failed — continuing without cached predictions: %s", exc)
 
-from agents.event_bus import EventBus
-from agents.coordinator import AgentCoordinator
+# ── Agent coordinator (optional — dashboard and bot skip agents on failure) ─
+agent_bus = None
+try:
+    from agents.event_bus import EventBus
+    from agents.coordinator import AgentCoordinator
 
-agent_bus = EventBus()
-coordinator = AgentCoordinator(
-    trading_client=trading_client,
-    data_client=data_client,
-    event_bus=agent_bus,
-)
-dashboard.set_coordinator(coordinator)
-bot.set_coordinator(coordinator)
+    agent_bus = EventBus()
+    coordinator = AgentCoordinator(
+        trading_client=trading_client,
+        data_client=data_client,
+        event_bus=agent_bus,
+    )
+    dashboard.set_coordinator(coordinator)
+    bot.set_coordinator(coordinator)
+    log.info("[server] Agent coordinator started")
+except Exception as exc:
+    log.warning("[server] Agent coordinator failed to start — continuing without agents: %s", exc)
 
 # ── Launch claude-office backend + frontend for pixel art visualization ────
-import subprocess
-import atexit
 
 _office_procs = []
 
 def _start_office():
+    import subprocess
+    import atexit
+
     office_dir = os.path.join(os.path.expanduser("~"), "claude-office")
     backend_dir = os.path.join(office_dir, "backend")
     frontend_dir = os.path.join(office_dir, "frontend")
@@ -149,34 +170,50 @@ def _start_office():
     except Exception as exc:
         log.warning("[server] Failed to start claude-office frontend: %s", exc)
 
-def _stop_office():
-    for p in _office_procs:
-        try:
-            p.terminate()
-        except Exception:
-            pass
+    def _stop_office():
+        for p in _office_procs:
+            try:
+                p.terminate()
+            except Exception:
+                pass
 
-atexit.register(_stop_office)
-_start_office()
+    atexit.register(_stop_office)
+
+try:
+    _start_office()
+except Exception as exc:
+    log.warning("[server] Claude Office failed to start — continuing without pixel art: %s", exc)
 
 # ── Connect claude-office pixel art bridge ─────────────────────────────────
-import office_bridge
-office_bridge.connect(agent_bus)
-log.info("[server] Claude Office bridge connected")
+try:
+    import office_bridge
+    office_bridge.connect(agent_bus)
+    log.info("[server] Claude Office bridge connected")
+except Exception as exc:
+    log.warning("[server] Office bridge failed — continuing without pixel art bridge: %s", exc)
 
 # ── Start overnight scanner scheduler ────────────────────────────────────────
-from prediction_scanner import start_scheduler as start_overnight_scheduler
-start_overnight_scheduler()
-log.info("[server] Overnight scanner scheduler started")
+try:
+    from prediction_scanner import start_scheduler as start_overnight_scheduler
+    start_overnight_scheduler()
+    log.info("[server] Overnight scanner scheduler started")
+except Exception as exc:
+    log.warning("[server] Overnight scheduler failed to start — continuing without overnight scans: %s", exc)
 
 # ── Start expanded scanner overnight daemon (Phase 7) ───────────────────
-from expanded_scanner import start_overnight_daemon
-start_overnight_daemon(trading_client)
-log.info("[server] Expanded scanner daemon started")
+try:
+    from expanded_scanner import start_overnight_daemon
+    start_overnight_daemon(trading_client)
+    log.info("[server] Expanded scanner daemon started")
+except Exception as exc:
+    log.warning("[server] Expanded scanner daemon failed — continuing without expanded scans: %s", exc)
 
 # ── Start stop-loss protection monitor ──────────────────────────────────────
-start_protection_monitor(trading_client, interval=60)
-log.info("[server] Stop-loss protection monitor started (checks every 60s)")
+try:
+    start_protection_monitor(trading_client, interval=60)
+    log.info("[server] Stop-loss protection monitor started (checks every 60s)")
+except Exception as exc:
+    log.warning("[server] Protection monitor failed to start — continuing without stop-loss monitoring: %s", exc)
 
 print()
 print("=" * 55)
