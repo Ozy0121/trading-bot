@@ -45,7 +45,8 @@ def api_order():
         stop_price  = body.get("stop_price")
         tif_str     = body.get("tif", "day").lower()
 
-        if not symbol: abort(400, "Symbol required.")
+        if not symbol or not symbol.isalnum() or len(symbol) > 10:
+            abort(400, "Invalid symbol.")
         if not qty:    abort(400, "Quantity required.")
 
         side    = OrderSide.BUY if side_str == "buy" else OrderSide.SELL
@@ -53,6 +54,8 @@ def api_order():
                    "ioc": TimeInForce.IOC}
         tif     = tif_map.get(tif_str, TimeInForce.DAY)
         qty     = float(qty)
+        if qty <= 0 or qty > 10000:
+            abort(400, "Quantity must be between 1 and 10,000.")
 
         if order_type == "market":
             req = MarketOrderRequest(symbol=symbol, qty=qty, side=side,
