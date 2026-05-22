@@ -454,6 +454,22 @@ def api_predictions_auto_trade():
 
     max_orders = min(int(body.get("max_orders", 1)), 3)  # hard cap at 3 (PDT limit)
 
+    # Pre-validate: check predictions exist and qualify
+    snap = shared_state.snapshot()
+    preds_list = snap.get("predictions", [])
+    if not preds_list:
+        return jsonify({"ok": False, "message": "No predictions available. Run a prediction scan first."}), 400
+
+    _TRADEABLE_STAGES = ("launch_zone", "pre_breakout", "accumulation")
+    qualifying = [p for p in preds_list if p.get("stage") in _TRADEABLE_STAGES]
+    if not qualifying:
+        return jsonify({
+            "ok": False,
+            "message": (f"No predictions qualify for auto-trade "
+                        f"(need stage: launch_zone, pre_breakout, or accumulation). "
+                        f"Found {len(preds_list)} predictions but none in tradeable stages.")
+        }), 400
+
     def _do():
         try:
             from bot import place_limit_buy
@@ -463,6 +479,7 @@ def api_predictions_auto_trade():
             preds_list = snap.get("predictions", [])
             if not preds_list:
                 log.warning("[auto-trade] No predictions available")
+                progress.push_log("predictions", "Auto-trade: no predictions available", "warning")
                 return
 
             # Get account equity
@@ -475,15 +492,16 @@ def api_predictions_auto_trade():
             pdt = get_pdt_info(_trading_client)
             if pdt["applies"] and pdt["remaining"] <= 0:
                 log.warning("[auto-trade] PDT limit reached — cannot place orders")
+                progress.push_log("predictions", "Auto-trade: PDT limit reached, cannot place orders", "warning")
                 return
 
             # Cap orders to PDT remaining trades
             effective_max = min(max_orders, pdt["remaining"]) if pdt["applies"] else max_orders
 
-            # Get top picks (launch_zone and pre_breakout only) from shared_state
+            # Get tradeable picks sorted by confidence (no confidence gate)
             ready = [p for p in preds_list
-                     if p.get("confidence", 0) >= 8
-                     and p.get("stage") in ("launch_zone", "pre_breakout")]
+                     if p.get("stage") in ("launch_zone", "pre_breakout", "accumulation")]
+            ready.sort(key=lambda x: x.get("confidence", 0), reverse=True)
 
             placed = 0
             for p in ready[:effective_max]:
@@ -510,11 +528,17 @@ def api_predictions_auto_trade():
                     placed += 1
 
             log.info("[auto-trade] Placed %d/%d orders", placed, min(len(ready), effective_max))
+            progress.push_log("predictions",
+                              f"Auto-trade: placed {placed}/{min(len(ready), effective_max)} orders")
         except Exception as exc:
             log.error("[auto-trade] Failed: %s", exc, exc_info=True)
+            progress.push_log("predictions", f"Auto-trade failed: {exc}", "error")
 
     threading.Thread(target=_do, daemon=True, name="auto-trade").start()
-    return jsonify({"ok": True, "message": f"Placing up to {max_orders} prediction order(s)..."})
+    return jsonify({
+        "ok": True,
+        "message": f"Placing up to {min(max_orders, len(qualifying))} order(s) from {len(qualifying)} qualifying predictions..."
+    })
 
 
 # ── Strategy Backtester endpoints ────────────────────────────────────────────

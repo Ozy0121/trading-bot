@@ -1,4 +1,4 @@
-# Roadmap: Trading Bot v2
+﻿# Roadmap: Trading Bot v2
 
 ## Overview
 
