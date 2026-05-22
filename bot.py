@@ -806,11 +806,12 @@ def run_bot(trading_client: TradingClient, data_client: StockHistoricalDataClien
             _phase_8_find_positions(ctx)
             _phase_9_update_trailing_stop(ctx)
             _phase_10_update_state(ctx)
-            _phase_13_push_history(ctx)
             if _phase_11_sell_logic(ctx):
+                _phase_13_push_history(ctx)
                 _interruptible_sleep(config.POLL_INTERVAL)
                 continue
             _phase_12_buy_logic(ctx)
+            _phase_13_push_history(ctx)
         except Exception as exc:
             log.error("[bot] Unhandled exception: %s", exc, exc_info=True)
 
