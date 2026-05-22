@@ -504,7 +504,10 @@ def api_predictions_auto_trade():
             ready.sort(key=lambda x: x.get("confidence", 0), reverse=True)
 
             placed = 0
-            for p in ready[:effective_max]:
+            skipped = 0
+            for p in ready:
+                if placed >= effective_max:
+                    break
                 sym = p["symbol"]
                 entry_price = p.get("entry_high", 0)
                 stop_loss = p.get("stop_loss", 0)
@@ -512,6 +515,7 @@ def api_predictions_auto_trade():
 
                 if not entry_price or not stop_loss or not target:
                     log.warning("[auto-trade] Skipping %s — missing price data", sym)
+                    skipped += 1
                     continue
 
                 log.info("[auto-trade] Placing GTC limit order: %s @ $%.2f "
@@ -526,10 +530,14 @@ def api_predictions_auto_trade():
                 )
                 if ok:
                     placed += 1
+                else:
+                    log.info("[auto-trade] %s failed (likely too expensive) — trying next", sym)
+                    skipped += 1
 
-            log.info("[auto-trade] Placed %d/%d orders", placed, min(len(ready), effective_max))
+            log.info("[auto-trade] Placed %d orders (%d skipped due to sizing/price)", placed, skipped)
             progress.push_log("predictions",
-                              f"Auto-trade: placed {placed}/{min(len(ready), effective_max)} orders")
+                              f"Auto-trade: placed {placed} order(s)" +
+                              (f" ({skipped} skipped — too expensive)" if skipped else ""))
         except Exception as exc:
             log.error("[auto-trade] Failed: %s", exc, exc_info=True)
             progress.push_log("predictions", f"Auto-trade failed: {exc}", "error")
