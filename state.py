@@ -198,9 +198,19 @@ def record_trade(symbol: str, pnl: float, entry: float,
 
 
 def snapshot() -> dict:
-    """Return a JSON-serializable copy of current state."""
+    """Return a JSON-serializable deep copy of current state."""
+    import copy
     with _lock:
         s = dict(_state)
         s["history"]   = list(s["history"])
         s["trade_log"] = list(s["trade_log"])
+        # Deep-copy mutable nested collections to prevent cross-thread mutation
+        for key in ("predictions", "watchlist", "positions", "trade_history",
+                    "pnl_calendar", "bracket_info", "expanded_scan_results",
+                    "heatmap_data", "scan_funnel", "expanded_scan_funnel",
+                    "protection_status", "scan_conviction_scores",
+                    "_rsi_series", "_macd_series", "_macd_sig_series",
+                    "_macd_hist_series", "_bb_upper_series", "_bb_lower_series"):
+            if key in s and isinstance(s[key], (list, dict)):
+                s[key] = copy.deepcopy(s[key])
     return s
