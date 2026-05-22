@@ -17,6 +17,8 @@ from logger_setup import get_logger
 log = get_logger()
 scanner_bp = Blueprint("scanner", __name__)
 
+_prediction_running = threading.Event()
+
 
 # ── Prediction routes ────────────────────────────────────────────────────────
 
@@ -36,60 +38,67 @@ def api_predictions():
 @scanner_bp.route("/api/predictions/run", methods=["POST"])
 def api_predictions_run():
     """Trigger a prediction scan in the background."""
+    if _prediction_running.is_set():
+        return jsonify({"ok": False, "message": "Prediction scan already running."}), 409
+
     def _do():
+        _prediction_running.set()
         try:
-            from stock_universe import get_full_universe, get_scan_summary, get_funnel_stats
-            from prediction import predict_batch
-            from expanded_scanner import load_overnight_results, run_expanded_pipeline
+            try:
+                from stock_universe import get_full_universe, get_scan_summary, get_funnel_stats
+                from prediction import predict_batch
+                from expanded_scanner import load_overnight_results, run_expanded_pipeline
 
-            progress.track("predictions", total=0, current=0, label="Loading quant-filtered stocks...")
-            progress.push_log("predictions", "Starting prediction scan...")
+                progress.track("predictions", total=0, current=0, label="Loading quant-filtered stocks...")
+                progress.push_log("predictions", "Starting prediction scan...")
 
-            survivors = load_overnight_results()
-            if survivors:
-                universe = [s["symbol"] for s in survivors if "symbol" in s]
-                progress.push_log("predictions", f"Using {len(universe)} expanded scanner survivors")
-            else:
-                progress.track("predictions", total=0, current=0, label="Running quant filter on 2,500+ stocks...")
-                progress.push_log("predictions", "No cached results — running quant filter on 2,500+ stocks...")
-                scored = run_expanded_pipeline()
-                universe = [s["symbol"] for s in scored if "symbol" in s]
-                progress.push_log("predictions", f"Quant filter produced {len(universe)} survivors")
+                survivors = load_overnight_results()
+                if survivors:
+                    universe = [s["symbol"] for s in survivors if "symbol" in s]
+                    progress.push_log("predictions", f"Using {len(universe)} expanded scanner survivors")
+                else:
+                    progress.track("predictions", total=0, current=0, label="Running quant filter on 2,500+ stocks...")
+                    progress.push_log("predictions", "No cached results — running quant filter on 2,500+ stocks...")
+                    scored = run_expanded_pipeline()
+                    universe = [s["symbol"] for s in scored if "symbol" in s]
+                    progress.push_log("predictions", f"Quant filter produced {len(universe)} survivors")
 
-            if not universe:
-                universe = get_full_universe(include_discovery=True)
-                progress.push_log("predictions", f"No survivors — falling back to full universe ({len(universe)})", "warning")
+                if not universe:
+                    universe = get_full_universe(include_discovery=True)
+                    progress.push_log("predictions", f"No survivors — falling back to full universe ({len(universe)})", "warning")
 
-            from config import WATCHLIST
-            from stock_universe import get_sp500, get_nasdaq100
-            seen = set(universe)
-            extras = []
-            for s in WATCHLIST + get_sp500() + get_nasdaq100():
-                if s not in seen:
-                    seen.add(s)
-                    extras.append(s)
-            if extras:
-                universe.extend(extras)
-                progress.push_log("predictions", f"Added {len(extras)} large-cap + watchlist stocks to universe")
+                from config import WATCHLIST
+                from stock_universe import get_sp500, get_nasdaq100
+                seen = set(universe)
+                extras = []
+                for s in WATCHLIST + get_sp500() + get_nasdaq100():
+                    if s not in seen:
+                        seen.add(s)
+                        extras.append(s)
+                if extras:
+                    universe.extend(extras)
+                    progress.push_log("predictions", f"Added {len(extras)} large-cap + watchlist stocks to universe")
 
-            funnel = get_funnel_stats()
-            progress.track("predictions", total=len(universe), current=0,
-                           label=f"AI analyzing {len(universe):,} stocks...")
-            predictions = predict_batch(universe,
-                                        progress_cb=lambda cur, tot, label="": progress.track("predictions", current=cur, total=tot, label=label or f"AI analyzing {tot:,} stocks..."))
+                funnel = get_funnel_stats()
+                progress.track("predictions", total=len(universe), current=0,
+                               label=f"AI analyzing {len(universe):,} stocks...")
+                predictions = predict_batch(universe,
+                                            progress_cb=lambda cur, tot, label="": progress.track("predictions", current=cur, total=tot, label=label or f"AI analyzing {tot:,} stocks..."))
 
-            pred_dicts = [p.to_dict() for p in predictions[:30]]
-            shared_state.update(
-                predictions=pred_dicts,
-                prediction_count=len(predictions),
-                scan_universe_size=len(universe),
-                scan_funnel=funnel.get("breakdown", {}),
-                scan_summary=get_scan_summary(len(universe), len(predictions), min(30, len(predictions))),
-            )
-            progress.complete("predictions", message=f"{len(predictions)} predictions generated")
-        except Exception as exc:
-            log.error("[dashboard] Prediction scan failed: %s", exc, exc_info=True)
-            progress.fail("predictions", message=str(exc))
+                pred_dicts = [p.to_dict() for p in predictions[:30]]
+                shared_state.update(
+                    predictions=pred_dicts,
+                    prediction_count=len(predictions),
+                    scan_universe_size=len(universe),
+                    scan_funnel=funnel.get("breakdown", {}),
+                    scan_summary=get_scan_summary(len(universe), len(predictions), min(30, len(predictions))),
+                )
+                progress.complete("predictions", message=f"{len(predictions)} predictions generated")
+            except Exception as exc:
+                log.error("[dashboard] Prediction scan failed: %s", exc, exc_info=True)
+                progress.fail("predictions", message=str(exc))
+        finally:
+            _prediction_running.clear()
 
     threading.Thread(target=_do, daemon=True, name="prediction-scan").start()
     return jsonify({"ok": True, "message": "Prediction scan started."})
