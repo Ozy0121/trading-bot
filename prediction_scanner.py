@@ -87,10 +87,12 @@ def run_overnight_scan(progress_cb: callable | None = None) -> dict:
     high_confidence = [p for p in predictions if p.confidence >= 7]
 
     # Rank by expected value: historical_accuracy * expected_move_pct
-    for p in high_confidence:
-        p._ev = p.historical_accuracy * p.expected_move_pct if p.historical_accuracy > 0 else p.expected_move_pct * 0.5
+    def _ev_key(p):
+        if p.historical_accuracy > 0:
+            return p.historical_accuracy * p.expected_move_pct
+        return p.expected_move_pct * 0.5
 
-    high_confidence.sort(key=lambda p: p._ev, reverse=True)
+    high_confidence.sort(key=_ev_key, reverse=True)
 
     # Classify into urgency tiers
     ready_tomorrow = []    # launch_zone or pre_breakout
