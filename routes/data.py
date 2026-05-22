@@ -39,10 +39,10 @@ def api_state():
 @data_bp.route("/api/stream")
 def api_stream():
     """SSE: pushes full state + progress every second."""
-    from dashboard import _coordinator
     def generate():
         try:
             while True:
+                from dashboard import _coordinator   # re-read each tick
                 snap = shared_state.snapshot()
                 snap["_progress"] = progress.snapshot()
                 snap["_scan_logs"] = progress.get_logs()
