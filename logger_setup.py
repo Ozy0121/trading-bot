@@ -52,6 +52,10 @@ def get_logger(name: str = "trading_bot") -> logging.Logger:
     logger.addHandler(file_handler)
 
     logger.info("Logger initialized. Writing to: %s", log_filename)
+
+    logging.getLogger("websockets").setLevel(logging.ERROR)
+    logging.getLogger("alpaca").setLevel(logging.WARNING)
+
     return logger
 
 

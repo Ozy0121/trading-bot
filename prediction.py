@@ -50,7 +50,7 @@ CONSEC_DOWN_DAYS = 3       # consecutive lower-high + lower-low days
 
 SMA_200_PERIOD = 200
 ADX_PERIOD = 14
-ADX_MAX = 40               # relaxed — allow moderate trends
+ADX_MAX = 60               # allow mean reversion in trending markets
 
 # ── Confirmation thresholds ─────────────────────────────────────────────────
 
@@ -358,17 +358,20 @@ def _passes_regime_filter(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) 
     current_price = float(closes.iloc[-1])
     sma_val = float(sma.iloc[-1])
 
-    if current_price < sma_val * 0.95:
-        return False, f"price ${current_price:.2f} >5% below SMA({sma_period}) ${sma_val:.2f}", 0.0
+    if current_price < sma_val * 0.90:
+        return False, f"price ${current_price:.2f} >10% below SMA({sma_period}) ${sma_val:.2f}", 0.0
+
+    position_mult = 1.0
 
     if not _sma_slope_rising(sma):
-        return False, f"SMA({sma_period}) slope falling — bearish long-term trend", 0.0
+        position_mult *= 0.5
+
+    if current_price < sma_val * 0.95:
+        position_mult *= 0.75
 
     adx = _compute_adx(df)
     if adx > ADX_MAX:
         return False, f"ADX {adx:.0f} > {ADX_MAX} (strong trend, mean reversion risky)", 0.0
-
-    position_mult = 1.0
     spy_note = ""
     if spy_df is not None and len(spy_df) >= 201:
         spy_sma = spy_df["close"].rolling(200).mean()
@@ -558,10 +561,10 @@ def predict(
     active_primaries = [p for p in primaries if p.detected]
     primary_count = len(active_primaries)
 
-    if primary_count < 3:
+    if primary_count < 2:
         return None
 
-    # Step 2: Regime filter (tightened: 5% SMA threshold, slope check, SPY regime)
+    # Step 2: Regime filter (10% SMA threshold, slope/SPY regime → position sizing)
     passes_regime, regime_reason, position_mult = _passes_regime_filter(df, spy_df)
     if not passes_regime:
         return None

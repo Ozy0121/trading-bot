@@ -397,6 +397,16 @@
     }
     .tb-btn.danger { border-color: rgba(237, 127, 100, 0.22); color: var(--error); }
     .tb-btn.danger:hover { background: rgba(237, 127, 100, 0.06); }
+    .scan-tip-wrap { position: relative; display: inline-block; }
+    .scan-tip {
+      display: none; position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      width: 260px; padding: 10px 12px; border-radius: 6px; font-size: 11px; line-height: 1.5;
+      background: var(--surface-container-high, #2a2a2a); color: var(--on-surface-variant);
+      border: 1px solid var(--outline-variant); box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      z-index: 100; text-transform: none; letter-spacing: normal; font-weight: 400;
+      pointer-events: none;
+    }
+    .scan-tip-wrap:hover .scan-tip { display: block; }
     #draw-hint {
       font-family: 'Space Grotesk', sans-serif;
       font-size: 10px; color: var(--secondary); margin-left: 6px; font-weight: 400;
@@ -1492,10 +1502,22 @@
           <option value="pre_spike">Pre-Spike 1:5</option>
           <option value="positive_ev">Positive EV Only</option>
         </select>
-        <button class="tb-btn" onclick="runExpandedScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> EXPANDED SCAN</button>
-        <button class="tb-btn" onclick="runPredictionScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">psychology</span> PREDICTION SCAN</button>
-        <button class="tb-btn" onclick="runOvernightScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
-        <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
+        <span class="scan-tip-wrap">
+          <button class="tb-btn" onclick="runExpandedScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">radar</span> EXPANDED SCAN</button>
+          <span class="scan-tip">Screens 2,600+ stocks through quant factors (momentum, value, quality) to find ~50 survivors, then auto-runs prediction scan on them.</span>
+        </span>
+        <span class="scan-tip-wrap">
+          <button class="tb-btn" onclick="runPredictionScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">psychology</span> PREDICTION SCAN</button>
+          <span class="scan-tip">Runs the mean-reversion prediction engine on S&P 500 + NASDAQ 100 + scanner survivors (~600 stocks). Finds oversold setups likely to bounce in 1-3 days.</span>
+        </span>
+        <span class="scan-tip-wrap">
+          <button class="tb-btn" onclick="runOvernightScan(this)"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">nightlight</span> OVERNIGHT SCAN</button>
+          <span class="scan-tip">Scheduled scan that runs at 4:05 PM ET daily. Generates overnight predictions and checks next-day accuracy at 9:35 AM ET. Can also be triggered manually.</span>
+        </span>
+        <span class="scan-tip-wrap">
+          <button class="tb-btn" onclick="autoTradePredictions()" style="background:#66bb6a22;border-color:#66bb6a44"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle;color:#66bb6a">bolt</span> <span style="color:#66bb6a">AUTO-TRADE TOP PICK</span></button>
+          <span class="scan-tip">Places GTC limit bracket orders from top predictions. Skips stocks too expensive for your equity and tries the next pick. Includes stop-loss and take-profit.</span>
+        </span>
       </div>
     </div>
     <!-- Scan funnel breakdown -->
