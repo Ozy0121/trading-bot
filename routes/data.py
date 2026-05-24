@@ -63,7 +63,7 @@ def api_stream():
 @data_bp.route("/api/health")
 def api_health():
     """System health: API call counts, cache hit rates, last refresh times."""
-    from openbb_data import get_api_stats
+    from data_provider import get_api_stats
     stats = get_api_stats()
     total_polygon = stats.get("polygon_calls", 0) + stats.get("polygon_cache_hits", 0)
     cache_rate = (stats["polygon_cache_hits"] / total_polygon * 100) if total_polygon > 0 else 0.0
@@ -117,7 +117,7 @@ def api_bars(symbol):
 
     try:
         import pandas as pd
-        from openbb_data import fetch_bars
+        from data_provider import fetch_bars
         from indicators import bollinger_bands
         from indicators import rsi as calc_rsi, macd as calc_macd
 

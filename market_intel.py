@@ -1,13 +1,10 @@
 """
-openbb_intel.py
+market_intel.py
 ---------------
 Intelligence data layer for the dashboard — economic data, insider trading,
 SEC filings, and market movers.
 
-Uses free APIs directly (FMP stable, SEC EDGAR, Yahoo Finance) because
-OpenBB SDK 4.7.1 is broken on Python 3.14 (OBBject import errors on
-every endpoint). When OpenBB fixes Python 3.14 support, replace the
-direct API calls with obb.* equivalents.
+Uses free APIs directly (FMP stable, SEC EDGAR, Yahoo Finance).
 
 Endpoints provided:
   - Economic calendar & treasury rates (FMP stable)
@@ -324,7 +321,7 @@ def get_intelligence_report(watchlist: list[str]) -> dict:
         "insider_trades": [],
         "sec_filings": [],
         "market_movers": {},
-        "openbb_status": "broken_python314",
+        "openbb_status": "not_used",
         "data_sources": [],
     }
 

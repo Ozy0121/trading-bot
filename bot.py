@@ -344,7 +344,7 @@ def _get_prediction_candidate() -> dict | None:
     Returns a dict shaped like a scanner result, or None.
     """
     try:
-        from openbb_data import fetch_bars
+        from data_provider import fetch_bars
 
         snap = shared_state.snapshot()
         preds = snap.get("predictions", [])

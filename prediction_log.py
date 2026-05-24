@@ -20,7 +20,7 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 from logger_setup import get_logger
-from openbb_data import fetch_bars
+from data_provider import fetch_bars
 
 log = get_logger()
 

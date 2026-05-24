@@ -32,7 +32,7 @@ from datetime import date, datetime, timezone
 import numpy as np
 import pandas as pd
 
-from openbb_data import fetch_bars
+from data_provider import fetch_bars
 from indicators import rsi as calc_rsi
 from strategies.momentum import scan as momentum_scan
 from strategies.mean_reversion import scan as mean_reversion_scan

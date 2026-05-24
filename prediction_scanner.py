@@ -50,7 +50,7 @@ def run_overnight_scan(progress_cb: callable | None = None) -> dict:
 
     from stock_universe import get_full_universe, get_scan_summary
     from prediction import predict_batch
-    from openbb_data import fetch_bars
+    from data_provider import fetch_bars
     from expanded_scanner import load_overnight_results, run_expanded_pipeline
 
     log.info("[overnight] Starting overnight scan...")
@@ -171,7 +171,7 @@ def check_prediction_accuracy() -> dict:
     Check yesterday's predictions against today's actual prices.
     Updates the accuracy log.
     """
-    from openbb_data import fetch_bars
+    from data_provider import fetch_bars
 
     _ensure_data_dir()
 

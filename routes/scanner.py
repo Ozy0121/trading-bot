@@ -222,7 +222,7 @@ def api_scan():
 @scanner_bp.route("/api/intelligence")
 def api_intelligence():
     """Return intelligence data: treasury rates, insider trades, SEC filings, market movers."""
-    from openbb_intel import get_intelligence_report, check_openbb_status
+    from market_intel import get_intelligence_report, check_openbb_status
     try:
         watchlist = list(config.WATCHLIST) if hasattr(config, "WATCHLIST") else []
         # Use top prediction symbols if available

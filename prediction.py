@@ -33,7 +33,7 @@ import pandas as pd
 
 from indicators import rsi as calc_rsi, bollinger_bands, atr as calc_atr
 from logger_setup import get_logger
-from openbb_data import get_spy_history
+from data_provider import get_spy_history
 from volume_profile import score_volume_profile
 from order_flow import score_order_flow
 from amt_engine import score_amt
@@ -734,7 +734,7 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
     then runs predictions from cache.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from openbb_data import fetch_bulk_bars
+    from data_provider import fetch_bulk_bars
     import time as _time
 
     predictions: list[Prediction] = []

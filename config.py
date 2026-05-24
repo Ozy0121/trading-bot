@@ -35,7 +35,7 @@ def _int(key: str, default: int) -> int:
 
 
 # ── Third-party data provider keys (optional) ────────────────────────────────
-# FMP is used as an automatic fallback in openbb_data.py when yfinance is
+# FMP is used as an automatic fallback in data_provider.py when yfinance is
 # rate-limited. Leave blank to disable the fallback.
 FMP_API_KEY = os.getenv("FMP_API_KEY", "")
 

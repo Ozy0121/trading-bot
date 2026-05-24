@@ -75,7 +75,7 @@ def _load_universe_data(
 ) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
     """Download 2 years of daily bars for the stock universe + SPY."""
     from stock_universe import get_sp500
-    from openbb_data import fetch_bulk_bars
+    from data_provider import fetch_bulk_bars
 
     symbols = get_sp500()[:universe_size]
     print(f"[backtester] Fetching 2-year daily bars for {len(symbols)} stocks + SPY...")

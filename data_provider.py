@@ -1,12 +1,12 @@
 """
-openbb_data.py
---------------
+data_provider.py
+----------------
 Unified data abstraction layer for all market data fetching.
 
 Provider priority: Polygon.io (paid) → yfinance (free) → FMP (free fallback).
 
 Usage:
-    from openbb_data import fetch_bars, fetch_quote, fetch_ticker_info, fetch_bulk_bars
+    from data_provider import fetch_bars, fetch_quote, fetch_ticker_info, fetch_bulk_bars
 
     df = fetch_bars("AAPL", period="60d", interval="1d")
     price = fetch_quote("AAPL")
@@ -168,15 +168,15 @@ def _polygon_get(endpoint: str, params: dict | None = None) -> dict | None:
     try:
         resp = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
         if resp.status_code == 429:
-            log.warning("[openbb_data] Polygon rate limited on %s", endpoint)
+            log.warning("[data_provider] Polygon rate limited on %s", endpoint)
             return None
         resp.raise_for_status()
         return resp.json()
     except requests.exceptions.HTTPError as exc:
-        log.debug("[openbb_data] Polygon HTTP error (%s): %s", endpoint, exc)
+        log.debug("[data_provider] Polygon HTTP error (%s): %s", endpoint, exc)
         return None
     except Exception as exc:
-        log.debug("[openbb_data] Polygon request failed (%s): %s", endpoint, exc)
+        log.debug("[data_provider] Polygon request failed (%s): %s", endpoint, exc)
         return None
 
 
@@ -340,9 +340,9 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
     next_refresh_min = max(1, (ttl - int(now - _grouped_cache_ts)) // 60)
 
     if cache_valid:
-        log.debug("[openbb_data] Polygon data served from cache (%d/%d symbols)", len(result), len(symbols))
+        log.debug("[data_provider] Polygon data served from cache (%d/%d symbols)", len(result), len(symbols))
     else:
-        log.info("[openbb_data] Polygon grouped daily: %d/%d symbols across %d days",
+        log.info("[data_provider] Polygon grouped daily: %d/%d symbols across %d days",
                  len(result), len(symbols), len(dates))
 
     # On cache hits keep missing-symbol and refresh notices at DEBUG to avoid
@@ -350,11 +350,11 @@ def _polygon_bulk_grouped(symbols: list[str], period: str = "5d", progress_cb=No
     # we actually hit the API so operators know a real fetch happened.
     _log_level = log.debug if cache_valid else log.info
     if missing and len(missing) <= 20:
-        _log_level("[openbb_data] Missing symbols (%d): %s", len(missing), ", ".join(missing[:20]))
+        _log_level("[data_provider] Missing symbols (%d): %s", len(missing), ", ".join(missing[:20]))
     elif missing:
-        _log_level("[openbb_data] Missing %d symbols (first 10): %s", len(missing), ", ".join(missing[:10]))
+        _log_level("[data_provider] Missing %d symbols (first 10): %s", len(missing), ", ".join(missing[:10]))
 
-    _log_level("[openbb_data] Polygon data cached — next refresh in %d minutes", next_refresh_min)
+    _log_level("[data_provider] Polygon data cached — next refresh in %d minutes", next_refresh_min)
     return result
 
 
@@ -384,7 +384,7 @@ def _polygon_bulk_per_ticker(symbols: list[str], period: str = "30d", progress_c
     if progress_cb:
         progress_cb(len(symbols), len(symbols), f"Polygon: got {period} bars for {len(result):,}/{len(symbols):,} symbols")
 
-    log.info("[openbb_data] Polygon per-ticker: %d/%d symbols (%s)", len(result), len(symbols), period)
+    log.info("[data_provider] Polygon per-ticker: %d/%d symbols (%s)", len(result), len(symbols), period)
     return result
 
 
@@ -408,7 +408,7 @@ def _fmp_get(endpoint: str, params: dict) -> dict | list | None:
         resp.raise_for_status()
         return resp.json()
     except Exception as exc:
-        log.debug("[openbb_data] FMP request failed (%s): %s", endpoint, exc)
+        log.debug("[data_provider] FMP request failed (%s): %s", endpoint, exc)
         return None
 
 
@@ -468,7 +468,7 @@ def _fmp_bars_to_df(data: list) -> pd.DataFrame | None:
 
         return _normalize_df(df)
     except Exception as exc:
-        log.debug("[openbb_data] FMP bar conversion failed: %s", exc)
+        log.debug("[data_provider] FMP bar conversion failed: %s", exc)
         return None
 
 
@@ -487,10 +487,10 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
         try:
             df = _polygon_bars(symbol, period=period, interval=interval)
             if df is not None and not df.empty:
-                log.debug("[openbb_data] %s bars via Polygon (period=%s)", symbol, period)
+                log.debug("[data_provider] %s bars via Polygon (period=%s)", symbol, period)
                 return df
         except Exception as exc:
-            log.debug("[openbb_data] %s Polygon failed (%s), trying yfinance", symbol, exc)
+            log.debug("[data_provider] %s Polygon failed (%s), trying yfinance", symbol, exc)
 
     # ── Fallback 1: yfinance ────────────────────────────────────────────────
     try:
@@ -500,14 +500,14 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
         if df is not None and not df.empty:
             normalized = _normalize_df(df)
             if normalized is not None:
-                log.debug("[openbb_data] %s bars via yfinance (period=%s)", symbol, period)
+                log.debug("[data_provider] %s bars via yfinance (period=%s)", symbol, period)
                 return normalized
     except Exception as exc:
-        log.info("[openbb_data] %s yfinance failed (%s), trying FMP fallback", symbol, exc)
+        log.info("[data_provider] %s yfinance failed (%s), trying FMP fallback", symbol, exc)
 
     # ── Fallback 2: FMP ─────────────────────────────────────────────────────
     if not FMP_API_KEY:
-        log.debug("[openbb_data] %s: no FMP_API_KEY, skipping fallback", symbol)
+        log.debug("[data_provider] %s: no FMP_API_KEY, skipping fallback", symbol)
         return None
 
     fmp_interval = _INTERVAL_MAP_FMP.get(interval, "daily")
@@ -522,7 +522,7 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
             if isinstance(data, dict) and "historical" in data:
                 df = _fmp_bars_to_df(data["historical"])
                 if df is not None:
-                    log.info("[openbb_data] %s bars via FMP fallback (daily, %dd)", symbol, days)
+                    log.info("[data_provider] %s bars via FMP fallback (daily, %dd)", symbol, days)
                     return df
         else:
             data = _fmp_get(
@@ -532,12 +532,12 @@ def fetch_bars(symbol: str, period: str = "60d", interval: str = "1d") -> pd.Dat
             if isinstance(data, list):
                 df = _fmp_bars_to_df(data)
                 if df is not None:
-                    log.info("[openbb_data] %s bars via FMP fallback (%s)", symbol, fmp_interval)
+                    log.info("[data_provider] %s bars via FMP fallback (%s)", symbol, fmp_interval)
                     return df
     except Exception as exc:
-        log.warning("[openbb_data] %s FMP fallback failed: %s", symbol, exc)
+        log.warning("[data_provider] %s FMP fallback failed: %s", symbol, exc)
 
-    log.warning("[openbb_data] %s: all providers failed for bars", symbol)
+    log.warning("[data_provider] %s: all providers failed for bars", symbol)
     return None
 
 
@@ -555,10 +555,10 @@ def fetch_quote(symbol: str) -> float | None:
             if data and "results" in data:
                 price = float(data["results"].get("p", 0))
                 if price > 0:
-                    log.debug("[openbb_data] %s quote via Polygon: %.4f", symbol, price)
+                    log.debug("[data_provider] %s quote via Polygon: %.4f", symbol, price)
                     return price
         except Exception as exc:
-            log.debug("[openbb_data] %s Polygon quote failed (%s), trying yfinance", symbol, exc)
+            log.debug("[data_provider] %s Polygon quote failed (%s), trying yfinance", symbol, exc)
 
     # ── Fallback 1: yfinance ────────────────────────────────────────────────
     try:
@@ -568,10 +568,10 @@ def fetch_quote(symbol: str) -> float | None:
         if df is not None and not df.empty:
             df.columns = [c.lower() for c in df.columns]
             price = float(df["close"].iloc[-1])
-            log.debug("[openbb_data] %s quote via yfinance: %.4f", symbol, price)
+            log.debug("[data_provider] %s quote via yfinance: %.4f", symbol, price)
             return price
     except Exception as exc:
-        log.info("[openbb_data] %s yfinance quote failed (%s), trying FMP", symbol, exc)
+        log.info("[data_provider] %s yfinance quote failed (%s), trying FMP", symbol, exc)
 
     # ── Fallback 2: FMP ─────────────────────────────────────────────────────
     if not FMP_API_KEY:
@@ -582,10 +582,10 @@ def fetch_quote(symbol: str) -> float | None:
         if isinstance(data, list) and data:
             price = float(data[0].get("price", 0))
             if price > 0:
-                log.info("[openbb_data] %s quote via FMP fallback: %.4f", symbol, price)
+                log.info("[data_provider] %s quote via FMP fallback: %.4f", symbol, price)
                 return price
     except Exception as exc:
-        log.warning("[openbb_data] %s FMP quote fallback failed: %s", symbol, exc)
+        log.warning("[data_provider] %s FMP quote fallback failed: %s", symbol, exc)
 
     return None
 
@@ -612,19 +612,19 @@ def fetch_ticker_info(symbol: str) -> dict:
                     "locale":    r.get("locale", ""),
                 }
                 if info.get("longName"):
-                    log.debug("[openbb_data] %s info via Polygon", symbol)
+                    log.debug("[data_provider] %s info via Polygon", symbol)
                     return info
         except Exception as exc:
-            log.debug("[openbb_data] %s Polygon info failed (%s), trying yfinance", symbol, exc)
+            log.debug("[data_provider] %s Polygon info failed (%s), trying yfinance", symbol, exc)
 
     # ── Fallback 1: yfinance ────────────────────────────────────────────────
     try:
         info = rate_limited_yf(lambda: yf.Ticker(symbol).info)
         if isinstance(info, dict) and info:
-            log.debug("[openbb_data] %s info via yfinance", symbol)
+            log.debug("[data_provider] %s info via yfinance", symbol)
             return info
     except Exception as exc:
-        log.debug("[openbb_data] %s yfinance info failed (%s), trying FMP", symbol, exc)
+        log.debug("[data_provider] %s yfinance info failed (%s), trying FMP", symbol, exc)
 
     # ── Fallback: FMP ────────────────────────────────────────────────────────
     if not FMP_API_KEY:
@@ -645,10 +645,10 @@ def fetch_ticker_info(symbol: str) -> dict:
                 "description":   profile.get("description", ""),
                 "country":       profile.get("country", ""),
             }
-            log.debug("[openbb_data] %s info via FMP fallback", symbol)
+            log.debug("[data_provider] %s info via FMP fallback", symbol)
             return normalized
     except Exception as exc:
-        log.warning("[openbb_data] %s FMP info fallback failed: %s", symbol, exc)
+        log.warning("[data_provider] %s FMP info fallback failed: %s", symbol, exc)
 
     return {}
 
@@ -678,7 +678,7 @@ def fetch_bulk_bars(
             if result:
                 return result
         except Exception as exc:
-            log.info("[openbb_data] Polygon bulk_bars failed (%s), falling back to yfinance", exc)
+            log.info("[data_provider] Polygon bulk_bars failed (%s), falling back to yfinance", exc)
 
     # ── Fallback 1: yfinance bulk download (batched) ────────────────────────
     batch_size = 100
@@ -701,7 +701,7 @@ def fetch_bulk_bars(
         return result
 
     # ── Fallback 2: individual fetch_bars calls ─────────────────────────────
-    log.info("[openbb_data] bulk_bars: fetching %d symbols individually via fallback", len(symbols))
+    log.info("[data_provider] bulk_bars: fetching %d symbols individually via fallback", len(symbols))
     consecutive_failures = 0
     for i, sym in enumerate(symbols):
         if i > 0 and i % 10 == 0:
@@ -716,7 +716,7 @@ def fetch_bulk_bars(
         except Exception:
             consecutive_failures += 1
         if consecutive_failures >= 20:
-            log.warning("[openbb_data] bulk_bars fallback: %d consecutive failures, skipping remaining %d symbols",
+            log.warning("[data_provider] bulk_bars fallback: %d consecutive failures, skipping remaining %d symbols",
                         consecutive_failures, len(symbols) - i - 1)
             break
 
@@ -758,9 +758,9 @@ def _yf_bulk_batch(symbols: list[str], period: str = "5d", interval: str = "1d")
                         pass
 
             if result:
-                log.debug("[openbb_data] bulk_bars via yfinance: %d/%d symbols",
+                log.debug("[data_provider] bulk_bars via yfinance: %d/%d symbols",
                           len(result), len(symbols))
     except Exception as exc:
-        log.info("[openbb_data] bulk_bars yfinance failed (%s)", exc)
+        log.info("[data_provider] bulk_bars yfinance failed (%s)", exc)
 
     return result

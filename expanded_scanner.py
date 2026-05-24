@@ -26,7 +26,7 @@ import pandas as pd
 
 from logger_setup import get_logger
 from stock_universe import get_full_universe, get_funnel_stats, LEVERAGED_ETFS, FUTURES_SECTOR_ETFS
-from openbb_data import fetch_bulk_bars, fetch_ticker_info
+from data_provider import fetch_bulk_bars, fetch_ticker_info
 from quant_factors import compute_quant_score, rank_momentum
 import config
 import state as shared_state

@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 import requests
 
-from openbb_data import fetch_bars, fetch_bulk_bars, fetch_ticker_info
+from data_provider import fetch_bars, fetch_bulk_bars, fetch_ticker_info
 
 from logger_setup import get_logger
 

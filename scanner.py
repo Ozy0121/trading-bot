@@ -29,7 +29,7 @@ from datetime import date, datetime, timezone
 import config
 from indicators import rsi as calc_rsi, macd as calc_macd, bollinger_bands
 from logger_setup import get_logger, log_trade_event
-from openbb_data import fetch_bars, fetch_ticker_info, fetch_bulk_bars, get_sector_cached  # noqa: F401
+from data_provider import fetch_bars, fetch_ticker_info, fetch_bulk_bars, get_sector_cached  # noqa: F401
 from strategies import REGISTRY
 from sentiment_cache import get_sentiment_score, get_earnings_penalty
 import state as shared_state
