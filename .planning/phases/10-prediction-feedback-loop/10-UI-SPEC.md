@@ -44,7 +44,7 @@ All values sourced from existing CSS in `templates/index.html`. Do not introduce
 
 Exceptions:
 - Sidebar button height: 56px (8px short of 64px — preserve as-is, matches existing layout)
-- Card padding: 22px top/horizontal, 18px bottom — preserve as-is, do not normalize
+- Card padding: inherited from existing `.chart-card` CSS — do not override
 - Status bar height: 32px — fixed, do not change
 
 ---
@@ -58,14 +58,14 @@ All values sourced from existing CSS. Do not introduce new sizes or weights.
 | Body | 13px | Manrope | 400 | 1.6 |
 | Label / meta | 10px | Space Grotesk | 600 | 1.4 |
 | Stat value / card value | 20–21px | Space Grotesk | 700 | 1.15 |
-| Heading / section title | 15px (logo) / 11px (chart titles) | Space Grotesk | 700 | 1.2 |
+| Heading / section title | 15px (logo) / 10px (chart titles) | Space Grotesk | 700 | 1.2 |
 
 **New UI elements in Phase 10 must use only these four type roles. No new sizes.**
 
 Specific applications for new elements:
 - Accuracy banner text: 13px Manrope 400 (body role), number in-line at 20px Space Grotesk 700 (stat value role)
 - Per-signal table: 10px Space Grotesk 600 headers (label role), 13px Manrope 400 cell values (body role)
-- "Last recalibrated" timestamp: 11px Space Grotesk 500, color `var(--outline)`
+- "Last recalibrated" timestamp: 10px Space Grotesk 600, color `var(--outline)`
 - Weight change log entries: 13px Manrope 400, old weight in `var(--outline)`, new weight in `var(--on-surface)`
 
 ---
@@ -98,6 +98,12 @@ All tokens sourced from `:root` in `templates/index.html` lines 13–53. Use CSS
 | Neutral / muted | `var(--outline)` `#757575` | Labels, timestamps, secondary text, default weights |
 
 Note: The existing scorecard already uses `#66bb6a`, `#ffa726`, and `#ef5350` inline (not via CSS variable). Phase 10 must match these exact values for visual consistency with the existing accuracy display.
+
+---
+
+## Focal Point
+
+Primary visual anchor: the always-visible accuracy banner text, drawn first by size contrast (20px stat values against 13px body text).
 
 ---
 
@@ -152,7 +158,7 @@ Row color rules:
 
 ### Recalibration Metadata (D-12)
 - Location: Below per-signal table, inside the same `<details>` collapsible
-- Format: `"Last recalibrated: Sunday, May 25 at 12:00 AM ET"` — 11px Space Grotesk, `var(--outline)`
+- Format: `"Last recalibrated: Sunday, May 25 at 12:00 AM ET"` — 10px Space Grotesk 600, `var(--outline)`
 - If never recalibrated: `"Not yet recalibrated — runs Sunday at midnight ET"`
 - Weight changes list: each change on its own line, format: `"rsi2: 4.0 → 4.6"` with arrow, old in `var(--outline)`, new colored by direction
 
@@ -249,6 +255,17 @@ No new JavaScript libraries. Chart.js 4.4.0 already loaded. No registry vetting 
 | Component class reuse (.chart-card, .tb-btn, etc.) | Codebase read `templates/index.html` |
 | Inline color values (#66bb6a, #ffa726) | Codebase read `templates/index.html` lines 3787-3817 |
 | Signals list (8 signals) | CONTEXT.md D-06, RESEARCH.md |
+
+---
+
+## Revision Log
+
+| Date | Issue | Fix Applied |
+|------|-------|-------------|
+| 2026-05-25 | Typography: 5 sizes (10, 11, 13, 15, 20-21px) — max 4 allowed | Collapsed 11px into 10px for chart titles and "Last recalibrated" timestamp |
+| 2026-05-25 | Typography: 4 weights declared (400, 500, 600, 700) — max 2 allowed | Replaced 11px Space Grotesk 500 on "Last recalibrated" with 10px Space Grotesk 600 (existing label weight) |
+| 2026-05-25 | Spacing: 22px and 18px card padding not multiples of 4 | Removed card padding exception rows; replaced with: inherited from existing .chart-card CSS — do not override |
+| 2026-05-25 | Visuals: No explicit focal point declared | Added Focal Point section: accuracy banner text as primary visual anchor |
 
 ---
 
