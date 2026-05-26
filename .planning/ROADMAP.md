@@ -1,4 +1,4 @@
-﻿# Roadmap: Trading Bot v2
+# Roadmap: Trading Bot v2
 
 ## Overview
 
@@ -41,11 +41,11 @@ Starting from a working prediction bot with safety infrastructure, expanded scan
 | 2026-04-01 | Conviction scoring recalibration | 6aedc04 |
 | 2026-04-02 | Fix stop-without-liquidate, wire agent coordinator | c7660c6 |
 | 2026-04-26 | Pattern weight calibration from backtest results | 2f4466e |
-| 2026-05-04 | Prediction engine v4 win rate improvement (51%→77%) | 0e3a788 |
-| 2026-05-05 | Position sizing multiplier, regime filter improvements | — |
-| 2026-05-06 | Two-stage scan workflow, parallel scoring | — |
-| 2026-05-07 | Prediction filter relaxation (ADX 40→60, confluence 3→2) | — |
-| 2026-05-08 | Scan button tooltips, stream reconnection with backoff | — |
+| 2026-05-04 | Prediction engine v4 win rate improvement (51%->77%) | 0e3a788 |
+| 2026-05-05 | Position sizing multiplier, regime filter improvements | -- |
+| 2026-05-06 | Two-stage scan workflow, parallel scoring | -- |
+| 2026-05-07 | Prediction filter relaxation (ADX 40->60, confluence 3->2) | -- |
+| 2026-05-08 | Scan button tooltips, stream reconnection with backoff | -- |
 
 </details>
 
@@ -106,7 +106,7 @@ Plans:
 | 6 | server.py startup | All imports/wiring inline with no error isolation. One failure blocks entire startup. |
 
 **Success Criteria**:
-  1. dashboard.py split into ≤3 route modules (trading, scanner, data)
+  1. dashboard.py split into <=3 route modules (trading, scanner, data)
   2. safety.py globals protected by Lock — no unguarded cross-thread mutation
   3. state.py validates keys on `update()` — unknown keys raise ValueError
   4. Single prediction data source for both bot and dashboard
@@ -145,6 +145,13 @@ Plans:
   4. Backtest results automatically update signal weights
   5. Dashboard shows running prediction accuracy (overall and per-signal)
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Recalibration engine + unit tests, extend prediction logging with active_signals, wire outcome resolution into scheduler
+- [ ] 10-02-PLAN.md — File-based weight loading in prediction.py, Sunday midnight recalibration scheduler, three new API routes
+- [ ] 10-03-PLAN.md — Dashboard accuracy banner, per-signal stats table, trend sparkline, recalibrate button
+
 ---
 
 #### Phase 11: Signal Expansion
@@ -174,24 +181,24 @@ Plans:
   5. Validate each new signal via backtest before enabling
 
 **Success Criteria**:
-  1. Prediction engine uses ≥6 signal types (up from 2 primary + 3 confirmation)
+  1. Prediction engine uses >=6 signal types (up from 2 primary + 3 confirmation)
   2. Both mean reversion AND momentum breakout strategies produce predictions
   3. Market breadth data informs regime filtering
   4. Each signal's contribution to accuracy is tracked independently
-  5. Backtest win rate ≥60% across combined signal set
+  5. Backtest win rate >=60% across combined signal set
 
 ---
 
 ### v2.3 Trader Experience
 
 #### Phase 12: Dashboard UX Overhaul
-**Goal**: Restructure the dashboard around the trader's decision loop (scan → predict → decide → trade → monitor → exit) instead of the current back-office analysis layout
+**Goal**: Restructure the dashboard around the trader's decision loop (scan -> predict -> decide -> trade -> monitor -> exit) instead of the current back-office analysis layout
 
 **Depends on**: Phase 9 (dashboard split)
 
 **Current problems** (from UX review):
   - No at-a-glance risk summary (positions, account delta, PDT remaining)
-  - No one-click position exit — requires: Positions tab → find row → click button
+  - No one-click position exit — requires: Positions tab -> find row -> click button
   - Manual order entry hidden in slide-out panel
   - Intelligence tab conflates predictions, scans, heatmap, and backtesting
   - No trade fill notifications (toasts/banners)
@@ -203,13 +210,13 @@ Plans:
   2. **One-click exit** — "Close" button on every position card/row, visible from any tab
   3. **Trade notifications** — Toast/banner when orders fill, with sound option
   4. **Simplified chart presets** — "Swing" preset (daily, SMA+BB+Vol) replaces 15 toolbar buttons
-  5. **Decision flow** — Reorganize tabs: Today's Picks → Chart → Trade → Positions → History
+  5. **Decision flow** — Reorganize tabs: Today's Picks -> Chart -> Trade -> Positions -> History
   6. **Promote order entry** — Quick-buy button on prediction cards ("Buy 1 share of NVDA")
   7. **Mobile optimization** — Risk banner collapses to essentials, swipe to close positions
 
 **Success Criteria**:
   1. PDT remaining and net P&L visible from every tab without clicking
-  2. Any position can be closed in ≤2 clicks from any screen
+  2. Any position can be closed in <=2 clicks from any screen
   3. Order fills produce visible notification within 2 seconds
   4. New user can understand what the bot recommends within 10 seconds of loading
   5. Mobile layout shows risk + top pick above the fold
@@ -225,7 +232,7 @@ Plans:
 
 **What to build**:
   1. **Trade budget planner** — Show remaining trades + days until reset, with "conviction threshold escalation" (if 1 trade left, only take A-grade setups)
-  2. **Opportunity cost display** — "You used 2/3 trades. Remaining trade reserved for setups scoring ≥8.0"
+  2. **Opportunity cost display** — "You used 2/3 trades. Remaining trade reserved for setups scoring >=8.0"
   3. **Weekly review** — After PDT window resets, show: trades used, outcomes, what was skipped and what it did
   4. **Save-for-later queue** — If a B-grade setup fires on a day with 1 trade remaining, queue it and alert if it becomes A-grade tomorrow
 
@@ -248,7 +255,7 @@ Plans:
   2. Contract selection picks closest OTM strike with adequate liquidity
   3. All options orders are LIMIT only — never MARKET
   4. Calls for bullish, puts for bearish, no exceptions
-  5. Auto-close when premium drops 50%, rises 75%, or DTE≤3
+  5. Auto-close when premium drops 50%, rises 75%, or DTE<=3
 
 ---
 
@@ -302,16 +309,16 @@ Plans:
 | 2. Prediction Engine | v1.0 | :white_check_mark: Complete | 2026-03-30 |
 | 6. Score Recalibration | v2.0 | :white_check_mark: Complete | 2026-04-08 |
 | 7. Expanded Scanner | v2.0 | :white_check_mark: Complete | 2026-04-19 |
-| **8. Critical Bug Fixes** | **v2.1** | **Not started** | — |
-| 9. Architecture Cleanup | v2.1 | Not started | — |
-| 10. Prediction Feedback Loop | v2.2 | Not started | — |
-| 11. Signal Expansion | v2.2 | Not started | — |
-| 12. Dashboard UX Overhaul | v2.3 | Not started | — |
-| 13. Strategic PDT Management | v2.3 | Not started | — |
-| 14. Options Trading | v3.0 | Not started | — |
-| 15. Multi-Source News & Overnight | v3.0 | Not started | — |
-| 16. AI Market Analyst | v3.1 | Not started | — |
-| 17. PDF Report | v3.1 | Not started | — |
+| **8. Critical Bug Fixes** | **v2.1** | **Not started** | -- |
+| 9. Architecture Cleanup | v2.1 | Not started | -- |
+| 10. Prediction Feedback Loop | v2.2 | Not started | -- |
+| 11. Signal Expansion | v2.2 | Not started | -- |
+| 12. Dashboard UX Overhaul | v2.3 | Not started | -- |
+| 13. Strategic PDT Management | v2.3 | Not started | -- |
+| 14. Options Trading | v3.0 | Not started | -- |
+| 15. Multi-Source News & Overnight | v3.0 | Not started | -- |
+| 16. AI Market Analyst | v3.1 | Not started | -- |
+| 17. PDF Report | v3.1 | Not started | -- |
 
 ## Dependency Graph
 
