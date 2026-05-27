@@ -145,12 +145,12 @@ Plans:
   4. Backtest results automatically update signal weights
   5. Dashboard shows running prediction accuracy (overall and per-signal)
 
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 10-01-PLAN.md — Recalibration engine + unit tests, extend prediction logging with active_signals, wire outcome resolution into scheduler
-- [ ] 10-02-PLAN.md — File-based weight loading in prediction.py, Sunday midnight recalibration scheduler, three new API routes
-- [ ] 10-03-PLAN.md — Dashboard accuracy banner, per-signal stats table, trend sparkline, recalibrate button
+- [x] 10-01-PLAN.md — Recalibration engine + unit tests, extend prediction logging with active_signals, wire outcome resolution into scheduler
+- [x] 10-02-PLAN.md — File-based weight loading in prediction.py, Sunday midnight recalibration scheduler, three new API routes
+- [x] 10-03-PLAN.md — Dashboard accuracy banner, per-signal stats table, trend sparkline, recalibrate button
 
 ---
 
@@ -311,7 +311,7 @@ Plans:
 | 7. Expanded Scanner | v2.0 | :white_check_mark: Complete | 2026-04-19 |
 | **8. Critical Bug Fixes** | **v2.1** | **Not started** | -- |
 | 9. Architecture Cleanup | v2.1 | Not started | -- |
-| 10. Prediction Feedback Loop | v2.2 | Not started | -- |
+| 10. Prediction Feedback Loop | 3/3 | Complete   | 2026-05-27 |
 | 11. Signal Expansion | v2.2 | Not started | -- |
 | 12. Dashboard UX Overhaul | v2.3 | Not started | -- |
 | 13. Strategic PDT Management | v2.3 | Not started | -- |
