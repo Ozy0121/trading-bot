@@ -823,6 +823,7 @@ def _log_predictions(predictions: list[Prediction]) -> None:
         logged = 0
         for p in predictions:
             timeframe = 3 if "3" in p.timeframe else 2 if "2" in p.timeframe else 1
+            active_signals = [pat.name for pat in p.patterns if pat.detected]
             log_prediction(
                 symbol=p.symbol,
                 direction="up",
@@ -832,6 +833,7 @@ def _log_predictions(predictions: list[Prediction]) -> None:
                 reasons=p.reasons[:5],
                 source="mean_reversion",
                 entry_price=p.entry_high,
+                active_signals=active_signals,
             )
             logged += 1
         log.info("[prediction] Logged %d predictions to tracking system", logged)

@@ -49,6 +49,7 @@ class PredictionRecord:
     outcome: str = "pending"         # "pending", "correct", "incorrect"
     outcome_date: str = ""
     exit_price: float = 0.0
+    active_signals: list[str] = field(default_factory=list)  # e.g. ["rsi2", "ibs", "bb_lower"]
 
     def is_expired(self) -> bool:
         ts = datetime.fromisoformat(self.timestamp)
@@ -81,6 +82,7 @@ def log_prediction(
     reasons: list[str],
     source: str,
     entry_price: float = 0.0,
+    active_signals: list[str] | None = None,
 ) -> PredictionRecord:
     """Log a formal prediction. Returns the record."""
     records = _load_records()
@@ -105,6 +107,7 @@ def log_prediction(
         prediction_statement=statement,
         timestamp=datetime.now(timezone.utc).isoformat(),
         entry_price=entry_price,
+        active_signals=active_signals or [],
     )
 
     records.append(asdict(record))

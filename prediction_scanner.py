@@ -495,9 +495,17 @@ def _schedule_loop():
                 log.info("[overnight] Checking yesterday's prediction accuracy")
                 try:
                     check_prediction_accuracy()
-                    last_accuracy_date = today
                 except Exception as exc:
                     log.error("[overnight] Accuracy check failed: %s", exc)
+                # Also resolve predictions in the formal tracking system
+                try:
+                    from prediction_log import check_outcomes
+                    resolved_count = check_outcomes()
+                    if resolved_count > 0:
+                        log.info("[overnight] Resolved %d pending predictions", resolved_count)
+                except Exception as exc:
+                    log.error("[overnight] Prediction log outcome check failed: %s", exc)
+                last_accuracy_date = today
 
             time.sleep(60)  # check every minute
         except Exception as exc:
