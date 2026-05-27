@@ -60,19 +60,49 @@ AMT_VETO_STATES = ("imbalanced_down",)  # these AMT states veto longs
 
 # ── Scoring weights ─────────────────────────────────────────────────────────
 
-PRIMARY_WEIGHTS = {
+DEFAULT_PRIMARY_WEIGHTS = {
     "rsi2":          4.0,   # strongest documented edge
     "ibs":           3.5,   # second strongest
     "consec_down":   3.0,   # complementary timing signal
     "bb_lower":      3.5,   # BB lower touch — 87.5% when combined with RSI
 }
 
-CONFIRM_BONUS = {
+DEFAULT_CONFIRM_BONUS = {
     "volume_profile": 1.5,  # confirms where money is
     "order_flow":     1.0,  # confirms buying pressure
     "amt_state":      1.0,  # confirms market structure
     "volume_spike":   1.5,  # confirms capitulation selling
 }
+
+import os as _os
+import json as _json
+
+_WEIGHTS_FILE = _os.path.join(_os.path.dirname(__file__), "data", "signal_weights.json")
+
+
+def _load_weights() -> tuple[dict, dict]:
+    """Load calibrated weights from file, fall back to defaults."""
+    try:
+        with open(_WEIGHTS_FILE) as f:
+            w = _json.load(f)
+        primary = w.get("primary_weights", dict(DEFAULT_PRIMARY_WEIGHTS))
+        confirm = w.get("confirm_bonus", dict(DEFAULT_CONFIRM_BONUS))
+        # Ensure all keys present (new signals may not be in old weights file)
+        for k, v in DEFAULT_PRIMARY_WEIGHTS.items():
+            primary.setdefault(k, v)
+        for k, v in DEFAULT_CONFIRM_BONUS.items():
+            confirm.setdefault(k, v)
+        return primary, confirm
+    except (FileNotFoundError, KeyError, _json.JSONDecodeError):
+        return dict(DEFAULT_PRIMARY_WEIGHTS), dict(DEFAULT_CONFIRM_BONUS)
+
+
+PRIMARY_WEIGHTS, CONFIRM_BONUS = _load_weights()
+
+if _os.path.exists(_WEIGHTS_FILE):
+    log.info("[prediction] Loaded calibrated weights from %s", _WEIGHTS_FILE)
+else:
+    log.info("[prediction] Using default signal weights (no calibration file)")
 
 CONFLUENCE_MULTIPLIER = 1.25  # bonus when 2+ primary signals fire together
 
