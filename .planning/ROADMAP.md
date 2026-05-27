@@ -187,6 +187,13 @@ Plans:
   4. Each signal's contribution to accuracy is tracked independently
   5. Backtest win rate >=60% across combined signal set
 
+**Plans:** 3 plans
+
+Plans:
+- [ ] 11-01-PLAN.md — Create prediction_signals.py with 6 confirmation detectors + sync DEFAULT dicts
+- [ ] 11-02-PLAN.md — Sector ETF caching, breadth multiplier, sector strength, re-entry tracker
+- [ ] 11-03-PLAN.md — Dual-path momentum architecture, wire all signals into predict(), integration tests
+
 ---
 
 ### v2.3 Trader Experience
