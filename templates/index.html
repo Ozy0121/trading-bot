@@ -1548,7 +1548,11 @@
       <div style="display:flex;gap:8px;align-items:center">
         <span id="scorecard-cumulative" style="font-size:11px;color:var(--outline)"></span>
         <button class="tb-btn" onclick="checkLiveAccuracy()"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle">fact_check</span> CHECK ACCURACY</button>
+        <button class="tb-btn" onclick="triggerRecalibration()" id="recalib-btn"><span class="material-symbols-outlined" style="font-size:14px;vertical-align:middle" id="recalib-icon">refresh</span> RECALIBRATE NOW</button>
       </div>
+    </div>
+    <div id="accuracy-banner" style="padding:8px 16px;font-size:13px;font-family:Manrope,sans-serif;color:var(--on-surface)">
+      <span id="accuracy-banner-text">No resolved predictions yet — outcomes checked daily at 9:35 AM ET</span>
     </div>
     <div id="scorecard-stats" style="display:none;padding:8px 0">
       <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:10px;text-align:center;font-size:12px">
@@ -1575,6 +1579,23 @@
     <div id="scorecard-empty" style="text-align:center;padding:20px;color:var(--outline);font-size:12px">
       Predictions are logged automatically. Click CHECK ACCURACY to resolve pending outcomes.
     </div>
+    <details id="signal-stats-details" style="margin-top:8px;padding:0 16px 16px">
+      <summary style="font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:600;letter-spacing:0.08em;color:var(--outline);cursor:pointer;padding:8px 0;text-transform:uppercase">
+        SIGNAL ACCURACY BREAKDOWN
+      </summary>
+      <div id="signal-stats-table" style="margin-top:8px">
+        <div style="font-size:12px;color:var(--outline);text-align:center;padding:16px">
+          Loading signal accuracy data...
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <canvas id="accuracy-trend-chart" height="120" style="width:100%"></canvas>
+      </div>
+      <div id="recalib-metadata" style="margin-top:16px;font-family:'Space Grotesk',sans-serif;font-size:10px;font-weight:600;color:var(--outline)">
+        Not yet recalibrated — runs Sunday at midnight ET
+      </div>
+      <div id="weight-changes" style="margin-top:8px"></div>
+    </details>
   </div>
 
   <!-- Strategy Report Card -->
@@ -3506,6 +3527,7 @@ function loadIntelligenceTab() {
   loadBacktest();
   loadHeatmap('1D');
   loadPositionsHeatmap();
+  loadAccuracyBanner();
 }
 
 // ── Prediction cards ──────────────────────────────────────────────────────
@@ -3770,6 +3792,7 @@ async function checkLiveAccuracy() {
       return;
     }
     renderLiveScorecard(data);
+    loadAccuracyBanner();
     const msg = data.recently_resolved > 0
       ? `Resolved ${data.recently_resolved} predictions. Accuracy: ${data.accuracy_pct}%`
       : `No new predictions to resolve. Accuracy: ${data.accuracy_pct}%`;
@@ -4359,6 +4382,182 @@ function renderAgents(data) {
       ${errorHtml}
     </div>`;
   }).join('');
+}
+
+// ── Prediction Accuracy Banner & Signal Stats ─────────────────────────────
+
+async function loadAccuracyBanner() {
+  try {
+    const res = await fetch('/api/prediction-log/accuracy');
+    const data = await res.json();
+    const resolved = data.resolved || 0;
+    const correct = data.correct || 0;
+    const pct = data.accuracy_pct || 0;
+    const el = $('accuracy-banner-text');
+    if (!el) return;
+    if (resolved > 0) {
+      const color = pct >= 60 ? '#66bb6a' : pct >= 40 ? '#ffa726' : 'var(--error)';
+      el.innerHTML = 'Last <span style="font-family:\'Space Grotesk\',sans-serif;font-size:20px;font-weight:700">' + resolved + '</span> resolved predictions: <span style="font-family:\'Space Grotesk\',sans-serif;font-size:20px;font-weight:700;color:' + color + '">' + correct + ' correct (' + pct + '%)</span>';
+    } else {
+      el.textContent = 'No resolved predictions yet — outcomes checked daily at 9:35 AM ET';
+    }
+  } catch (e) { console.warn('Banner load failed:', e); }
+}
+
+let signalStatsLoaded = false;
+let accuracyTrendChart = null;
+const DEFAULT_WEIGHTS = {rsi2: 4.0, ibs: 3.5, consec_down: 3.0, bb_lower: 3.5, volume_profile: 1.5, order_flow: 1.0, amt_state: 1.0, volume_spike: 1.5};
+
+(function() {
+  const details = document.getElementById('signal-stats-details');
+  if (details) details.addEventListener('toggle', function() {
+    if (this.open && !signalStatsLoaded) fetchSignalStats();
+  });
+})();
+
+async function fetchSignalStats() {
+  try {
+    const [statsRes, weightsRes] = await Promise.all([
+      fetch('/api/prediction-log/signal-accuracy'),
+      fetch('/api/prediction-log/signal-weights')
+    ]);
+    const stats = await statsRes.json();
+    const weights = await weightsRes.json();
+    renderSignalTable(stats, weights);
+    renderRecalibMetadata(weights);
+    renderAccuracyTrend(stats);
+    signalStatsLoaded = true;
+  } catch (e) {
+    const el = $('signal-stats-table');
+    if (el) el.innerHTML = '<div style="font-size:12px;color:var(--outline);text-align:center;padding:16px">No signal accuracy data yet. Predictions resolve after 3 trading days.</div>';
+  }
+}
+
+function renderSignalTable(stats, weights) {
+  const el = $('signal-stats-table');
+  if (!el) return;
+  const signals = ['rsi2', 'ibs', 'consec_down', 'bb_lower', 'volume_profile', 'order_flow', 'amt_state', 'volume_spike'];
+  const sigData = stats.signals || {};
+  const pw = (weights && weights.primary_weights) || {};
+  const cb = (weights && weights.confirm_bonus) || {};
+
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html += '<thead><tr style="color:var(--outline);font-family:\'Space Grotesk\',sans-serif;font-size:10px;font-weight:600">';
+  html += '<th style="text-align:left;padding:4px 8px;width:25%">SIGNAL</th>';
+  html += '<th style="text-align:right;padding:4px 8px;width:15%">SAMPLES</th>';
+  html += '<th style="text-align:right;padding:4px 8px;width:20%">ACCURACY</th>';
+  html += '<th style="padding:4px 8px;width:25%"></th>';
+  html += '<th style="text-align:right;padding:4px 8px;width:7.5%">DEFAULT</th>';
+  html += '<th style="text-align:right;padding:4px 8px;width:7.5%">CALIBRATED</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const sig of signals) {
+    const d = sigData[sig] || {};
+    const samples = d.sample_count || 0;
+    const lowSample = samples < 10;
+    const acc = d.accuracy_pct || 0;
+    const accColor = lowSample ? 'var(--outline)' : acc >= 60 ? '#66bb6a' : acc >= 40 ? '#ffa726' : 'var(--error)';
+    const barColor = acc >= 60 ? '#66bb6a' : acc >= 40 ? '#ffa726' : 'var(--error)';
+    const defW = DEFAULT_WEIGHTS[sig] !== undefined ? DEFAULT_WEIGHTS[sig] : null;
+    const calW = pw[sig] !== undefined ? pw[sig] : (cb[sig] !== undefined ? cb[sig] : null);
+    const calColor = calW === null ? 'var(--outline)' : calW > defW ? 'var(--primary)' : calW < defW ? 'var(--error)' : 'var(--on-surface)';
+    const defDisplay = defW !== null ? defW.toFixed(1) : '—';
+    const calDisplay = calW !== null ? calW.toFixed(1) : defDisplay;
+
+    html += '<tr style="border-top:1px solid var(--outline-variant)">';
+    html += '<td style="padding:6px 8px;font-family:\'Space Grotesk\',sans-serif;font-size:10px;font-weight:600;color:var(--on-surface)">' + sig.toUpperCase() + '</td>';
+    html += '<td style="padding:6px 8px;text-align:right;color:' + (lowSample ? '#ffa726' : 'var(--on-surface)') + '">' + samples + (lowSample ? ' <span style="font-size:10px;color:var(--outline)">(low sample)</span>' : '') + '</td>';
+    html += '<td style="padding:6px 8px;text-align:right;color:' + accColor + ';font-weight:700">' + (lowSample ? '—' : acc.toFixed(1) + '%') + '</td>';
+    html += '<td style="padding:6px 8px"><div style="height:6px;background:var(--surface-high);border-radius:3px;overflow:hidden"><div style="height:100%;width:' + (lowSample ? 0 : acc) + '%;background:' + barColor + ';border-radius:3px"></div></div></td>';
+    html += '<td style="padding:6px 8px;text-align:right;color:var(--outline)">' + defDisplay + '</td>';
+    html += '<td style="padding:6px 8px;text-align:right;color:' + calColor + '">' + calDisplay + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderRecalibMetadata(weights) {
+  const metaEl = $('recalib-metadata');
+  const changesEl = $('weight-changes');
+  if (!metaEl) return;
+  if (weights && weights.recalibration_date) {
+    metaEl.textContent = 'Last recalibrated: ' + weights.recalibration_date;
+  } else {
+    metaEl.textContent = 'Not yet recalibrated — runs Sunday at midnight ET';
+  }
+  if (!changesEl) return;
+  const changes = (weights && weights.changes) || [];
+  if (changes.length === 0) { changesEl.innerHTML = ''; return; }
+  changesEl.innerHTML = changes.map(c => {
+    const dir = c.new_weight > c.old_weight ? 'var(--primary)' : c.new_weight < c.old_weight ? 'var(--error)' : 'var(--on-surface)';
+    return '<div style="font-size:13px;font-family:Manrope,sans-serif;padding:2px 0">' +
+      '<span style="font-family:\'Space Grotesk\',sans-serif;font-size:10px;font-weight:600;color:var(--on-surface)">' + c.signal.toUpperCase() + '</span>: ' +
+      '<span style="color:var(--outline)">' + c.old_weight.toFixed(1) + '</span>' +
+      ' → <span style="color:' + dir + '">' + c.new_weight.toFixed(1) + '</span></div>';
+  }).join('');
+}
+
+function renderAccuracyTrend(stats) {
+  const canvas = document.getElementById('accuracy-trend-chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const signals = Object.keys(stats.signals || {});
+  if (signals.length === 0) return;
+  const accuracies = signals.map(s => (stats.signals[s] && stats.signals[s].accuracy_pct) || 0);
+  if (accuracyTrendChart) { accuracyTrendChart.destroy(); accuracyTrendChart = null; }
+  accuracyTrendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: signals.map(s => s.toUpperCase()),
+      datasets: [{
+        data: accuracies,
+        borderColor: '#c8c8b0',
+        backgroundColor: 'rgba(200,200,176,0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
+      scales: {
+        x: { grid: { color: '#484848' }, ticks: { color: '#757575', font: { size: 10, family: 'Space Grotesk' } } },
+        y: { min: 0, max: 100, grid: { color: '#484848' }, ticks: { display: false } }
+      }
+    }
+  });
+}
+
+async function triggerRecalibration() {
+  const btn = $('recalib-btn');
+  const icon = $('recalib-icon');
+  if (!btn) return;
+  btn.disabled = true;
+  if (icon) icon.style.animation = 'spin 1s linear infinite';
+  showToast('Running recalibration against last 30 days of resolved predictions...', 'info', 4000);
+  try {
+    const res = await fetch('/api/prediction-log/recalibrate', {method: 'POST'});
+    const data = await res.json();
+    if (data.skipped) {
+      showToast('Recalibration skipped — only ' + (data.reason || 'insufficient data'), 'warning');
+    } else {
+      const n = (data.changes || []).length;
+      showToast('Recalibration complete. ' + n + ' weight changes applied.', 'success');
+      signalStatsLoaded = false;
+      const details = document.getElementById('signal-stats-details');
+      if (details && details.open) fetchSignalStats();
+      loadAccuracyBanner();
+    }
+  } catch (e) {
+    showToast('Recalibration failed. Check server logs.', 'error');
+  } finally {
+    btn.disabled = false;
+    if (icon) icon.style.animation = '';
+  }
 }
 
 function showToast(msg, type = 'success', duration = 3500) {
