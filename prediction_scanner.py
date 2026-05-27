@@ -470,6 +470,8 @@ def _schedule_loop():
 
     last_scan_date = None
     last_accuracy_date = None
+    recalib_time = dtime(0, 0)   # midnight ET (per D-04)
+    last_recalib_date = None
 
     while True:
         try:
@@ -477,8 +479,72 @@ def _schedule_loop():
             today = now_et.date()
             current_time = now_et.time()
 
-            # Skip weekends
-            if now_et.weekday() >= 5:
+            # Skip Saturday only; Sunday allowed through for recalibration (per D-04)
+            if now_et.weekday() == 5:   # Saturday
+                time.sleep(300)
+                continue
+
+            # Weekly signal recalibration — Sunday midnight ET (per D-04)
+            is_sunday = now_et.weekday() == 6
+            if is_sunday and current_time >= recalib_time and last_recalib_date != today:
+                # Check if already recalibrated today (survives restart — per Pitfall 6)
+                try:
+                    from signal_calibration import WEIGHTS_FILE
+                    import os as _os
+                    import json as _json
+                    if _os.path.exists(WEIGHTS_FILE):
+                        with open(WEIGHTS_FILE) as _f:
+                            existing = _json.load(_f)
+                        if existing.get("recalibration_date") == str(today):
+                            last_recalib_date = today
+                            log.debug("[overnight] Recalibration already ran today, skipping")
+                        else:
+                            raise FileNotFoundError  # trigger recalibration
+                    else:
+                        raise FileNotFoundError  # trigger recalibration
+                except (FileNotFoundError, KeyError, Exception):
+                    log.info("[overnight] Running weekly signal recalibration...")
+                    try:
+                        from signal_calibration import run_recalibration
+                        result = run_recalibration()
+                        last_recalib_date = today
+                        if result.get("skipped"):
+                            log.warning("[overnight] Recalibration skipped: %s", result.get("reason"))
+                        else:
+                            changes = result.get("changes", [])
+                            log.info("[overnight] Recalibration complete: %d weight changes", len(changes))
+                            for c in changes:
+                                log.info(
+                                    "[overnight]   %s: %.2f -> %.2f",
+                                    c["signal"], c["old_weight"], c["new_weight"],
+                                )
+                            # Hot-reload weights into the running prediction module
+                            # so the bot uses new weights without restart
+                            try:
+                                import prediction
+                                new_weights = result.get("primary_weights", {})
+                                new_confirm = result.get("confirm_bonus", {})
+                                if new_weights:
+                                    prediction.PRIMARY_WEIGHTS.update(new_weights)
+                                if new_confirm:
+                                    prediction.CONFIRM_BONUS.update(new_confirm)
+                                log.info("[overnight] Hot-reloaded weights into prediction module")
+                            except Exception as reload_exc:
+                                log.warning(
+                                    "[overnight] Weight hot-reload failed (will apply on restart): %s",
+                                    reload_exc,
+                                )
+                        # Update shared state for dashboard
+                        try:
+                            import state as shared_state
+                            shared_state.update(last_recalibration=result)
+                        except Exception:
+                            pass
+                    except Exception as exc:
+                        log.error("[overnight] Recalibration failed: %s", exc)
+
+            # On Sunday, skip the regular scan/accuracy checks (markets are closed)
+            if is_sunday:
                 time.sleep(300)
                 continue
 

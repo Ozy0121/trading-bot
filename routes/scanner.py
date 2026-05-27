@@ -332,3 +332,63 @@ def api_prediction_log_accuracy():
     except Exception as exc:
         log.error("[dashboard] Prediction log accuracy failed: %s", exc)
         return jsonify({"error": str(exc)})
+
+
+@scanner_bp.route("/api/prediction-log/signal-accuracy")
+def api_signal_accuracy():
+    """Per-signal accuracy stats for dashboard display (per D-11)."""
+    try:
+        from signal_calibration import get_signal_stats
+        stats = get_signal_stats()
+        return jsonify(stats)
+    except Exception as exc:
+        log.error("[dashboard] Signal accuracy stats failed: %s", exc)
+        return jsonify({"error": str(exc)})
+
+
+@scanner_bp.route("/api/prediction-log/signal-weights")
+def api_signal_weights():
+    """Current calibrated weights vs defaults (per D-11, D-12)."""
+    try:
+        from signal_calibration import get_current_weights, DEFAULT_PRIMARY, DEFAULT_CONFIRM
+        weights = get_current_weights()
+        weights["defaults"] = {
+            "primary_weights": DEFAULT_PRIMARY,
+            "confirm_bonus": DEFAULT_CONFIRM,
+        }
+        return jsonify(weights)
+    except Exception as exc:
+        log.error("[dashboard] Signal weights failed: %s", exc)
+        return jsonify({"error": str(exc)})
+
+
+@scanner_bp.route("/api/prediction-log/recalibrate", methods=["POST"])
+def api_trigger_recalibration():
+    """Manually trigger recalibration (for testing / dashboard button per D-09)."""
+    try:
+        from signal_calibration import run_recalibration
+        import prediction
+        result = run_recalibration()
+        # Hot-reload weights into running prediction module
+        if not result.get("skipped"):
+            new_weights = result.get("primary_weights", {})
+            new_confirm = result.get("confirm_bonus", {})
+            if new_weights:
+                prediction.PRIMARY_WEIGHTS.update(new_weights)
+            if new_confirm:
+                prediction.CONFIRM_BONUS.update(new_confirm)
+        return jsonify(result)
+    except Exception as exc:
+        log.error("[dashboard] Manual recalibration failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@scanner_bp.route("/api/prediction-log/accuracy-history")
+def api_accuracy_history():
+    """Daily accuracy snapshots for trend sparkline (per D-11)."""
+    try:
+        from signal_calibration import get_accuracy_history
+        return jsonify(get_accuracy_history())
+    except Exception as exc:
+        log.error("[dashboard] Accuracy history failed: %s", exc)
+        return jsonify({"history": []})
