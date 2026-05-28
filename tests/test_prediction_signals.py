@@ -523,3 +523,241 @@ class TestPrefetchSectorEtfBars:
         for etf in SECTOR_ETF_MAP:
             assert etf in result
             assert isinstance(result[etf], pd.DataFrame)
+
+
+# ── Test: _compute_breadth_multiplier ────────────────────────────────────────
+
+def _make_etf_bars(five_day_return: float, n: int = 30) -> pd.DataFrame:
+    """Build a minimal sector ETF DataFrame with a specific 5-day return."""
+    # We need at least 6 bars; set close[-6] = 100, close[-1] = 100*(1+return)
+    closes = [100.0] * n
+    closes[-1] = 100.0 * (1 + five_day_return)
+    idx = pd.date_range("2024-01-01", periods=n, freq="D")
+    return pd.DataFrame({
+        "open": closes, "high": [c + 1.0 for c in closes],
+        "low": [c - 1.0 for c in closes], "close": closes,
+        "volume": [1_000_000.0] * n,
+    }, index=idx)
+
+
+class TestComputeBreadthMultiplier:
+    def test_breadth_multiplier_normal(self):
+        """All ETFs positive 5-day return -> returns 1.0."""
+        from prediction_signals import _compute_breadth_multiplier
+
+        bars = {etf: _make_etf_bars(0.03) for etf in ["XLK", "XLE", "XLF", "XLV", "XLC",
+                                                         "XLI", "XLY", "XLP", "XLU", "XLRE", "XLB"]}
+        result = _compute_breadth_multiplier(bars)
+        assert result == 1.0
+
+    def test_breadth_multiplier_weak(self):
+        """Majority (6+) ETFs down >2% but not >5% over 5 days -> returns 0.5."""
+        from prediction_signals import _compute_breadth_multiplier
+
+        bars = {}
+        etfs = ["XLK", "XLE", "XLF", "XLV", "XLC", "XLI", "XLY", "XLP", "XLU", "XLRE", "XLB"]
+        for i, etf in enumerate(etfs):
+            # First 7 down -3% (weak), last 4 flat
+            bars[etf] = _make_etf_bars(-0.03 if i < 7 else 0.01)
+
+        result = _compute_breadth_multiplier(bars)
+        assert result == 0.5
+
+    def test_breadth_multiplier_very_weak(self):
+        """Majority (6+) ETFs down >5% over 5 days -> returns 0.25."""
+        from prediction_signals import _compute_breadth_multiplier
+
+        bars = {}
+        etfs = ["XLK", "XLE", "XLF", "XLV", "XLC", "XLI", "XLY", "XLP", "XLU", "XLRE", "XLB"]
+        for i, etf in enumerate(etfs):
+            bars[etf] = _make_etf_bars(-0.07 if i < 7 else 0.01)
+
+        result = _compute_breadth_multiplier(bars)
+        assert result == 0.25
+
+    def test_breadth_multiplier_no_data(self):
+        """Empty dict input -> returns 1.0 (no penalty)."""
+        from prediction_signals import _compute_breadth_multiplier
+
+        assert _compute_breadth_multiplier({}) == 1.0
+        assert _compute_breadth_multiplier(None) == 1.0
+
+    def test_breadth_multiplier_insufficient_bars(self):
+        """ETF DataFrames with fewer than 6 bars are skipped gracefully."""
+        from prediction_signals import _compute_breadth_multiplier
+
+        short_df = pd.DataFrame(
+            {"open": [100.0], "high": [101.0], "low": [99.0], "close": [100.0], "volume": [1_000_000.0]},
+            index=pd.date_range("2024-01-01", periods=1, freq="D"),
+        )
+        bars = {"XLK": short_df}
+        result = _compute_breadth_multiplier(bars)
+        assert result == 1.0
+
+
+# ── Test: _detect_sector_strength ────────────────────────────────────────────
+
+def _make_spy_bars(twenty_day_return: float, n: int = 25) -> pd.DataFrame:
+    """Build a minimal SPY DataFrame with a specific 20-day return."""
+    closes = [100.0] * n
+    closes[-1] = 100.0 * (1 + twenty_day_return)
+    idx = pd.date_range("2024-01-01", periods=n, freq="D")
+    return pd.DataFrame({
+        "open": closes, "high": [c + 1.0 for c in closes],
+        "low": [c - 1.0 for c in closes], "close": closes,
+        "volume": [5_000_000.0] * n,
+    }, index=idx)
+
+
+def _make_sector_etf_bars_20d(twenty_day_return: float, n: int = 25) -> pd.DataFrame:
+    """Build a sector ETF DataFrame with a specific 20-day return."""
+    closes = [100.0] * n
+    closes[-1] = 100.0 * (1 + twenty_day_return)
+    idx = pd.date_range("2024-01-01", periods=n, freq="D")
+    return pd.DataFrame({
+        "open": closes, "high": [c + 1.0 for c in closes],
+        "low": [c - 1.0 for c in closes], "close": closes,
+        "volume": [1_000_000.0] * n,
+    }, index=idx)
+
+
+class TestDetectSectorStrength:
+    def test_sector_strength_leading(self):
+        """Sector ETF 20-day return > SPY 20-day return -> detected=True, score > 0."""
+        from unittest.mock import patch
+        from prediction_signals import _detect_sector_strength
+
+        spy_df = _make_spy_bars(0.02)          # SPY up 2%
+        sector_etf_bars = {"XLK": _make_sector_etf_bars_20d(0.08)}  # Tech up 8%
+
+        # get_sector_cached and SECTOR_ETF_MAP are imported inside _detect_sector_strength
+        # from yf_limiter, so patch them there.
+        with patch("yf_limiter.get_sector_cached", return_value="Technology"), \
+             patch("yf_limiter.SECTOR_ETF_MAP", {"XLK": "Technology"}):
+            result = _detect_sector_strength("AAPL", sector_etf_bars, spy_df)
+
+        assert result.name == "sector_strength"
+        assert result.category == "regime"
+        assert result.detected is True
+        assert result.score > 0.0
+        assert result.details["spread"] > 0
+
+    def test_sector_strength_lagging(self):
+        """Sector ETF 20-day return < SPY 20-day return -> detected=False, score=0."""
+        from unittest.mock import patch
+        from prediction_signals import _detect_sector_strength
+
+        spy_df = _make_spy_bars(0.05)          # SPY up 5%
+        sector_etf_bars = {"XLE": _make_sector_etf_bars_20d(0.01)}  # Energy up 1%
+
+        with patch("yf_limiter.get_sector_cached", return_value="Energy"), \
+             patch("yf_limiter.SECTOR_ETF_MAP", {"XLE": "Energy"}):
+            result = _detect_sector_strength("XOM", sector_etf_bars, spy_df)
+
+        assert result.detected is False
+        assert result.score == 0.0
+        assert result.details["spread"] < 0
+
+    def test_sector_strength_no_spy_data(self):
+        """No SPY data -> detected=False gracefully."""
+        from prediction_signals import _detect_sector_strength
+
+        result = _detect_sector_strength("AAPL", {"XLK": _make_sector_etf_bars_20d(0.05)}, None)
+        assert result.detected is False
+        assert result.score == 0.0
+
+    def test_sector_strength_no_sector_bars(self):
+        """Empty sector ETF bars dict -> detected=False gracefully."""
+        from prediction_signals import _detect_sector_strength
+
+        spy_df = _make_spy_bars(0.02)
+        result = _detect_sector_strength("AAPL", {}, spy_df)
+        assert result.detected is False
+
+    def test_sector_strength_unknown_sector(self):
+        """Symbol with no sector mapping -> detected=False gracefully."""
+        from unittest.mock import patch
+        from prediction_signals import _detect_sector_strength
+
+        spy_df = _make_spy_bars(0.02)
+        sector_etf_bars = {"XLK": _make_sector_etf_bars_20d(0.05)}
+
+        with patch("yf_limiter.get_sector_cached", return_value=""):
+            result = _detect_sector_strength("UNKN", sector_etf_bars, spy_df)
+
+        assert result.detected is False
+
+
+# ── Test: re-entry tracker ───────────────────────────────────────────────────
+
+class TestReentryTracker:
+    def setup_method(self):
+        """Clear the tracker before each test."""
+        from prediction_signals import _reentry_tracker
+        _reentry_tracker.clear()
+
+    def test_reentry_allowed_first_stop(self):
+        """First stop hit, check re-entry -> allowed at 50% size, 1.0 ATR stop."""
+        from prediction_signals import record_stop_hit, _check_reentry_allowed
+
+        record_stop_hit("NVDA")
+        allowed, size_mult, atr_mult = _check_reentry_allowed("NVDA")
+
+        assert allowed is True
+        assert size_mult == 0.5
+        assert atr_mult == 1.0
+
+    def test_reentry_blocked_second_stop(self):
+        """Two stop hits -> re-entry blocked (setup invalidated, per D-21)."""
+        from prediction_signals import record_stop_hit, _check_reentry_allowed
+
+        record_stop_hit("TSLA")
+        record_stop_hit("TSLA")
+        allowed, size_mult, atr_mult = _check_reentry_allowed("TSLA")
+
+        assert allowed is False
+        assert size_mult == 0.0
+        assert atr_mult == 0.0
+
+    def test_reentry_normal_no_prior_stop(self):
+        """No prior stop hit -> normal entry (True, 1.0, 1.5)."""
+        from prediction_signals import _check_reentry_allowed
+
+        allowed, size_mult, atr_mult = _check_reentry_allowed("AAPL")
+
+        assert allowed is True
+        assert size_mult == 1.0
+        assert atr_mult == 1.5
+
+    def test_record_stop_hit_increments_count(self):
+        """record_stop_hit increments count on repeated calls."""
+        from prediction_signals import record_stop_hit, _reentry_tracker
+
+        record_stop_hit("AMD")
+        assert _reentry_tracker["AMD"]["stop_hit_count"] == 1
+
+        record_stop_hit("AMD")
+        assert _reentry_tracker["AMD"]["stop_hit_count"] == 2
+
+    def test_reentry_tracker_prune(self):
+        """Entries older than 7 days are pruned; recent entries are kept."""
+        from prediction_signals import _prune_reentry_tracker, _reentry_tracker
+        from datetime import date, timedelta
+
+        old_date = (date.today() - timedelta(days=8)).isoformat()
+        recent_date = date.today().isoformat()
+
+        _reentry_tracker["OLD_SYM"] = {"stop_hit_count": 1, "last_stop_date": old_date}
+        _reentry_tracker["NEW_SYM"] = {"stop_hit_count": 1, "last_stop_date": recent_date}
+
+        _prune_reentry_tracker()
+
+        assert "OLD_SYM" not in _reentry_tracker
+        assert "NEW_SYM" in _reentry_tracker
+
+    def test_prune_empty_tracker(self):
+        """Pruning an empty tracker does not raise."""
+        from prediction_signals import _prune_reentry_tracker, _reentry_tracker
+
+        assert len(_reentry_tracker) == 0
+        _prune_reentry_tracker()  # Should not raise

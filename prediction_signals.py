@@ -16,10 +16,19 @@ Also provides swing point detection utilities used by the above:
   - _find_swing_lows: local price minima in lookback window
   - _find_swing_highs: local price maxima in lookback window
 
+Market regime and re-entry infrastructure (Phase 11, Plan 02):
+  - _compute_breadth_multiplier: 3-tier breadth multiplier (1.0/0.5/0.25)
+  - _detect_sector_strength: sector ETF vs SPY 20-day return spread
+  - record_stop_hit: record a stop loss hit for a symbol
+  - _check_reentry_allowed: enforce max 1 re-entry per symbol per setup
+  - _prune_reentry_tracker: remove stale re-entry tracker entries
+
 All detectors return PatternResult as defined in prediction.py.
 """
 
 from __future__ import annotations
+
+from datetime import date, timedelta
 
 import pandas as pd
 import numpy as np
@@ -431,3 +440,227 @@ def _detect_support_level(df: pd.DataFrame) -> PatternResult:
     return PatternResult("support_level", detected, score, "structure",
                          {"nearest_support": round(nearest, 4),
                           "distance_pct": round(distance_pct, 2)})
+
+
+# ── Market breadth multiplier ────────────────────────────────────────────────
+
+def _compute_breadth_multiplier(
+    sector_etf_bars: dict[str, pd.DataFrame] | None,
+) -> float:
+    """Compute a position-size multiplier based on broad market breadth (D-14, D-15).
+
+    Examines the 5-day return of each sector ETF and classifies market breadth
+    into three tiers:
+
+    - Very weak: majority of sectors down >5% over 5 days → 0.25
+    - Weak: majority of sectors down >2% over 5 days → 0.5
+    - Normal: otherwise → 1.0
+
+    Args:
+        sector_etf_bars: Dict of {etf_ticker: OHLCV DataFrame} from prefetch.
+                         None or empty dict returns 1.0 (no penalty).
+
+    Returns:
+        Multiplier float: 1.0, 0.5, or 0.25.
+    """
+    if not sector_etf_bars:
+        return 1.0
+
+    down_5pct = 0
+    down_2pct = 0
+    valid_count = 0
+
+    for etf, df in sector_etf_bars.items():
+        if df is None or len(df) < 6:
+            continue
+        close = df["close"].values
+        five_day_return = (close[-1] - close[-6]) / close[-6]
+        valid_count += 1
+        if five_day_return < -0.05:
+            down_5pct += 1
+        elif five_day_return < -0.02:
+            down_2pct += 1
+
+    if valid_count == 0:
+        return 1.0
+
+    majority = valid_count // 2 + 1
+
+    if down_5pct >= majority:
+        return 0.25
+    if down_2pct + down_5pct >= majority:
+        return 0.5
+    return 1.0
+
+
+# ── Sector relative strength detector ───────────────────────────────────────
+
+def _detect_sector_strength(
+    symbol: str,
+    sector_etf_bars: dict[str, pd.DataFrame] | None,
+    spy_df: pd.DataFrame | None = None,
+) -> PatternResult:
+    """Sector relative strength — stock's sector ETF vs SPY 20-day return (D-12).
+
+    Looks up the symbol's sector, finds its ETF, and computes:
+      spread = sector_20d_return - spy_20d_return
+
+    Scoring by spread:
+      > 5%  → 10.0
+      > 3%  → 8.0
+      > 1%  → 6.0
+      > 0%  → 4.0
+      <= 0% → 0.0 (lagging sector)
+
+    Detected when sector outperforms SPY (spread > 0).
+
+    Args:
+        symbol: Stock ticker for sector lookup.
+        sector_etf_bars: Dict of {etf_ticker: DataFrame} from prefetch.
+        spy_df: SPY daily bars DataFrame (at least 21 bars needed).
+
+    Returns:
+        PatternResult with category "regime".
+    """
+    # Import here to avoid circular imports at module load time
+    from yf_limiter import get_sector_cached, SECTOR_ETF_MAP
+
+    _no_data = PatternResult(
+        "sector_strength", False, 0.0, "regime",
+        {"sector": None, "sector_return_20d": None,
+         "spy_return_20d": None, "spread": None},
+    )
+
+    if not sector_etf_bars or spy_df is None or len(spy_df) < 21:
+        return _no_data
+
+    # Resolve symbol → sector name → ETF ticker
+    sector_name = get_sector_cached(symbol)
+    if not sector_name:
+        return _no_data
+
+    # Reverse map: sector name → ETF ticker
+    etf_ticker: str | None = None
+    for ticker, name in SECTOR_ETF_MAP.items():
+        if name == sector_name:
+            etf_ticker = ticker
+            break
+
+    if etf_ticker is None or etf_ticker not in sector_etf_bars:
+        return _no_data
+
+    sector_df = sector_etf_bars[etf_ticker]
+    if sector_df is None or len(sector_df) < 21:
+        return _no_data
+
+    # Compute 20-day returns
+    sector_close = sector_df["close"].values
+    sector_return = (sector_close[-1] - sector_close[-21]) / sector_close[-21]
+
+    spy_close = spy_df["close"].values
+    spy_return = (spy_close[-1] - spy_close[-21]) / spy_close[-21]
+
+    spread = float(sector_return - spy_return)
+    detected = spread > 0.0
+
+    if spread > 0.05:
+        score = 10.0
+    elif spread > 0.03:
+        score = 8.0
+    elif spread > 0.01:
+        score = 6.0
+    elif spread > 0.0:
+        score = 4.0
+    else:
+        score = 0.0
+
+    return PatternResult(
+        "sector_strength", detected, score, "regime",
+        {
+            "sector": sector_name,
+            "sector_etf": etf_ticker,
+            "sector_return_20d": round(float(sector_return) * 100, 2),
+            "spy_return_20d": round(float(spy_return) * 100, 2),
+            "spread": round(spread * 100, 2),
+        },
+    )
+
+
+# ── Re-entry tracker ─────────────────────────────────────────────────────────
+
+# Module-level tracker: {symbol: {"stop_hit_count": N, "last_stop_date": "YYYY-MM-DD"}}
+# Not persisted across restarts (acceptable per T-11-04 threat disposition).
+_reentry_tracker: dict[str, dict] = {}
+
+
+def record_stop_hit(symbol: str) -> None:
+    """Record that a stop loss was hit for a symbol (D-20).
+
+    Increments the stop hit count for the symbol. On the first hit, creates
+    a tracker entry. Called by the execution layer after a stop-triggered exit.
+
+    Args:
+        symbol: Stock ticker that hit its stop.
+    """
+    if symbol not in _reentry_tracker:
+        _reentry_tracker[symbol] = {
+            "stop_hit_count": 1,
+            "last_stop_date": date.today().isoformat(),
+        }
+    else:
+        _reentry_tracker[symbol]["stop_hit_count"] += 1
+        _reentry_tracker[symbol]["last_stop_date"] = date.today().isoformat()
+
+    log.info(
+        "[prediction_signals] Stop hit recorded for %s (count=%d)",
+        symbol,
+        _reentry_tracker[symbol]["stop_hit_count"],
+    )
+
+
+def _check_reentry_allowed(symbol: str) -> tuple[bool, float, float]:
+    """Check whether re-entry is allowed after a previous stop hit (D-20, D-21).
+
+    Returns a tuple of (allowed, position_size_mult, atr_stop_mult):
+      - No prior stop: normal entry (True, 1.0, 1.5)
+      - 1 prior stop:  re-entry at 50% size, tighter 1.0 ATR stop (True, 0.5, 1.0)
+      - 2+ prior stops: setup invalidated, no entry (False, 0.0, 0.0)
+
+    Args:
+        symbol: Stock ticker to check.
+
+    Returns:
+        Tuple of (allowed: bool, position_size_mult: float, atr_stop_mult: float).
+    """
+    entry = _reentry_tracker.get(symbol)
+    if entry is None or entry.get("stop_hit_count", 0) == 0:
+        return (True, 1.0, 1.5)
+
+    count = entry["stop_hit_count"]
+    if count == 1:
+        return (True, 0.5, 1.0)
+
+    # count >= 2: setup invalidated
+    return (False, 0.0, 0.0)
+
+
+def _prune_reentry_tracker() -> None:
+    """Remove re-entry tracker entries older than 7 days (per RESEARCH.md Pitfall 6).
+
+    Call at the start of each predict() or predict_batch() cycle to prevent
+    the tracker from growing unboundedly and to automatically reset symbols
+    after a week of no stop activity.
+    """
+    cutoff = date.today() - timedelta(days=7)
+    stale = [
+        sym for sym, entry in _reentry_tracker.items()
+        if date.fromisoformat(entry.get("last_stop_date", "2000-01-01")) < cutoff
+    ]
+    for sym in stale:
+        del _reentry_tracker[sym]
+
+    if stale:
+        log.debug(
+            "[prediction_signals] Pruned %d stale re-entry tracker entries: %s",
+            len(stale), stale,
+        )
