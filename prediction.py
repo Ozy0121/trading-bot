@@ -31,12 +31,20 @@ from typing import Callable
 
 import pandas as pd
 
-from indicators import rsi as calc_rsi, bollinger_bands, atr as calc_atr
+from indicators import (
+    rsi as calc_rsi,
+    bollinger_bands,
+    atr as calc_atr,
+    keltner_channels as calc_keltner,
+    macd as calc_macd_raw,
+)
 from logger_setup import get_logger
 from data_provider import get_spy_history
 from volume_profile import score_volume_profile
 from order_flow import score_order_flow
 from amt_engine import score_amt
+# prediction_signals and yf_limiter are imported lazily inside functions
+# to avoid the circular import: prediction_signals imports PatternResult from prediction.
 
 log = get_logger()
 
@@ -183,6 +191,7 @@ class Prediction:
     best_rr_ratio: float = 0.0
     expected_value: float = 0.0
     rr_badge: str = ""
+    source: str = "mean_reversion"
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -377,8 +386,12 @@ def _sma_slope_rising(sma_series: pd.Series, lookback: int = 20) -> bool:
     return recent >= past
 
 
-def _passes_regime_filter(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) -> tuple[bool, str, float]:
-    """200-SMA trend filter + ADX regime check + SMA slope + SPY regime.
+def _passes_regime_filter(
+    df: pd.DataFrame,
+    spy_df: pd.DataFrame | None = None,
+    sector_etf_bars: dict | None = None,
+) -> tuple[bool, str, float]:
+    """200-SMA trend filter + ADX regime check + SMA slope + SPY regime + breadth.
 
     Returns (passes, reason, position_size_multiplier).
     """
@@ -417,6 +430,13 @@ def _passes_regime_filter(df: pd.DataFrame, spy_df: pd.DataFrame | None = None) 
         if spy_price < spy_sma_val:
             position_mult *= 0.5
             spy_note = ", SPY below 200-SMA (50% size)"
+
+    # Breadth multiplier (per D-16)
+    from prediction_signals import _compute_breadth_multiplier
+    breadth_mult = _compute_breadth_multiplier(sector_etf_bars)
+    position_mult *= breadth_mult
+    if breadth_mult < 1.0:
+        spy_note += f", breadth {breadth_mult:.2f}x"
 
     return True, f"SMA({sma_period}) OK, ADX {adx:.0f}{spy_note}", position_mult
 
@@ -570,6 +590,7 @@ def predict(
     df: pd.DataFrame,
     sector_etf: str = "SPY",
     spy_df: pd.DataFrame | None = None,
+    sector_etf_bars: dict | None = None,
 ) -> Prediction | None:
     """Run research-backed mean reversion analysis on a symbol.
 
@@ -579,6 +600,19 @@ def predict(
     3. Confirmation: VP/CVD/AMT — veto if CVD or AMT says sellers in control
     """
     if df is None or len(df) < 35:
+        return None
+
+    # Lazy imports to break circular dependency (prediction_signals imports PatternResult from here)
+    from prediction_signals import (
+        _detect_stoch_rsi, _detect_mfi, _detect_vwap,
+        _detect_keltner_lower, _detect_macd_divergence, _detect_support_level,
+        _find_swing_lows, _find_swing_highs,
+        _check_reentry_allowed,
+    )
+
+    # Re-entry check (per D-20, D-21)
+    reentry_allowed, reentry_size_mult, reentry_atr_mult = _check_reentry_allowed(symbol)
+    if not reentry_allowed:
         return None
 
     # ETF detection for RSI calibration
@@ -602,7 +636,7 @@ def predict(
         return None
 
     # Step 2: Regime filter (10% SMA threshold, slope/SPY regime → position sizing)
-    passes_regime, regime_reason, position_mult = _passes_regime_filter(df, spy_df)
+    passes_regime, regime_reason, position_mult = _passes_regime_filter(df, spy_df, sector_etf_bars)
     if not passes_regime:
         return None
 
@@ -613,6 +647,14 @@ def predict(
 
     vol_spike = _detect_volume_spike(df)
     confirms.append(vol_spike)
+
+    # Phase 11 — new confirmation signals (per D-01)
+    confirms.append(_detect_stoch_rsi(df))
+    confirms.append(_detect_mfi(df))
+    confirms.append(_detect_vwap(df))
+    confirms.append(_detect_keltner_lower(df))
+    confirms.append(_detect_macd_divergence(df))
+    confirms.append(_detect_support_level(df))
 
     active_confirms = [c for c in confirms if c.detected]
     confirm_count = len(active_confirms)
@@ -626,6 +668,9 @@ def predict(
     else:
         cvd_size_mult = 0.50
     position_mult *= cvd_size_mult
+
+    # Re-entry size multiplier (per D-20)
+    position_mult *= reentry_size_mult
 
     # Step 4: Compute composite score
     weighted_score = 0.0
@@ -678,11 +723,35 @@ def predict(
     entry_high = round(current_price * 1.005, 2)
     target_price = round(bb_mid_price, 2) if bb_mid_price > current_price else round(current_price * 1.03, 2)
 
-    atr_stop_dist = STOP_ATR_MULTIPLIER * current_atr
+    # Resistance-aware target: use nearest swing high if it gives better R:R than BB mid (per D-18)
+    resistance_levels = _find_swing_highs(df)
+    nearest_resistance = None
+    if resistance_levels:
+        nearest_resistance = min((r for r in resistance_levels if r > current_price), default=None)
+
+    effective_atr_mult = reentry_atr_mult if reentry_size_mult < 1.0 else STOP_ATR_MULTIPLIER
+    atr_stop_dist = effective_atr_mult * current_atr
     pct_stop_dist = current_price * 0.05
     stop_dist = max(atr_stop_dist, pct_stop_dist)
     stop_type = "ATR" if atr_stop_dist >= pct_stop_dist else "5%"
     stop_loss = round(current_price - stop_dist, 2)
+
+    # Support-aware stop: place stop below nearest support if tighter than ATR/5% stop (per D-18)
+    support_levels = _find_swing_lows(df)
+    if support_levels:
+        nearest_support = max((s for s in support_levels if s < current_price), default=None)
+        if nearest_support:
+            support_stop = nearest_support * 0.995  # 0.5% below support
+            if support_stop > stop_loss and support_stop < current_price * 0.97:
+                stop_loss = round(support_stop, 2)
+                stop_type = "Support"
+
+    # Resistance-aware target: apply after stop is finalized (needs stop_loss for R:R calc)
+    if nearest_resistance:
+        resistance_rr = (nearest_resistance - current_price) / (current_price - stop_loss) if stop_loss < current_price else 0
+        bb_rr = (target_price - current_price) / (current_price - stop_loss) if stop_loss < current_price else 0
+        if resistance_rr > bb_rr and resistance_rr >= 1.5:
+            target_price = round(nearest_resistance * 0.995, 2)  # just below resistance
 
     # Step 7: Build prediction statement and reasons
     reasons = []
@@ -708,6 +777,18 @@ def predict(
             reasons.append(f"AMT: {c.details.get('state', 'balanced')} — not seller-controlled")
         elif c.name == "volume_spike":
             reasons.append(f"Volume spike: {c.details.get('volume_ratio', 0):.1f}x avg (capitulation)")
+        elif c.name == "stoch_rsi":
+            reasons.append(f"Stochastic RSI deeply oversold: {c.details.get('stoch_rsi_value', '?')}")
+        elif c.name == "mfi":
+            reasons.append(f"MFI selling exhaustion: {c.details.get('mfi_value', '?')}")
+        elif c.name == "vwap":
+            reasons.append(f"Price below VWAP ({c.details.get('note', 'multi-day')})")
+        elif c.name == "keltner_lower":
+            reasons.append("At lower Keltner Channel — extended volatility move")
+        elif c.name == "macd_divergence":
+            reasons.append("Bullish MACD divergence detected — momentum shift")
+        elif c.name == "support_level":
+            reasons.append(f"Near support ${c.details.get('nearest_support', 0):.2f} ({c.details.get('distance_pct', 0):.1f}% away)")
 
     if bb_mid_price > current_price:
         reasons.append(f"Target 1: mid BB ${bb_mid_price:.2f} (+{expected_move_pct:.1f}%)")
@@ -739,7 +820,7 @@ def predict(
                 f"(EV ${ev:+.2f}/trade, breakeven at {best_setup['breakeven_wr']:.0%})"
             )
 
-    return Prediction(
+    mr_result = Prediction(
         symbol=symbol,
         predicted_spike=True,
         confidence=confidence,
@@ -760,6 +841,211 @@ def predict(
         best_rr_ratio=best_rr_ratio,
         expected_value=ev,
         rr_badge=rr_badge,
+        source="mean_reversion",
+    )
+
+    # Dual-path: run momentum alongside mean reversion (per D-09)
+    momentum_result = _predict_momentum(symbol, df, spy_df, sector_etf_bars)
+
+    # Return higher-confidence result
+    if momentum_result and not mr_result:
+        return momentum_result
+    if mr_result and not momentum_result:
+        return mr_result
+    if mr_result and momentum_result:
+        return mr_result if mr_result.confidence >= momentum_result.confidence else momentum_result
+    return None
+
+
+def _predict_momentum(
+    symbol: str,
+    df: pd.DataFrame,
+    spy_df: pd.DataFrame | None = None,
+    sector_etf_bars: dict[str, pd.DataFrame] | None = None,
+) -> Prediction | None:
+    """Momentum breakout prediction path (per D-09)."""
+    # Lazy imports to break circular dependency
+    from prediction_signals import _compute_breadth_multiplier, _detect_sector_strength
+
+    if df is None or len(df) < 35:
+        return None
+
+    closes = df["close"]
+    current_price = float(closes.iloc[-1])
+
+    # Primary 1: N-day high breakout (per D-10)
+    lookback = 20
+    if len(closes) < lookback + 1:
+        return None
+    high_20d = float(closes.iloc[-lookback - 1:-1].max())
+    breakout_detected = current_price > high_20d
+    breakout_result = PatternResult(
+        "momentum_breakout", breakout_detected,
+        8.0 if breakout_detected else 0.0, "momentum",
+        {"high_20d": round(high_20d, 2), "price": round(current_price, 2)},
+    )
+
+    # Primary 2: Volume surge >1.5x average (per D-10)
+    vol = df["volume"]
+    avg_vol = float(vol.iloc[-21:-1].mean()) if len(vol) > 21 else float(vol.mean())
+    current_vol = float(vol.iloc[-1])
+    vol_ratio = current_vol / avg_vol if avg_vol > 0 else 0
+    vol_surge_detected = vol_ratio > 1.5
+    vol_surge_result = PatternResult(
+        "volume_surge", vol_surge_detected,
+        min(10.0, vol_ratio * 3.0) if vol_surge_detected else 0.0, "volume",
+        {"volume_ratio": round(vol_ratio, 2)},
+    )
+
+    # Primary 3: ADX > 25 confirming trend (per D-10)
+    adx = _compute_adx(df)
+    adx_trend_detected = adx > 25
+    adx_trend_result = PatternResult(
+        "adx_trend", adx_trend_detected,
+        min(10.0, (adx - 25) * 0.4) if adx_trend_detected else 0.0, "momentum",
+        {"adx": round(adx, 1)},
+    )
+
+    # Hard regime gate: ADX > 25 is a DEFINING condition for momentum (per D-10)
+    if not adx_trend_detected:
+        return None
+
+    primaries = [breakout_result, vol_surge_result, adx_trend_result]
+    active_primaries = [p for p in primaries if p.detected]
+    # Need breakout + volume (ADX already guaranteed above)
+    if len(active_primaries) < 2:
+        return None
+
+    # Momentum regime: price above SMA-50 for trend confirmation
+    if len(closes) < 50:
+        return None
+    sma_50 = float(closes.rolling(50).mean().iloc[-1])
+    if current_price < sma_50 * 0.95:
+        return None  # price too far below SMA-50
+
+    position_mult = 1.0
+
+    # Breadth multiplier (same as MR path)
+    breadth_mult = _compute_breadth_multiplier(sector_etf_bars)
+    position_mult *= breadth_mult
+
+    # Confirmations: MACD cross, Keltner upper, sector strength (per D-11)
+    confirms = []
+
+    # MACD cross (bullish): MACD line crosses above signal line
+    macd_line, signal_line, histogram = calc_macd_raw(closes)
+    if len(histogram.dropna()) >= 2:
+        hist_vals = histogram.dropna()
+        macd_cross = float(hist_vals.iloc[-1]) > 0 and float(hist_vals.iloc[-2]) <= 0
+    else:
+        macd_cross = False
+    confirms.append(PatternResult(
+        "macd_cross", macd_cross,
+        7.0 if macd_cross else 0.0, "momentum",
+        {"histogram_current": round(float(histogram.dropna().iloc[-1]), 4) if len(histogram.dropna()) > 0 else 0},
+    ))
+
+    # Keltner upper breakout
+    try:
+        kelt_upper, _, _ = calc_keltner(df)
+        kelt_upper_val = float(kelt_upper.iloc[-1])
+        kelt_break = current_price > kelt_upper_val
+    except Exception:
+        kelt_break = False
+        kelt_upper_val = 0.0
+    confirms.append(PatternResult(
+        "keltner_upper", kelt_break,
+        7.0 if kelt_break else 0.0, "volatility",
+        {"keltner_upper": round(kelt_upper_val, 2)},
+    ))
+
+    # Sector relative strength
+    sector_result = _detect_sector_strength(symbol, sector_etf_bars, spy_df)
+    confirms.append(sector_result)
+
+    active_confirms = [c for c in confirms if c.detected]
+
+    # Score computation (mirrors mean reversion scoring)
+    weighted_score = 0.0
+    max_possible = 0.0
+    momentum_primary_weights = {"momentum_breakout": 4.0, "volume_surge": 3.5, "adx_trend": 3.0}
+
+    for p in primaries:
+        w = momentum_primary_weights.get(p.name, 1.0)
+        max_possible += 10.0 * w
+        if p.detected:
+            weighted_score += p.score * w
+
+    for c in confirms:
+        bonus = CONFIRM_BONUS.get(c.name, 0.5)
+        max_possible += 10.0 * bonus
+        if c.detected:
+            weighted_score += c.score * bonus
+
+    if len(active_primaries) >= 2:
+        weighted_score *= CONFLUENCE_MULTIPLIER
+    if len(active_primaries) >= 3:
+        weighted_score *= 1.1
+
+    composite = weighted_score / max_possible * 10.0 if max_possible > 0 else 0.0
+    confidence = max(1, min(10, round(composite)))
+
+    if confidence < MIN_CONFIDENCE:
+        return None
+
+    # Price targets for momentum (use 2x ATR for target, 1.5x for stop)
+    atr_series = calc_atr(df)
+    current_atr = float(atr_series.iloc[-1]) if len(atr_series.dropna()) > 0 else current_price * 0.02
+    target_price = round(current_price + 2.0 * current_atr, 2)
+    stop_loss = round(current_price - 1.5 * current_atr, 2)
+    expected_move_pct = round((target_price - current_price) / current_price * 100, 1)
+
+    reasons = []
+    if breakout_result.detected:
+        reasons.append(f"Breaking 20-day high ${high_20d:.2f}")
+    if vol_surge_result.detected:
+        reasons.append(f"Volume surge: {vol_ratio:.1f}x average")
+    if adx_trend_result.detected:
+        reasons.append(f"ADX {adx:.0f} confirms trending market")
+    for c in active_confirms:
+        if c.name == "macd_cross":
+            reasons.append("Bullish MACD cross — momentum accelerating")
+        elif c.name == "keltner_upper":
+            reasons.append(f"Breaking above Keltner upper ${kelt_upper_val:.2f}")
+        elif c.name == "sector_strength":
+            reasons.append(f"Sector outperforming SPY: {c.details.get('spread', 0):.1f}% spread")
+    reasons.append(f"Target: ${target_price:.2f} (+{expected_move_pct:.1f}%)")
+    reasons.append(f"Stop: ${stop_loss:.2f} (1.5 ATR)")
+
+    # Historical accuracy
+    try:
+        from prediction_log import get_symbol_accuracy
+        _sym_acc = get_symbol_accuracy(symbol)
+        hist_acc = _sym_acc["accuracy"]
+        hist_samples = _sym_acc["samples"]
+    except Exception:
+        hist_acc = 0.0
+        hist_samples = 0
+
+    all_patterns = primaries + confirms
+
+    return Prediction(
+        symbol=symbol,
+        predicted_spike=True,
+        confidence=confidence,
+        stage="momentum_breakout",
+        expected_move_pct=expected_move_pct,
+        entry_low=round(current_price * 0.995, 2),
+        entry_high=round(current_price * 1.005, 2),
+        target_price=target_price,
+        stop_loss=stop_loss,
+        historical_accuracy=round(hist_acc, 3),
+        historical_samples=hist_samples,
+        patterns=all_patterns,
+        reasons=reasons,
+        timeframe="1-3 days",
+        position_size_mult=round(position_mult, 2),
+        source="momentum_breakout",
     )
 
 
@@ -772,12 +1058,16 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from data_provider import fetch_bulk_bars
+    from yf_limiter import prefetch_sector_etf_bars
+    from prediction_signals import _prune_reentry_tracker
     import time as _time
 
     predictions: list[Prediction] = []
     total = len(symbols)
 
     spy_df = get_spy_history(period="10d", interval="1d")
+    sector_bars = prefetch_sector_etf_bars(period="30d")
+    _prune_reentry_tracker()  # Clean stale re-entry data
 
     # Phase 1: Bulk-fetch all bars upfront
     all_bars: dict[str, pd.DataFrame] = {}
@@ -816,7 +1106,7 @@ def predict_batch(symbols: list[str], bars_cache: dict[str, pd.DataFrame] | None
         if df is None or df.empty:
             return None
         df = df[["open", "high", "low", "close", "volume"]].copy()
-        return predict(sym, df, spy_df=spy_df)
+        return predict(sym, df, spy_df=spy_df, sector_etf_bars=sector_bars)
 
     done_count = 0
     PRED_BATCH = 200
@@ -868,7 +1158,7 @@ def _log_predictions(predictions: list[Prediction]) -> None:
                 timeframe_days=timeframe,
                 confidence=p.confidence,
                 reasons=p.reasons[:5],
-                source="mean_reversion",
+                source=p.source,
                 entry_price=p.entry_high,
                 active_signals=active_signals,
             )
