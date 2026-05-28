@@ -42,6 +42,13 @@ DEFAULT_CONFIRM = {
     "order_flow":     1.0,
     "amt_state":      1.0,
     "volume_spike":   1.5,
+    # Phase 11 — new confirmation signals (initial weight 0.5 per D-02)
+    "stoch_rsi":       0.5,
+    "mfi":             0.5,
+    "vwap":            0.5,
+    "keltner_lower":   0.5,
+    "macd_divergence": 0.5,
+    "support_level":   0.5,
 }
 
 MIN_SAMPLES = 10       # minimum per-signal appearances before recalibrating (D-06 discretion)
