@@ -412,3 +412,114 @@ class TestCalibrationSync:
             assert DEFAULT_CONFIRM_BONUS[k] == v, f"Changed existing key {k} in DEFAULT_CONFIRM_BONUS"
         for k, v in original_calibration.items():
             assert DEFAULT_CONFIRM[k] == v, f"Changed existing key {k} in DEFAULT_CONFIRM"
+
+
+# ── Test: SECTOR_ETF_MAP ─────────────────────────────────────────────────────
+
+class TestSectorEtfMap:
+    def test_sector_etf_map_count(self):
+        """SECTOR_ETF_MAP must have exactly 11 entries."""
+        from yf_limiter import SECTOR_ETF_MAP
+
+        assert len(SECTOR_ETF_MAP) == 11
+
+    def test_sector_etf_map_tickers(self):
+        """SECTOR_ETF_MAP must include all 11 standard sector ETFs."""
+        from yf_limiter import SECTOR_ETF_MAP
+
+        expected = {"XLK", "XLE", "XLF", "XLV", "XLC", "XLI", "XLY", "XLP", "XLU", "XLRE", "XLB"}
+        assert set(SECTOR_ETF_MAP.keys()) == expected
+
+
+# ── Test: get_sector_etf_bars ────────────────────────────────────────────────
+
+class TestGetSectorEtfBars:
+    def test_get_sector_etf_bars_returns_df(self):
+        """Mock yfinance: get_sector_etf_bars('XLK') returns DataFrame with lowercase columns."""
+        from unittest.mock import patch, MagicMock
+        import pandas as pd
+
+        mock_df = pd.DataFrame(
+            {"Open": [100.0], "High": [101.0], "Low": [99.0], "Close": [100.5], "Volume": [1_000_000]},
+            index=pd.date_range("2024-01-01", periods=1, freq="D"),
+        )
+
+        with patch("yf_limiter.yf") as mock_yf:
+            mock_ticker = MagicMock()
+            mock_ticker.history.return_value = mock_df
+            mock_yf.Ticker.return_value = mock_ticker
+
+            from yf_limiter import get_sector_etf_bars, _sector_etf_cache
+            # Clear cache to ensure fresh fetch
+            _sector_etf_cache.clear()
+
+            result = get_sector_etf_bars("XLK_TEST_NOCACHE")
+
+        assert result is not None
+        assert isinstance(result, pd.DataFrame)
+        # All columns must be lowercase
+        for col in result.columns:
+            assert col == col.lower(), f"Column {col!r} is not lowercase"
+
+    def test_get_sector_etf_bars_caches(self):
+        """Second call same day returns cached copy without hitting yfinance again."""
+        from unittest.mock import patch, MagicMock
+        from datetime import date
+        import pandas as pd
+
+        mock_df = pd.DataFrame(
+            {"Open": [100.0], "High": [101.0], "Low": [99.0], "Close": [100.5], "Volume": [1_000_000]},
+            index=pd.date_range("2024-01-01", periods=1, freq="D"),
+        )
+
+        with patch("yf_limiter.yf") as mock_yf:
+            mock_ticker = MagicMock()
+            mock_ticker.history.return_value = mock_df.copy()
+            mock_yf.Ticker.return_value = mock_ticker
+
+            from yf_limiter import get_sector_etf_bars, _sector_etf_cache
+            # Pre-seed the cache for today so first call is also a cache hit
+            today = date.today()
+            _sector_etf_cache["XLK_CACHE_TEST"] = (today, mock_df.copy())
+
+            # Call twice — yfinance should NOT be called at all
+            result1 = get_sector_etf_bars("XLK_CACHE_TEST")
+            result2 = get_sector_etf_bars("XLK_CACHE_TEST")
+
+        # Both results must be valid DataFrames
+        assert result1 is not None
+        assert result2 is not None
+        # yfinance should NOT have been called (cache hit)
+        mock_yf.Ticker.assert_not_called()
+
+
+# ── Test: prefetch_sector_etf_bars ───────────────────────────────────────────
+
+class TestPrefetchSectorEtfBars:
+    def test_prefetch_returns_dict(self):
+        """prefetch_sector_etf_bars() fetches all 11 ETFs and returns dict."""
+        from unittest.mock import patch, MagicMock
+        import pandas as pd
+
+        mock_df = pd.DataFrame(
+            {"Open": [100.0], "High": [101.0], "Low": [99.0], "Close": [100.5], "Volume": [1_000_000]},
+            index=pd.date_range("2024-01-01", periods=1, freq="D"),
+        )
+
+        with patch("yf_limiter.yf") as mock_yf:
+            mock_ticker = MagicMock()
+            mock_ticker.history.return_value = mock_df.copy()
+            mock_yf.Ticker.return_value = mock_ticker
+
+            from yf_limiter import prefetch_sector_etf_bars, SECTOR_ETF_MAP, _sector_etf_cache
+            # Clear cache to force fresh fetches
+            _sector_etf_cache.clear()
+
+            result = prefetch_sector_etf_bars()
+
+        assert isinstance(result, dict)
+        # All 11 ETFs should be present (all mocked to succeed)
+        assert len(result) == len(SECTOR_ETF_MAP)
+        for etf in SECTOR_ETF_MAP:
+            assert etf in result
+            assert isinstance(result[etf], pd.DataFrame)

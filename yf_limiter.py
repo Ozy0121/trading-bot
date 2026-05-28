@@ -118,6 +118,87 @@ def get_spy_history(period: str = "10d", interval: str = "1d") -> pd.DataFrame |
         return None
 
 
+# ── Sector ETF bar cache ────────────────────────────────────────────────────
+
+SECTOR_ETF_MAP: dict[str, str] = {
+    "XLK": "Technology",
+    "XLE": "Energy",
+    "XLF": "Financials",
+    "XLV": "Healthcare",
+    "XLC": "Communication Services",
+    "XLI": "Industrials",
+    "XLY": "Consumer Discretionary",
+    "XLP": "Consumer Staples",
+    "XLU": "Utilities",
+    "XLRE": "Real Estate",
+    "XLB": "Materials",
+}
+
+_sector_etf_cache: dict[str, tuple[date, pd.DataFrame]] = {}
+_sector_etf_lock = threading.Lock()
+
+
+def get_sector_etf_bars(etf: str, period: str = "30d") -> pd.DataFrame | None:
+    """
+    Fetch sector ETF daily bars, cached once per day per ETF ticker.
+    Follows the same pattern as get_spy_history.
+
+    Args:
+        etf: ETF ticker symbol (e.g. "XLK").
+        period: yfinance period string (default "30d").
+
+    Returns:
+        DataFrame with lowercase columns, or None on failure.
+    """
+    today = date.today()
+
+    with _sector_etf_lock:
+        cached = _sector_etf_cache.get(etf)
+        if cached and cached[0] == today:
+            return cached[1].copy()
+
+    try:
+        df = rate_limited_yf(
+            lambda: yf.Ticker(etf).history(period=period, interval="1d")
+        )
+        if df is None or df.empty:
+            return None
+        df.columns = [c.lower() for c in df.columns]
+
+        with _sector_etf_lock:
+            _sector_etf_cache[etf] = (today, df)
+        return df.copy()
+
+    except Exception as exc:
+        log.warning("[yf_limiter] Sector ETF fetch failed (etf=%s): %s", etf, exc)
+        return None
+
+
+def prefetch_sector_etf_bars(period: str = "30d") -> dict[str, pd.DataFrame]:
+    """
+    Prefetch daily bars for all 11 sector ETFs in SECTOR_ETF_MAP.
+
+    Call this once before a batch prediction run to populate the cache and
+    avoid redundant per-symbol fetches during ThreadPoolExecutor execution.
+    (Per RESEARCH.md Pitfall 5: pre-cache shared data before thread pool.)
+
+    Args:
+        period: yfinance period string (default "30d").
+
+    Returns:
+        Dict of {etf_ticker: DataFrame} for all successfully fetched ETFs.
+        Failed ETFs are skipped and logged.
+    """
+    results: dict[str, pd.DataFrame] = {}
+    for etf in SECTOR_ETF_MAP:
+        df = get_sector_etf_bars(etf, period=period)
+        if df is not None:
+            results[etf] = df
+        else:
+            log.warning("[yf_limiter] prefetch: skipped %s (fetch failed)", etf)
+    return results
+
+
 # ── Persistent sector cache ─────────────────────────────────────────────────
 
 _SECTOR_CACHE_FILE = os.path.join(os.path.dirname(__file__), "data", "sector_cache.json")
