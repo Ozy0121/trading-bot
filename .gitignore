@@ -29,3 +29,11 @@ data/
 
 # Generated output
 graphify-out/
+
+# Internal tooling / agent scaffolding (not part of the public portfolio)
+.claude/
+.planning/
+.pytest_cache/
+.ruff_cache/
+.graphify_python
+
